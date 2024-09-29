@@ -3,7 +3,8 @@
 
 resource "oci_load_balancer_load_balancer" "k3s_internal_lb" {
   lifecycle {
-    ignore_changes = [network_security_group_ids]
+    ignore_changes  = [network_security_group_ids]
+    prevent_destroy = true
   }
 
   compartment_id = var.compartment_ocid
