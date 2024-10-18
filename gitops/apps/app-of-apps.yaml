@@ -8,6 +8,8 @@ metadata:
 spec:
   project: default
   source:
+    # TODO: Set repoURL to your fork, or set gitops_repo_url in terraform.tfvars
+    # (cloud-init auto-applies this manifest using the var.gitops_repo_url value)
     repoURL: https://github.com/mbologna/k3s-oci.git
     targetRevision: HEAD
     path: gitops/apps

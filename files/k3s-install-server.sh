@@ -39,6 +39,8 @@ bootstrap() {
     software-properties-common jq curl python3 python3-pip \
     open-iscsi util-linux
   apt-get upgrade -y -q
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
 
   # Cap journal size to protect the boot volume
   echo "SystemMaxUse=100M"      >> /etc/systemd/journald.conf
@@ -49,7 +51,11 @@ bootstrap() {
 # ── Unattended upgrades ───────────────────────────────────────────────────────
 
 configure_unattended_upgrades() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
 
   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'UUEOF'
 Unattended-Upgrade::Allowed-Origins {
@@ -77,73 +83,11 @@ UUEOF
   systemctl enable --now unattended-upgrades
 }
 
-# ── OCI CLI (for nginx proxy-protocol config) ─────────────────────────────────
+# ── OCI CLI (pinned; used for first-server detection via instance_principal) ──
 
 install_oci_cli() {
-  local latest
-  latest=$(curl -sfL https://api.github.com/repos/oracle/oci-cli/releases/latest | jq -r '.name')
   bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-    -- --accept-all-defaults --oci-cli-version "$latest"
-}
-
-# ── Nginx proxy-protocol reverse proxy ───────────────────────────────────────
-
-install_nginx_proxy() {
-  apt-get install -y -q --no-install-recommends nginx libnginx-mod-stream
-  systemctl enable nginx
-}
-
-render_nginx_config() {
-  export OCI_CLI_AUTH=instance_principal
-  export PATH="/root/bin:$PATH"
-
-  local private_ips=()
-  local instance_ocids
-  # Scoped to THIS cluster via the freeform tag to support multi-cluster compartments
-  instance_ocids=$(oci search resource structured-search \
-    --query-text "QUERY instance resources where lifeCycleState='RUNNING' && freeformTags.key = 'k3s-cluster-name' && freeformTags.value = '${cluster_name}'" \
-    --query 'data.items[*].identifier' --raw-output | jq -r '.[]')
-
-  for ocid in $instance_ocids; do
-    local private_ip
-    private_ip=$(oci compute instance list-vnics --instance-id "$ocid" \
-      --raw-output --query 'data[0]."private-ip"' 2>/dev/null || true)
-    [[ -n "$private_ip" && "$private_ip" != "null" ]] && private_ips+=("$private_ip")
-  done
-
-  local http_upstreams="" https_upstreams=""
-  for ip in "$${private_ips[@]}"; do
-    http_upstreams+="    server $${ip}:${ingress_controller_http_nodeport} max_fails=3 fail_timeout=10s;"$'\n'
-    https_upstreams+="    server $${ip}:${ingress_controller_https_nodeport} max_fails=3 fail_timeout=10s;"$'\n'
-  done
-
-  cat > /etc/nginx/nginx.conf << NGINXEOF
-load_module /usr/lib/nginx/modules/ngx_stream_module.so;
-user www-data;
-worker_processes auto;
-pid /run/nginx.pid;
-
-events { worker_connections 768; }
-
-stream {
-  upstream k3s-http {
-$${http_upstreams}  }
-  upstream k3s-https {
-$${https_upstreams}  }
-
-  log_format basic '\$remote_addr [\$time_local] \$protocol \$status \$bytes_sent \$bytes_received \$session_time "\$upstream_addr"';
-  access_log /var/log/nginx/k3s_access.log basic;
-  error_log  /var/log/nginx/k3s_error.log;
-
-  proxy_protocol on;
-
-  server { listen ${http_lb_port};  proxy_pass k3s-http;  proxy_next_upstream on; }
-  server { listen ${https_lb_port}; proxy_pass k3s-https; proxy_next_upstream on; }
-}
-NGINXEOF
-
-  nginx -t
-  systemctl restart nginx
+    -- --accept-all-defaults --oci-cli-version "${oci_cli_version}"
 }
 
 # ── Helm ──────────────────────────────────────────────────────────────────────
@@ -161,12 +105,12 @@ install_traefik2() {
   kubectl create namespace traefik --dry-run=client -o yaml | kubectl apply -f -
   helm repo add traefik https://helm.traefik.io/traefik
   helm repo update
+  # OCI NLB uses is_preserve_source=true (transparent mode) — real client IPs arrive directly.
+  # No proxy-protocol configuration needed.
   helm upgrade --install --namespace=traefik traefik traefik/traefik \
     --set "service.type=NodePort" \
     --set "ports.web.nodePort=${ingress_controller_http_nodeport}" \
-    --set "ports.web.proxyProtocol.trustedIPs[0]=0.0.0.0/0" \
     --set "ports.websecure.nodePort=${ingress_controller_https_nodeport}" \
-    --set "ports.websecure.proxyProtocol.trustedIPs[0]=0.0.0.0/0" \
     --set "ports.websecure.tls.enabled=true"
 }
 
@@ -227,32 +171,65 @@ install_longhorn() {
   echo "Waiting for Longhorn manager to roll out ..."
   kubectl rollout status daemonset/longhorn-manager \
     --namespace longhorn-system --timeout=300s
+
+  %{ if longhorn_hostname != "" }
+  kubectl apply -f - << 'LHEOF'
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: longhorn-frontend
+  namespace: longhorn-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`${longhorn_hostname}`)
+      priority: 10
+      services:
+        - name: longhorn-frontend
+          port: 80
+  tls:
+    secretName: longhorn-frontend-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: longhorn-frontend-tls
+  namespace: longhorn-system
+spec:
+  secretName: longhorn-frontend-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - ${longhorn_hostname}
+LHEOF
+  echo "Longhorn IngressRoute created for https://${longhorn_hostname}"
+  %{ endif }
 }
 
 # ── ArgoCD + Image Updater ────────────────────────────────────────────────────
 
 install_argocd() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
 
   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-  kubectl apply -n argocd \
-    -f "https://raw.githubusercontent.com/argoproj/argo-cd/${argocd_release}/manifests/install.yaml"
+  helm repo add argo https://argoproj.github.io/argo-helm
+  helm repo update
 
-  echo "Waiting for ArgoCD to become available ..."
-  kubectl wait --for=condition=Available deployment \
-    --namespace argocd --all --timeout=300s
-
-  # Enable insecure mode so Traefik can terminate TLS upstream
-  kubectl patch configmap argocd-cmd-params-cm -n argocd \
-    --type merge -p '{"data":{"server.insecure":"true"}}'
-  kubectl rollout restart deployment/argocd-server -n argocd
-  kubectl rollout status  deployment/argocd-server -n argocd --timeout=120s
+  # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
+  helm upgrade --install argocd argo/argo-cd \
+    --namespace argocd \
+    --version "${argocd_chart_release}" \
+    --set "configs.params.server\.insecure=true" \
+    --wait --timeout 5m
 
   echo "Installing ArgoCD Image Updater ..."
   kubectl apply -n argocd \
     -f "https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/${argocd_image_updater_release}/manifests/install.yaml"
 
-  # Create IngressRoute if a hostname was provided
   %{ if argocd_hostname != "" }
   kubectl apply -f - << 'ARGOEOF'
 apiVersion: traefik.io/v1alpha1
@@ -288,6 +265,33 @@ spec:
 ARGOEOF
   echo "ArgoCD IngressRoute created for https://${argocd_hostname}"
   %{ endif }
+
+  # Bootstrap the App of Apps so ArgoCD self-manages gitops/
+  kubectl apply -n argocd -f - << APPEOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ${gitops_repo_url}
+    targetRevision: HEAD
+    path: gitops/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+APPEOF
+  echo "ArgoCD App of Apps bootstrapped from ${gitops_repo_url}"
 }
 
 # ── kured ─────────────────────────────────────────────────────────────────────
@@ -301,13 +305,17 @@ install_kured() {
     --version "${kured_release}" \
     --namespace kube-system \
     --set configuration.rebootSentinelFile=/var/run/reboot-required \
+    --set configuration.startTime="${kured_start_time}" \
+    --set configuration.endTime="${kured_end_time}" \
+    --set configuration.rebootDays="${kured_reboot_days}" \
+    --set configuration.timeZone=UTC \
     --set tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set tolerations[0].operator=Exists \
     --set tolerations[0].effect=NoSchedule \
     --set tolerations[1].key=node-role.kubernetes.io/etcd \
     --set tolerations[1].operator=Exists \
     --set tolerations[1].effect=NoSchedule
-  echo "kured installed."
+  echo "kured installed (maintenance window: ${kured_start_time}–${kured_end_time} UTC)."
 }
 
 # ── Default-deny NetworkPolicy ────────────────────────────────────────────────
@@ -411,9 +419,7 @@ wait_for_cluster_ready() {
 
 bootstrap
 configure_unattended_upgrades
-%{ if ! disable_ingress }
 install_oci_cli
-%{ endif }
 
 # Determine first server via IMDSv2 + OCI CLI (bootstraps etcd on first node only)
 export OCI_CLI_AUTH=instance_principal
@@ -454,11 +460,6 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
   install_argocd
   install_kured
   apply_network_policies
-
-%{ if ! disable_ingress }
-  install_nginx_proxy
-  render_nginx_config
-%{ endif }
 fi
 
 echo "==> k3s server cloud-init complete at $(date -u)"

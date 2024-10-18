@@ -1,38 +1,43 @@
-variable "compartment_ocid" {}
-variable "tenancy_ocid" {}
-variable "user_ocid" {}
-variable "fingerprint" {}
-variable "private_key_path" {}
-variable "region" {}
-variable "availability_domain" {}
-variable "my_public_ip_cidr" {}
-variable "cluster_name" {}
-variable "os_image_id" {}
-variable "certmanager_email_address" {}
+variable "compartment_ocid" { type = string }
+variable "tenancy_ocid" { type = string }
+variable "user_ocid" { type = string }
+variable "fingerprint" { type = string }
+variable "private_key_path" { type = string }
+variable "region" { type = string }
+variable "availability_domain" { type = string }
+variable "my_public_ip_cidr" { type = string }
+variable "cluster_name" { type = string }
+variable "os_image_id" { type = string }
+variable "certmanager_email_address" { type = string }
 
 variable "k3s_server_pool_size" {
+  type    = number
   default = 3
 }
 variable "k3s_worker_pool_size" {
+  type    = number
   default = 0
 }
 variable "k3s_extra_worker_node" {
+  type    = bool
   default = true
 }
 variable "expose_kubeapi" {
+  type    = bool
   default = false
 }
 variable "enable_bastion" {
+  type    = bool
   default = false
 }
 variable "environment" {
+  type    = string
   default = "staging"
 }
 
 module "k3s_cluster" {
   source = "../"
 
-  region                    = var.region
   availability_domain       = var.availability_domain
   tenancy_ocid              = var.tenancy_ocid
   compartment_ocid          = var.compartment_ocid

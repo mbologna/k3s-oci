@@ -45,15 +45,19 @@ data "cloudinit_config" "k3s_server" {
       k3s_tls_san                       = local.k3s_internal_lb_ip
       expose_kubeapi                    = var.expose_kubeapi
       k3s_tls_san_public                = local.public_lb_ip[0]
-      argocd_release                    = var.argocd_release
+      argocd_chart_release              = var.argocd_chart_release
       argocd_image_updater_release      = var.argocd_image_updater_release
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
       longhorn_release                  = var.longhorn_release
+      longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
+      gitops_repo_url                   = var.gitops_repo_url
       kured_release                     = var.kured_release
+      kured_start_time                  = var.kured_start_time
+      kured_end_time                    = var.kured_end_time
+      kured_reboot_days                 = join(",", var.kured_reboot_days)
+      oci_cli_version                   = var.oci_cli_version
       ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
       ingress_controller_https_nodeport = var.ingress_controller_https_nodeport
-      http_lb_port                      = var.http_lb_port
-      https_lb_port                     = var.https_lb_port
     })
   }
 }
@@ -65,17 +69,10 @@ data "cloudinit_config" "k3s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/k3s-install-agent.sh", {
-      k3s_version                       = local.k3s_version
-      k3s_subnet                        = var.k3s_subnet
-      k3s_token                         = random_password.k3s_token.result
-      disable_ingress                   = var.disable_ingress
-      k3s_url                           = local.k3s_internal_lb_ip
-      cluster_name                      = var.cluster_name
-      compartment_ocid                  = var.compartment_ocid
-      http_lb_port                      = var.http_lb_port
-      https_lb_port                     = var.https_lb_port
-      ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
-      ingress_controller_https_nodeport = var.ingress_controller_https_nodeport
+      k3s_version = local.k3s_version
+      k3s_subnet  = var.k3s_subnet
+      k3s_token   = random_password.k3s_token.result
+      k3s_url     = local.k3s_internal_lb_ip
     })
   }
 }
