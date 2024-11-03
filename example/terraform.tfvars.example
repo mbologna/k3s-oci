@@ -8,7 +8,6 @@ fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
 private_key_path = "~/.oci/oci_api_key.pem"
 
 # Region & placement  (must be your home region for Always Free)
-region              = "eu-frankfurt-1"
 availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 
 # Cluster
@@ -19,7 +18,8 @@ environment   = "staging"
 # https://docs.oracle.com/en-us/iaas/images/
 os_image_id = "ocid1.image.oc1..example"
 
-# Your workstation IP (restricts SSH and optional kubeapi exposure)
+# Your workstation IP — restricts bastion SSH (enable_bastion=true) and
+# kubeapi access (expose_kubeapi=true). Nodes are private; bastion is required for SSH.
 my_public_ip_cidr = "1.2.3.4/32"
 
 # cert-manager — must be a real email for Let's Encrypt
@@ -35,7 +35,21 @@ k3s_server_pool_size  = 3
 k3s_worker_pool_size  = 0
 k3s_extra_worker_node = true
 
-# ── Optional ──────────────────────────────────────────────────────────────────
-# enable_bastion   = true                      # Adds a free E2.1.Micro bastion
-# expose_kubeapi   = false                     # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
-# argocd_hostname  = "argocd.example.com"      # Creates Traefik IngressRoute + cert-manager certificate for ArgoCD
+# ── Optional features ─────────────────────────────────────────────────────────
+# enable_bastion = true             # Adds a free E2.1.Micro bastion in the public subnet
+# expose_kubeapi = false            # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
+
+# ── Hostnames (set to create Traefik IngressRoutes + cert-manager TLS certs) ──
+# argocd_hostname   = "argocd.example.com"
+# longhorn_hostname = "longhorn.example.com"
+# grafana_hostname  = "grafana.example.com"
+
+# ── GitOps ────────────────────────────────────────────────────────────────────
+# Set to your fork URL so ArgoCD pulls from the right repository:
+# gitops_repo_url = "https://github.com/your-org/k3s-oci.git"
+
+# ── kured maintenance window (UTC) ────────────────────────────────────────────
+# Default: 22:00–06:00 UTC every day (European night)
+# kured_start_time  = "22:00"
+# kured_end_time    = "06:00"
+# kured_reboot_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]

@@ -18,7 +18,9 @@ do not introduce resources that incur cost.
 | Cloud | Oracle Cloud Infrastructure (OCI) |
 | OS | Ubuntu 24.04 LTS (aarch64) only |
 | Kubernetes | k3s (latest resolved at plan time) |
-| Ingress | Traefik 2 (`traefik` or `traefik2`) |
+| Ingress | Traefik 2 (`traefik2`) |
+| Observability | kube-prometheus-stack (via GitOps) |
+| Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
 | GitOps | ArgoCD + Image Updater |
 | TLS | cert-manager (Let's Encrypt) |
@@ -42,22 +44,27 @@ or additional paid resources, flag it explicitly instead of implementing it.
 
 ```
 vars.tf          — all input variables (add new vars here)
-locals.tf        — derived locals (ssh_public_key, k3s_version, common_tags)
-data.tf          — cloud-init templatefile rendering, random_password
+locals.tf        — derived locals (ssh_public_key, k3s_version, common_tags, agent_plugins)
+data.tf          — cloud-init templatefile rendering, random_password (including longhorn_ui_password)
 terraform.tf     — required_providers and version constraints
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag)
+iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, includes log-content)
+logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker, bastion
 lb.tf            — Internal Flexible LB (kubeapi HA)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress)
-output.tf        — Outputs (IPs, k3s_token sensitive, kubeconfig_hint)
+output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id)
 files/k3s-install-server.sh  — cloud-init for control-plane nodes (Ubuntu 24.04)
 files/k3s-install-agent.sh   — cloud-init for worker nodes (Ubuntu 24.04)
-gitops/          — ArgoCD App of Apps manifests
+gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
+gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
+gitops/longhorn/             — Longhorn ingress with BasicAuth (Traefik Middleware + Secret)
+gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 example/         — Example module usage
-.github/workflows/terraform.yml  — CI: fmt, validate, ShellCheck
+.github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
+.terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
 renovate.json    — Automated dependency updates
 ```
 
@@ -73,6 +80,14 @@ renovate.json    — Automated dependency updates
 - Run `tofu fmt -recursive` (or `terraform fmt -recursive`) before committing — CI enforces it.
 - `terraform validate` runs against both the root module and `example/` — keep both valid.
 - The `lifecycle { prevent_destroy = true }` on both load balancers is intentional; do not remove it.
+- **When renaming a resource**, always add a `moved {}` block so existing states don't require `terraform state mv`:
+  ```hcl
+  moved {
+    from = oci_core_instance.old_name
+    to   = oci_core_instance.new_name
+  }
+  ```
+  Remove `moved {}` blocks only after all users have applied the change.
 
 ### Shell scripts (`files/`)
 - Both scripts are **Terraform templatefiles**, not plain bash. `${var}` is a Terraform
@@ -98,14 +113,18 @@ New Kubernetes manifests belong in `gitops/`. Add an ArgoCD `Application` CR in
 | Terraform format | `terraform fmt -check -recursive` |
 | Terraform validate (root) | `terraform init -backend=false && terraform validate` |
 | Terraform validate (example) | same, in `example/` |
+| tflint | `tflint --config=.tflint.hcl` (pinned version, Renovate-managed) |
 | ShellCheck | `shellcheck --severity=warning files/*.sh` |
+| terraform-docs | auto-committed by CI if README drift detected |
 
 Run all checks locally before pushing:
 ```bash
 tofu fmt -recursive
 tofu init -backend=false && tofu validate
 (cd example && tofu init -backend=false && tofu validate)
+tflint --config=.tflint.hcl
 shellcheck --severity=warning files/k3s-install-server.sh files/k3s-install-agent.sh
+terraform-docs .
 ```
 
 ## What NOT to do
@@ -117,9 +136,50 @@ shellcheck --severity=warning files/k3s-install-server.sh files/k3s-install-agen
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
 - Do not break the `terraform validate` step — templatefile vars must match what the scripts reference
+- **`ingress_controller` only accepts `"traefik2"`** — do not add nginx or other ingress controllers
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
+- **Do not add OCI Vault** — OCI Key Management / Vault is NOT an Always Free resource. Secrets
+  (`k3s_token`, `longhorn_ui_password`, `grafana_admin_password`) are passed via cloud-init
+  templatefile vars (stored in instance user-data). This is acceptable given the private subnet
+  placement and OCI NSG boundary. Future improvement: switch to Vault when cost is acceptable.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
+
+## Special implementation notes
+
+### Longhorn UI BasicAuth
+- Password is generated by `random_password.longhorn_ui_password` in `data.tf` and passed to
+  cloud-init as `longhorn_ui_password`.
+- The cloud-init script generates an APR1 hash: `openssl passwd -apr1 "$LONGHORN_PASSWORD"`
+- A `Secret` (`longhorn-basic-auth`) and Traefik `Middleware` (`longhorn-basicauth`) are created
+  in the `longhorn-system` namespace.
+- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `IngressRoute`.
+- Credentials are available via the `longhorn_ui_credentials` sensitive output.
+- In heredocs where Terraform interpolation is needed (`<< LHEOF` not `<< 'LHEOF'`), Terraform
+  vars use `${var}` and bash vars must use `$${VAR}`.
+
+### cert-manager GitOps adoption
+- Cloud-init bootstraps ClusterIssuers with the correct email from `var.letsencrypt_email`.
+  This must happen at bootstrap time — the email cannot be in git without manual editing.
+- `gitops/cert-manager/` contains template ClusterIssuers and an ArgoCD Application template.
+- To enable ArgoCD management of ClusterIssuers: update the email in `cluster-issuers.yaml`,
+  then copy `application-template.yaml` to `gitops/apps/cert-manager.yaml`.
+- Do NOT place the template in `gitops/apps/` as-is — it contains `changeme@example.com`.
+
+### OCI Logging (`logging.tf`)
+- Controlled by `enable_oci_logging` variable (default: `true`).
+- Creates: `oci_logging_log_group`, `oci_logging_log`, `oci_logging_unified_agent_configuration`.
+- The dynamic group from `iam.tf` is referenced for the agent config.
+- The `Custom Logs Monitoring` plugin is enabled in `locals.tf` `agent_plugins`.
+- Ships `/var/log/k3s-cloud-init.log` to OCI Logging (10 GB/month free).
+- `oci_log_group_id` output provides the OCID for use with `oci logging` CLI.
+
+### terraform-docs
+- README Variables and Outputs sections are auto-generated between `<!-- BEGIN_TF_DOCS -->`
+  and `<!-- END_TF_DOCS -->` markers.
+- CI (`terraform-docs` job) auto-commits README if the content drifts (git-push mode).
+- Run `terraform-docs .` locally before pushing to avoid an extra CI commit.
+- Config is in `.terraform-docs.yml` (inject mode, sort by name).
