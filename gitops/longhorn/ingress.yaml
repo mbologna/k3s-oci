@@ -46,6 +46,9 @@ spec:
           port: 80
   tls:
     secretName: longhorn-frontend-tls
+    options:
+      name: tls-modern
+      namespace: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

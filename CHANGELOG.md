@@ -7,12 +7,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- `longhorn_hostname`, `gitops_repo_url` optional variables
-- `kured_start_time`, `kured_end_time`, `kured_reboot_days` variables for maintenance window
-- `oci_cli_version` variable with Renovate tracking
-- `argocd_chart_release` variable (Helm chart version, replaces `argocd_release`)
-- tflint in CI (`.tflint.hcl` + `terraform-linters/setup-tflint` action)
-- Renovate GitHub Actions manager with digest pinning
+- `grafana_hostname` optional variable for Grafana IngressRoute
+- `grafana_admin_credentials` sensitive Terraform output
+- Grafana admin password auto-generated via `random_password` (pre-created as K8s Secret in cloud-init)
+- Traefik `RateLimit` middleware (50 rps, burst 100) for ArgoCD UI
+- `PodDisruptionBudget` for argocd-server, argocd-repo-server, argocd-application-controller, cert-manager, cert-manager-webhook
+- Longhorn `ServiceMonitor` for Prometheus scraping (`gitops/monitoring/longhorn-servicemonitor.yaml`)
+- `AlertmanagerConfig` template with Slack/email/webhook options (`gitops/monitoring/alertmanager-config.yaml`)
+- HTTP→HTTPS redirect via Traefik `RedirectScheme` middleware + low-priority catch-all IngressRoute (`gitops/traefik/redirect.yaml`)
+- Longhorn OCI Object Storage backup target template (`gitops/longhorn/backup-target.yaml`)
+- `gitops/update-repo-url.sh` helper script for updating repoURL after forking
+- `SECURITY.md` with vulnerability disclosure policy and known trade-offs
+- OCI Logging integration: log group, log, and Unified Agent configuration for cloud-init logs
+- kube-prometheus-stack GitOps Application (minimal ARM64 configuration)
+- Network policies extended to `argocd`, `monitoring`, `cert-manager`, `longhorn-system` namespaces
+- `enable_oci_logging` variable (default: true)
+- `argocd_initial_password_hint` Terraform output
+- Longhorn UI BasicAuth via Traefik Middleware
+- Renovate custom manager for `targetRevision:` in gitops YAML files
+
+### Changed
+- Longhorn installation switched from `kubectl apply -f URL` to Helm (`longhorn/longhorn` chart) — atomic rollback, version-pinned, Renovate-tracked
+- ArgoCD Helm install now uses `--atomic` (was `--wait` only)
+- All IngressRoutes (ArgoCD, Longhorn, Grafana) now reference `tls-modern` TLSOption (TLS 1.2+, strong ciphers, sniStrict)
+- `boot_volume_size_in_gbs` max validation tightened from 200 → 50 GB (Always Free budget)
+- `required_version` updated from `>= 1.5.0` to `>= 1.9.0` (module uses validation blocks, `startswith()`, etc.)
+- CI runners pinned to `ubuntu-24.04` (was `ubuntu-latest`)
+- `wait_for_cluster_ready` error message now shows elapsed/total seconds with node status dump
+- `ingress_controller` now only accepts `traefik2`; built-in k3s Traefik option removed
+- cert-manager installation switched from `kubectl apply` to Helm
+- ArgoCD installation switched to Helm
+- All Helm installs use `--atomic` for automatic rollback on failure
+- CI workflow has path filters; tflint version pinned
+
+### Fixed
+- Stale comment in `gitops/network-policies/default-deny.yaml`
+- `pdbs.yaml` destination namespace clarified with comment
+
+
 - `gitops/longhorn/ingress.yaml` for manual Longhorn IngressRoute management
 - `argocd_initial_password_hint` Terraform output
 - Longhorn UI BasicAuth via Traefik Middleware
@@ -48,7 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 - 3-node HA k3s cluster on `VM.Standard.A1.Flex` (4 OCPU / 24 GB total)
-- 4th standalone worker instance via `k3s_extra_worker_node`
+- 4th standalone worker instance via `k3s_standalone_worker`
 - Private subnet for all nodes (no public IPs on compute)
 - NAT Gateway for outbound traffic (free, 1 per VCN)
 - Public Network Load Balancer (NLB) for HTTP/HTTPS ingress

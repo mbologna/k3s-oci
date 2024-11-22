@@ -24,19 +24,24 @@ resource "oci_core_instance_configuration" "k3s_server" {
       availability_domain = var.availability_domain
       display_name        = "${var.cluster_name}-server"
 
-      dynamic "agent_config" {
-        for_each = [local.agent_config]
-        content {
-          is_management_disabled = agent_config.value.is_management_disabled
-          is_monitoring_disabled = agent_config.value.is_monitoring_disabled
-
-          dynamic "plugins_config" {
-            for_each = agent_config.value.plugins_config
-            content {
-              desired_state = plugins_config.value.desired_state
-              name          = plugins_config.value.name
-            }
-          }
+      agent_config {
+        is_management_disabled = false
+        is_monitoring_disabled = false
+        plugins_config {
+          name          = "Vulnerability Scanning"
+          desired_state = "DISABLED"
+        }
+        plugins_config {
+          name          = "Compute Instance Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Custom Logs Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Bastion"
+          desired_state = "DISABLED"
         }
       }
 
@@ -65,6 +70,10 @@ resource "oci_core_instance_configuration" "k3s_server" {
 
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-server" })
     }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -109,19 +118,24 @@ resource "oci_core_instance_configuration" "k3s_worker" {
       availability_domain = var.availability_domain
       display_name        = "${var.cluster_name}-worker"
 
-      dynamic "agent_config" {
-        for_each = [local.agent_config]
-        content {
-          is_management_disabled = agent_config.value.is_management_disabled
-          is_monitoring_disabled = agent_config.value.is_monitoring_disabled
-
-          dynamic "plugins_config" {
-            for_each = agent_config.value.plugins_config
-            content {
-              desired_state = plugins_config.value.desired_state
-              name          = plugins_config.value.name
-            }
-          }
+      agent_config {
+        is_management_disabled = false
+        is_monitoring_disabled = false
+        plugins_config {
+          name          = "Vulnerability Scanning"
+          desired_state = "DISABLED"
+        }
+        plugins_config {
+          name          = "Compute Instance Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Custom Logs Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Bastion"
+          desired_state = "DISABLED"
         }
       }
 
@@ -151,9 +165,15 @@ resource "oci_core_instance_configuration" "k3s_worker" {
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
     }
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ── Worker instance pool ───────────────────────────────────────────────────────
+# Pool size is 0 by default. Kept so the NLB backend set can reference pool-managed
+# workers if you ever scale beyond the Always Free limit (k3s_worker_pool_size > 0).
 
 resource "oci_core_instance_pool" "k3s_workers" {
   depends_on = [oci_load_balancer_load_balancer.k3s_internal_lb]
@@ -176,13 +196,15 @@ resource "oci_core_instance_pool" "k3s_workers" {
   }
 }
 
-# ── Extra standalone worker node ──────────────────────────────────────────────
-# Provisions the 4th Always Free A1.Flex instance as a standalone resource.
-# OCI tenancies may restrict instance pools to 3 nodes, so this standalone
-# resource reliably delivers the full 4-OCPU / 24-GB free allocation.
+# ── Standalone worker node ────────────────────────────────────────────────────
+# OCI Always Free A1.Flex capacity is best claimed via a direct oci_core_instance
+# rather than an instance pool. Instance pools go through OCI's Capacity Management
+# API which can return "out of capacity" errors for A1.Flex on Always Free tenancies.
+# With k3s_server_pool_size=3 and k3s_standalone_worker=true this consumes the full
+# Always Free budget: 4 × (1 OCPU / 6 GB RAM) = 4 OCPUs / 24 GB.
 
-resource "oci_core_instance" "k3s_extra_worker" {
-  count = var.k3s_extra_worker_node ? 1 : 0
+resource "oci_core_instance" "k3s_standalone_worker" {
+  count = var.k3s_standalone_worker ? 1 : 0
   depends_on = [
     oci_load_balancer_load_balancer.k3s_internal_lb,
     oci_core_instance_pool.k3s_workers,
@@ -190,7 +212,7 @@ resource "oci_core_instance" "k3s_extra_worker" {
 
   compartment_id      = var.compartment_ocid
   availability_domain = var.availability_domain
-  display_name        = "${var.cluster_name}-extra-worker"
+  display_name        = "${var.cluster_name}-standalone-worker"
   freeform_tags       = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
 
   dynamic "agent_config" {
@@ -226,7 +248,7 @@ resource "oci_core_instance" "k3s_extra_worker" {
     assign_public_ip          = false
     subnet_id                 = oci_core_subnet.private.id
     nsg_ids                   = [oci_core_network_security_group.workers.id]
-    hostname_label            = "${var.cluster_name}-extra-worker"
+    hostname_label            = "${var.cluster_name}-standalone-worker"
   }
 
   metadata = {
@@ -249,7 +271,7 @@ resource "oci_core_instance" "bastion" {
 
   source_details {
     source_type             = "image"
-    source_id               = var.os_image_id
+    source_id               = data.oci_core_images.bastion[0].images[0].id
     boot_volume_size_in_gbs = 47
   }
 
