@@ -76,6 +76,8 @@ data "cloudinit_config" "k3s_server" {
       kured_start_time                  = var.kured_start_time
       kured_end_time                    = var.kured_end_time
       kured_reboot_days                 = join(",", var.kured_reboot_days)
+      system_upgrade_controller_release = var.system_upgrade_controller_release
+      k3s_upgrade_channel               = var.k3s_upgrade_channel
       oci_cli_version                   = var.oci_cli_version
       ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
       ingress_controller_https_nodeport = var.ingress_controller_https_nodeport
@@ -90,10 +92,11 @@ data "cloudinit_config" "k3s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/k3s-install-agent.sh", {
-      k3s_version = local.k3s_version
-      k3s_subnet  = var.k3s_subnet
-      k3s_token   = random_password.k3s_token.result
-      k3s_url     = local.k3s_internal_lb_ip
+      k3s_version      = local.k3s_version
+      k3s_subnet       = var.k3s_subnet
+      k3s_token        = random_password.k3s_token.result
+      k3s_url          = local.k3s_internal_lb_ip
+      kured_start_time = var.kured_start_time
     })
   }
 }
