@@ -67,10 +67,9 @@ variable "my_public_ip_cidr" {
   type        = string
   description = <<-EOT
     Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32).
-    Used to restrict bastion SSH access (when enable_bastion = true) and
-    kubeapi access via the public NLB (when expose_kubeapi = true).
-    k3s nodes live in the private subnet — direct SSH to nodes always
-    requires the bastion as a jump host regardless of this setting.
+    Restricts OCI Bastion Service session creation (enable_bastion = true) and
+    kubeapi access via the public NLB (expose_kubeapi = true).
+    k3s nodes are in a private subnet and are only reachable via OCI Bastion sessions.
   EOT
 
   validation {
@@ -83,11 +82,12 @@ variable "my_public_ip_cidr" {
 
 variable "os_image_id" {
   type        = string
-  description = "OCID of the Ubuntu 24.04 LTS (Noble) image for A1.Flex and E2.1.Micro instances. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/"
+  description = "OCID of the Ubuntu 24.04 LTS (Noble) aarch64 image for A1.Flex nodes. If null, the latest matching image is resolved automatically from the tenancy. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/"
+  default     = null
 
   validation {
-    condition     = startswith(var.os_image_id, "ocid1.image.")
-    error_message = "os_image_id must be a valid OCI image OCID starting with 'ocid1.image.'."
+    condition     = var.os_image_id == null || startswith(var.os_image_id, "ocid1.image.")
+    error_message = "os_image_id must be a valid OCI image OCID starting with 'ocid1.image.' or null."
   }
 }
 
@@ -123,12 +123,12 @@ variable "worker_memory_in_gbs" {
 
 variable "boot_volume_size_in_gbs" {
   type        = number
-  description = "Boot volume size in GB. Max 50 GB per instance to stay within the 200 GB Always Free block storage budget."
+  description = "Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). The bastion uses OCI Bastion Service — no VM, no boot volume."
   default     = 50
 
   validation {
-    condition     = var.boot_volume_size_in_gbs >= 47 && var.boot_volume_size_in_gbs <= 50
-    error_message = "boot_volume_size_in_gbs must be between 47 and 50 GB. Max 50 GB per instance to stay within the 200 GB Always Free block storage budget across 4 nodes."
+    condition     = var.boot_volume_size_in_gbs == 50
+    error_message = "boot_volume_size_in_gbs must be 50 GB — OCI minimum for all shapes, and 4 × 50 GB = 200 GB exactly fills the Always Free storage limit."
   }
 }
 
@@ -178,17 +178,12 @@ variable "k3s_standalone_worker" {
 variable "enable_bastion" {
   type        = bool
   description = <<-EOT
-    Provision a bastion host using the VM.Standard.E2.1.Micro shape (Always Free, AMD).
-    When enabled, k3s nodes are placed in a private subnet and the bastion is the only
-    SSH entry point. Strongly recommended for production.
+    Provision an OCI Bastion Service resource (managed SSH proxy, Always Free, no storage).
+    When enabled, a STANDARD bastion is created and associated with the private subnet.
+    Use example/get-kubeconfig.sh to retrieve kubeconfig via a Bastion session.
+    Strongly recommended; without it, nodes are reachable only via serial console.
   EOT
   default     = false
-}
-
-variable "bastion_shape" {
-  type        = string
-  description = "Shape for the bastion instance. VM.Standard.E2.1.Micro is Always Free."
-  default     = "VM.Standard.E2.1.Micro"
 }
 
 # ── k3s ───────────────────────────────────────────────────────────────────────
