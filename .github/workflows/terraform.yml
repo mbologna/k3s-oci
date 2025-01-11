@@ -6,6 +6,7 @@ on:
     paths:
       - '**.tf'
       - 'files/**'
+      - 'gitops/**'
       - '.github/workflows/**'
       - '.tflint.hcl'
       - '.terraform-docs.yml'
@@ -15,6 +16,7 @@ on:
     paths:
       - '**.tf'
       - 'files/**'
+      - 'gitops/**'
       - '.github/workflows/**'
       - '.tflint.hcl'
       - '.terraform-docs.yml'
@@ -102,3 +104,63 @@ jobs:
           git-push: true
           git-commit-message: "docs: auto-update README variables via terraform-docs [skip ci]"
 
+
+  opentofu:
+    name: OpenTofu Validate
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          # renovate: datasource=github-releases depName=opentofu/opentofu
+          tofu_version: "1.9.1"
+
+      - name: tofu fmt check
+        run: tofu fmt -check -recursive
+
+      - name: tofu init (no backend)
+        run: tofu init -backend=false
+
+      - name: tofu validate
+        run: tofu validate
+
+      - name: tofu init example (no backend)
+        working-directory: example
+        run: tofu init -backend=false
+
+      - name: tofu validate example
+        working-directory: example
+        run: tofu validate
+
+  yamllint:
+    name: YAML Lint (gitops)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: yamllint gitops
+        run: |
+          yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' \
+            gitops/
+
+  trivy:
+    name: Trivy IaC Scan
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy (Terraform + gitops)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          skip-dirs: ".terraform,example/.terraform"

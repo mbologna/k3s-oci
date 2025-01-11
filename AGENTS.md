@@ -36,6 +36,11 @@ do not introduce resources that incur cost.
 | Flex LB | 2 × 10 Mbps | 1 internal LB |
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
+| Object Storage | 20 GB | 1 versioned bucket for Terraform state (`enable_object_storage_state = true`) |
+| Vault (shared) | Software keys + 150 secrets | 3 secrets — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
+| Volume backups | 5 total | 4 — one per node, weekly, 1-week retention (`enable_backup = true`) |
+| Notifications | 1M HTTPS + 3K email/month | 1 topic wired to Alertmanager (`enable_notifications = false`, opt-in) |
+| MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
 or additional paid resources, flag it explicitly instead of implementing it.
@@ -50,12 +55,17 @@ terraform.tf     — required_providers and version constraints
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, includes log-content)
+iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, includes log-content and secret-family)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi HA)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress)
-output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id)
+backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), three cluster secrets (enable_vault)
+objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
+notifications.tf — OCI Notifications topic + optional email subscription (enable_notifications)
+mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
+output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id)
 files/k3s-install-server.sh  — cloud-init for control-plane nodes (Ubuntu 24.04)
 files/k3s-install-agent.sh   — cloud-init for worker nodes (Ubuntu 24.04)
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
@@ -106,6 +116,22 @@ renovate.json    — Automated dependency updates
 New Kubernetes manifests belong in `gitops/`. Add an ArgoCD `Application` CR in
 `gitops/apps/` to have ArgoCD manage them automatically.
 
+### Reusability — fork pattern
+Users who want to add their own apps on top of the built-in stack must fork this
+repo. The workflow is:
+1. Fork the repo on GitHub.
+2. Run `bash gitops/update-repo-url.sh https://github.com/their-org/their-fork.git`
+   to replace all `repoURL: https://github.com/mbologna/k3s-oci.git` occurrences in
+   `gitops/apps/` with their fork URL. Commit and push.
+3. Set `gitops_repo_url = "https://github.com/their-org/their-fork.git"` in
+   `terraform.tfvars` so cloud-init writes the correct URL into `app-of-apps.yaml`.
+4. Add their own ArgoCD `Application` manifests to `gitops/apps/` — each can point
+   at any Helm registry or any Git repo; only the App of Apps manifest itself must
+   live in the fork.
+
+When helping users add apps, always remind them to run `update-repo-url.sh` and set
+`gitops_repo_url` if they haven't already.
+
 ## CI checks (must pass before merging)
 
 | Check | Command |
@@ -113,8 +139,11 @@ New Kubernetes manifests belong in `gitops/`. Add an ArgoCD `Application` CR in
 | Terraform format | `terraform fmt -check -recursive` |
 | Terraform validate (root) | `terraform init -backend=false && terraform validate` |
 | Terraform validate (example) | same, in `example/` |
+| OpenTofu validate (root + example) | same as above but with `tofu` |
 | tflint | `tflint --config=.tflint.hcl` (pinned version, Renovate-managed) |
 | ShellCheck | `shellcheck --severity=warning files/*.sh` |
+| YAML lint (gitops/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/` |
+| Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
 | terraform-docs | auto-committed by CI if README drift detected |
 
 Run all checks locally before pushing:
@@ -124,6 +153,8 @@ tofu init -backend=false && tofu validate
 (cd example && tofu init -backend=false && tofu validate)
 tflint --config=.tflint.hcl
 shellcheck --severity=warning files/k3s-install-server.sh files/k3s-install-agent.sh
+yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/
+trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
 terraform-docs .
 ```
 
@@ -140,10 +171,7 @@ terraform-docs .
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
-- **Do not add OCI Vault** — OCI Key Management / Vault is NOT an Always Free resource. Secrets
-  (`k3s_token`, `longhorn_ui_password`, `grafana_admin_password`) are passed via cloud-init
-  templatefile vars (stored in instance user-data). This is acceptable given the private subnet
-  placement and OCI NSG boundary. Future improvement: switch to Vault when cost is acceptable.
+- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the three cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
@@ -186,3 +214,42 @@ terraform-docs .
 - CI (`terraform-docs` job) auto-commits README if the content drifts (git-push mode).
 - Run `terraform-docs .` locally before pushing to avoid an extra CI commit.
 - Config is in `.terraform-docs.yml` (inject mode, sort by name).
+
+### OCI Vault (`vault.tf`)
+- Controlled by `enable_vault` variable (default: `true`).
+- Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
+- Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
+- Stores three secrets: `k3s_token`, `longhorn_ui_password`, `grafana_admin_password`.
+- Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
+- When `enable_vault = false`, the plaintext values are passed through cloud-init templatefile vars (fallback for the `%{ else }` branches in the scripts).
+- The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
+- Agent script (`k3s-install-agent.sh`) also installs OCI CLI and fetches k3s_token from Vault when enabled.
+
+### Boot Volume Backups (`backup.tf`)
+- Controlled by `enable_backup` variable (default: `true`).
+- Creates a custom `oci_core_volume_backup_policy` with weekly full backups, 1-week retention.
+- Assigns the policy to all server boot volumes (`data.oci_core_instance.k3s_servers[*].boot_volume_id`) and the standalone worker boot volume.
+- With 4 nodes and 1-week retention there are at most 4 active backups — within the 5-backup Always Free limit.
+- Do NOT increase retention or frequency beyond 1-week/weekly without exceeding the free limit.
+
+### Object Storage State Bucket (`objectstorage.tf`)
+- Controlled by `enable_object_storage_state` variable (default: `true`).
+- Creates a versioned (`versioning = "Enabled"`) bucket with `access_type = "NoPublicAccess"`.
+- The `terraform_state_backend` output provides the bucket name and namespace hint for the S3-compatible backend URL.
+- Users need an OCI Customer Secret Key for S3 credentials (not managed by this module).
+
+### OCI Notifications + Alertmanager (`notifications.tf`)
+- Controlled by `enable_notifications` variable (default: `false`).
+- Creates `oci_ons_notification_topic.k3s_alerts` + optional email subscription (`alertmanager_email`).
+- Cloud-init **always** creates the `alertmanager-oci-config` Secret in the `monitoring` namespace — with a null receiver when disabled, OCI webhook receiver when enabled.
+- `gitops/apps/kube-prometheus-stack.yaml` references this secret via `alertmanager.alertmanagerSpec.configSecret`. Do NOT remove `configSecret: alertmanager-oci-config` from that file — the secret always exists.
+- `notification_topic_endpoint` output provides the HTTPS endpoint for the Alertmanager webhook.
+
+### MySQL HeatWave (`mysql.tf`)
+- Controlled by `enable_mysql` variable (default: `false`).
+- Uses `shape_name = var.mysql_shape` (default `"MySQL.Free"` — the Always Free shape).
+- Placed in the private subnet, reachable by all k3s nodes on port 3306.
+- Admin password generated by `random_password.mysql_admin_password` (in `mysql.tf`).
+- Cloud-init pre-creates a `mysql-credentials` Kubernetes Secret in the `default` namespace.
+- `mysql_endpoint` and `mysql_admin_credentials` (sensitive) outputs are available after apply.
+- `is_highly_available = false` — HA MySQL is NOT Always Free.
