@@ -449,6 +449,12 @@ variable "enable_object_storage_state" {
   default     = true
 }
 
+variable "enable_longhorn_backup" {
+  type        = bool
+  description = "Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups (S3-compatible). See longhorn_backup_setup output for connection instructions. Shares the 20 GB free allowance with the Terraform state bucket."
+  default     = true
+}
+
 # ── Notifications ─────────────────────────────────────────────────────────────
 
 variable "enable_notifications" {
