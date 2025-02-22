@@ -39,6 +39,9 @@ certmanager_email_address = "you@example.com"
 # public_key = "ssh-ed25519 AAAA..."
 # public_key_path = "~/.ssh/id_ed25519.pub"   # fallback when public_key is null
 
+# Append all SSH keys published on a GitHub profile to every node's authorized_keys
+# github_ssh_keys_username = "mbologna"
+
 # ── Topology (Always Free: 4 OCPUs / 24 GB total across all A1.Flex nodes) ───
 # Default: 3 HA control-plane nodes (instance pool) + 1 standalone worker = 4 × (1 OCPU / 6 GB)
 # k3s_standalone_worker=true uses a direct oci_core_instance for the worker because

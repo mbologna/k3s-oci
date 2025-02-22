@@ -14,6 +14,18 @@ data "http" "k3s_latest_release" {
   }
 }
 
+data "http" "github_ssh_keys" {
+  count = var.github_ssh_keys_username != "" ? 1 : 0
+  url   = "https://github.com/${var.github_ssh_keys_username}.keys"
+
+  lifecycle {
+    postcondition {
+      condition     = self.status_code == 200
+      error_message = "Failed to fetch SSH keys for GitHub user '${var.github_ssh_keys_username}' (HTTP ${self.status_code})."
+    }
+  }
+}
+
 resource "random_password" "k3s_token" {
   length  = 64
   special = false

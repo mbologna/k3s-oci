@@ -37,26 +37,8 @@ resource "oci_logging_log" "cloud_init" {
   log_type      = "CUSTOM"
   freeform_tags = local.common_tags
 
-  configuration {
-    source {
-      category    = "custom"
-      resource    = oci_logging_log_group.k3s[0].id
-      service     = "k3s-cloud-init"
-      source_type = "OCISERVICE"
-    }
-    compartment_id = var.compartment_ocid
-  }
-
   is_enabled         = true
   retention_duration = 30
-
-  # When this log must be replaced, create the new log first so that Terraform
-  # can update unified_agent_configuration to reference the new log OCID before
-  # deleting the old one. Without this, OCI returns 409-Conflict because the
-  # agent config still points to the old log at deletion time.
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "oci_logging_unified_agent_configuration" "k3s_cloud_init" {
