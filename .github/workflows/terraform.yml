@@ -93,6 +93,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Update README with terraform-docs
         uses: terraform-docs/gh-actions@v1
