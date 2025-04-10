@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+    targetRevision: "7.8.23"
+    helm:
+      valuesObject:
+        # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
+        configs:
+          params:
+            server.insecure: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true  # required for ArgoCD CRDs with large annotations

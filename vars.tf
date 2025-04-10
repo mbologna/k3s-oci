@@ -316,13 +316,6 @@ variable "ingress_controller" {
 
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
 
-variable "certmanager_release" {
-  type        = string
-  description = "cert-manager release to install."
-  # renovate: datasource=github-releases depName=cert-manager/cert-manager
-  default = "v1.20.2"
-}
-
 variable "certmanager_email_address" {
   type        = string
   description = "Email address for Let's Encrypt ACME registration. Must be a real address."
@@ -333,30 +326,7 @@ variable "certmanager_email_address" {
   }
 }
 
-# ── Longhorn (always installed — provides distributed storage + cluster activity) ──
-
-variable "longhorn_release" {
-  type        = string
-  description = "Longhorn release to install."
-  # renovate: datasource=github-releases depName=longhorn/longhorn
-  default = "v1.11.1"
-}
-
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
-
-variable "argocd_chart_release" {
-  type        = string
-  description = "ArgoCD Helm chart version (argo/argo-cd). Chart version maps 1:1 to an ArgoCD app version."
-  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "7.8.23"
-}
-
-variable "argocd_image_updater_release" {
-  type        = string
-  description = "ArgoCD Image Updater release to install (kubectl apply)."
-  # renovate: datasource=github-releases depName=argoproj-labs/argocd-image-updater
-  default = "v0.18.0"
-}
 
 variable "argocd_hostname" {
   type        = string
@@ -390,13 +360,6 @@ variable "gitops_repo_url" {
 
 # ── kured (always installed — graceful kernel reboot management) ──────────────
 
-variable "kured_release" {
-  type        = string
-  description = "kured Helm chart version."
-  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  default = "5.5.1"
-}
-
 variable "kured_reboot_days" {
   type        = list(string)
   description = "Days of the week on which kured may reboot nodes. Defaults to all days."
@@ -415,33 +378,10 @@ variable "kured_end_time" {
   default     = "06:00"
 }
 
-# ── k3s automated upgrades (system-upgrade-controller) ───────────────────────
-
-variable "system_upgrade_controller_release" {
-  type        = string
-  description = "system-upgrade-controller version for k3s automated upgrades."
-  # renovate: datasource=github-releases depName=rancher/system-upgrade-controller
-  default = "v0.15.2"
-}
-
-variable "k3s_upgrade_channel" {
-  type        = string
-  description = "k3s release channel to track for automated upgrades. 'stable' is recommended; 'latest' tracks RC releases."
-  default     = "stable"
-  validation {
-    condition     = contains(["stable", "latest", "testing"], var.k3s_upgrade_channel)
-    error_message = "k3s_upgrade_channel must be one of: stable, latest, testing."
-  }
-}
-
 # ── OCI CLI ───────────────────────────────────────────────────────────────────
-
-variable "oci_cli_version" {
-  type        = string
-  description = "OCI CLI version installed on control-plane nodes for first-server detection."
-  # renovate: datasource=github-releases depName=oracle/oci-cli
-  default = "3.52.0"
-}
+# OCI CLI is installed at latest available version at bootstrap time.
+# It is only used during node initialisation for Vault secret fetch and is
+# not a running workload — no versioning needed.
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 
@@ -505,4 +445,44 @@ variable "enable_vault" {
   type        = bool
   description = "Store cluster secrets (k3s_token, longhorn_ui_password, grafana_admin_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
   default     = true
+}
+
+# Bootstrap chart versions — must match the targetRevision in the corresponding
+# gitops/apps/*.yaml. Renovate keeps both in sync via a single PR.
+# The bootstrap install uses this version so the cluster never starts with a
+# chart that is newer than what ArgoCD would reconcile to.
+
+variable "traefik_chart_version" {
+  type        = string
+  description = "Traefik Helm chart version used for the bootstrap install. Must match gitops/apps/traefik.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
+  default = "39.0.8"
+}
+
+variable "certmanager_chart_version" {
+  type        = string
+  description = "cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+  default = "v1.20.2"
+}
+
+variable "longhorn_chart_version" {
+  type        = string
+  description = "Longhorn Helm chart version used for the bootstrap install. Must match gitops/apps/longhorn.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+  default = "1.11.1"
+}
+
+variable "argocd_chart_version" {
+  type        = string
+  description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+  default = "7.8.23"
+}
+
+variable "kured_chart_version" {
+  type        = string
+  description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+  default = "5.5.1"
 }

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Remote SUC manifests — version appears in both URLs below.
+# Renovate updates both URLs atomically when a new release is published.
+# renovate: datasource=github-releases depName=rancher/system-upgrade-controller
+# SUC_VERSION=v0.15.2
+resources:
+  - https://github.com/rancher/system-upgrade-controller/releases/download/v0.15.2/crd.yaml
+  - https://github.com/rancher/system-upgrade-controller/releases/download/v0.15.2/system-upgrade-controller.yaml
+  - plans.yaml
