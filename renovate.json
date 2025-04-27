@@ -6,6 +6,7 @@
   ],
   "labels": ["dependencies"],
   "reviewers": ["mbologna"],
+  "platformAutomerge": true,
   "terraform": {
     "enabled": true
   },
@@ -27,10 +28,12 @@
       "automerge": false
     },
     {
-      "description": "Auto-merge patch-level k3s updates",
+      "description": "Auto-merge patch-level k3s updates after CI passes",
       "matchPackageNames": ["k3s-io/k3s"],
       "matchUpdateTypes": ["patch"],
-      "automerge": true
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
     }
   ],
   "customManagers": [
