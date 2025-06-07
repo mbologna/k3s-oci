@@ -18,7 +18,7 @@ do not introduce resources that incur cost.
 | Cloud | Oracle Cloud Infrastructure (OCI) |
 | OS | Ubuntu 24.04 LTS (aarch64) only |
 | Kubernetes | k3s (latest resolved at plan time) |
-| Ingress | Traefik 2 (`traefik2`) |
+| Ingress | Envoy Gateway (Gateway API) |
 | Observability | kube-prometheus-stack (via GitOps) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
@@ -70,8 +70,10 @@ files/k3s-install-server.sh  — cloud-init for control-plane nodes (Ubuntu 24.0
 files/k3s-install-agent.sh   — cloud-init for worker nodes (Ubuntu 24.04)
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn ingress with BasicAuth (Traefik Middleware + Secret)
+gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
+gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
+gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage
 .github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
@@ -169,13 +171,13 @@ terraform-docs .
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
 - Do not break the `terraform validate` step — templatefile vars must match what the scripts reference
-- **`ingress_controller` only accepts `"traefik2"`** — do not add nginx or other ingress controllers
+- **Do not add nginx or other ingress controllers** — Envoy Gateway (Gateway API) is the ingress implementation. All HTTP/HTTPS routing uses standard `HTTPRoute`, `Gateway`, and `GatewayClass` resources.
 - **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across all 4 nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and user workloads coexist safely.
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
 - **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the three cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
-- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
+- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
 - **Do not reduce `boot_volume_size_in_gbs` below 50 GB** — OCI requires ≥ 50 GB for boot
@@ -184,12 +186,17 @@ terraform-docs .
 
 ## Special implementation notes
 
-### Traefik ingress
-- Deployed as a **DaemonSet** (one pod per node) so every NLB backend serves ingress locally — no cross-node forwarding hop, no single-pod SPOF.
-- `priorityClassName: system-cluster-critical` ensures Traefik pods preempt user workloads under memory pressure and are never evicted before system daemons.
+### Envoy Gateway (Gateway API)
+
+- Deployed as a **DaemonSet** (one Envoy proxy pod per node) via the `EnvoyProxy` resource — every NLB backend serves ingress locally, no cross-node forwarding, no single-pod SPOF.
+- `priorityClassName: system-cluster-critical` ensures Envoy proxy pods preempt user workloads under memory pressure and are never evicted before system daemons.
 - `resources.requests: 100m CPU / 128Mi RAM` prevents scheduling on nodes that cannot sustain ingress load.
-- `PodDisruptionBudget maxUnavailable: 1` (`traefik-pdb`) is applied immediately after Helm install so kured/drain can only take down one Traefik pod at a time — 3 of 4 nodes always serve ingress during rolling maintenance.
-- Do not change `deployment.kind` back to `Deployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
+- `PodDisruptionBudget maxUnavailable: 1` (`envoy-gateway-pdb`) is applied so kured/drain can only take down one proxy pod at a time — 3 of 4 nodes always serve ingress during rolling maintenance.
+- All HTTP/HTTPS routing uses standard `HTTPRoute` resources (Gateway API v1). Proprietary `IngressRoute` CRDs are not used.
+- HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with `--feature-gates=ExperimentalGatewayAPISupport=true`.
+- TLS certificates live in the `envoy-gateway-system` namespace (same as the Gateway) so no `ReferenceGrant` is needed.
+- BasicAuth for Longhorn UI uses Envoy Gateway `SecurityPolicy` with `.htpasswd` Secret — same security, standard API.
+- Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
 
 ### Longhorn storage
 - Replica count is **explicitly pinned to 3** via `--set defaultSettings.defaultReplicaCount=3` and `--set persistence.defaultClassReplicaCount=3` in the Helm install. Do not rely on the upstream chart default.
@@ -200,15 +207,15 @@ terraform-docs .
 - Password is generated by `random_password.longhorn_ui_password` in `data.tf` and passed to
   cloud-init as `longhorn_ui_password`.
 - The cloud-init script generates an APR1 hash: `openssl passwd -apr1 "$LONGHORN_PASSWORD"`
-- A `Secret` (`longhorn-basic-auth`) and Traefik `Middleware` (`longhorn-basicauth`) are created
-  in the `longhorn-system` namespace.
-- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `IngressRoute`.
+- A `Secret` (`longhorn-basic-auth-secret`) and Envoy Gateway `SecurityPolicy` (`longhorn-basic-auth`) are created
+  in the `longhorn-system` namespace. The `.htpasswd` key format is used.
+- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `HTTPRoute`.
 - Credentials are available via the `longhorn_ui_credentials` sensitive output.
 - In heredocs where Terraform interpolation is needed (`<< LHEOF` not `<< 'LHEOF'`), Terraform
   vars use `${var}` and bash vars must use `$${VAR}`.
 
 ### cert-manager GitOps adoption
-- Cloud-init bootstraps ClusterIssuers with the correct email from `var.letsencrypt_email`.
+- Cloud-init bootstraps ClusterIssuers with the correct email from `var.certmanager_email_address`.
   This must happen at bootstrap time — the email cannot be in git without manual editing.
 - `gitops/cert-manager/` contains template ClusterIssuers and an ArgoCD Application template.
 - To enable ArgoCD management of ClusterIssuers: update the email in `cluster-issuers.yaml`,
@@ -269,3 +276,30 @@ terraform-docs .
 - Cloud-init pre-creates a `mysql-credentials` Kubernetes Secret in the `default` namespace.
 - `mysql_endpoint` and `mysql_admin_credentials` (sensitive) outputs are available after apply.
 - `is_highly_available = false` — HA MySQL is NOT Always Free.
+
+### External DNS (`enable_external_dns`)
+- Controlled by `enable_external_dns` variable (default: `false`).
+- Installs External DNS (chart version tracked by Renovate) configured for the Cloudflare provider.
+- Syncs `HTTPRoute` hostnames to Cloudflare DNS automatically — annotate resources with
+  `external-dns.alpha.kubernetes.io/hostname: your.host.example.com`.
+- Requires `cloudflare_api_token` and `cloudflare_zone_id`.
+- `external_dns_domain_filter` limits which zones External DNS manages (prevents accidental changes
+  to unrelated zones when the API token covers multiple zones).
+- `txtOwnerId` is set to `var.cluster_name` so multiple clusters can share a Cloudflare zone.
+
+### External Secrets (`enable_external_secrets`)
+- Controlled by `enable_external_secrets` variable (default: `false`). Requires `enable_vault = true`.
+- Installs External Secrets Operator and creates a `ClusterSecretStore` backed by OCI Vault using
+  instance_principal auth — no credentials to rotate.
+- The existing IAM `read secret-family` policy (added when `enable_vault = true`) already covers it.
+- See `gitops/external-secrets/` for the ClusterSecretStore template and example ExternalSecret CRs.
+- Users create `ExternalSecret` resources referencing Vault secret OCIDs; the operator syncs them
+  into Kubernetes Secrets automatically and rotates on the configured refresh interval.
+
+### DNS-01 ACME challenge (`enable_dns01_challenge`)
+- Controlled by `enable_dns01_challenge` variable (default: `false`). Requires `cloudflare_api_token`.
+- When enabled, cloud-init creates a `cloudflare-api-token` Secret in `cert-manager` and switches
+  ClusterIssuers to use DNS-01 (Cloudflare) instead of HTTP-01.
+- Benefits: supports wildcard certs (`*.example.com`), no inbound port 80 required.
+- See `gitops/cert-manager/cluster-issuers.yaml` for the commented DNS-01 ClusterIssuer variants
+  to use when adopting cert-manager into ArgoCD.

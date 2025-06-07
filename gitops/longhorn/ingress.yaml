@@ -1,60 +1,64 @@
-# Longhorn UI IngressRoute with BasicAuth
+# Longhorn UI HTTPRoute with BasicAuth via Envoy Gateway SecurityPolicy
 #
 # To enable: set longhorn_hostname = "longhorn.example.com" in terraform.tfvars
 # cloud-init will create this manifest automatically (with a generated password).
 # The password is available via: terraform output -raw longhorn_ui_credentials
 #
-# If you prefer to manage it via GitOps instead, fill in the hostname and password below.
+# If you prefer to manage it via GitOps instead, fill in the hostname below,
+# generate the htpasswd hash with: openssl passwd -apr1 'your-password'
+# and update the .htpasswd entry in the Secret.
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: longhorn-basicauth
+  name: longhorn-basic-auth-secret
   namespace: longhorn-system
 type: Opaque
 stringData:
+  # htpasswd format: user:apr1-hashed-password
   # Generate with: openssl passwd -apr1 'your-password'
-  users: "admin:$apr1$replaceme$replaceme"
+  .htpasswd: "admin:$apr1$replaceme$replaceme"
 ---
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
+# SecurityPolicy attaches BasicAuth enforcement to the Longhorn HTTPRoute.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
 metadata:
-  name: longhorn-basicauth
+  name: longhorn-basic-auth
   namespace: longhorn-system
 spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: longhorn-frontend
   basicAuth:
-    secret: longhorn-basicauth
+    users:
+      name: longhorn-basic-auth-secret
 ---
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: longhorn-frontend
   namespace: longhorn-system
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - kind: Rule
-      # TODO: replace with your actual hostname
-      match: Host(`longhorn.example.com`)
-      priority: 10
-      middlewares:
-        - name: longhorn-basicauth
-          namespace: longhorn-system
-      services:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      # TODO: replace https-longhorn with your actual HTTPS listener name
+      sectionName: https-longhorn
+  hostnames:
+    # TODO: replace with your actual hostname
+    - "longhorn.example.com"
+  rules:
+    - backendRefs:
         - name: longhorn-frontend
           port: 80
-  tls:
-    secretName: longhorn-frontend-tls
-    options:
-      name: tls-modern
-      namespace: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: longhorn-frontend-tls
-  namespace: longhorn-system
+  # TLS secret lives in the Gateway namespace so no ReferenceGrant is needed.
+  namespace: envoy-gateway-system
 spec:
   secretName: longhorn-frontend-tls
   issuerRef:
