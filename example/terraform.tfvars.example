@@ -1,0 +1,36 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# Never commit terraform.tfvars to version control.
+
+# OCI Authentication
+tenancy_ocid     = "ocid1.tenancy.oc1..example"
+user_ocid        = "ocid1.user.oc1..example"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path = "~/.oci/oci_api_key.pem"
+
+# Region & placement  (must be your home region for Always Free)
+region              = "eu-frankfurt-1"
+availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
+
+# Cluster
+cluster_name  = "my-k3s"
+environment   = "staging"
+
+# Find Ubuntu 22.04 / Oracle Linux 9 image OCIDs at:
+# https://docs.oracle.com/en-us/iaas/images/
+os_image_id = "ocid1.image.oc1..example"
+
+# Your workstation IP (restrict SSH and optional kubeapi access)
+my_public_ip_cidr = "1.2.3.4/32"
+
+# cert-manager — must be a real email for Let's Encrypt
+certmanager_email_address = "you@example.com"
+
+# ── Topology (Always Free: 4 OCPUs / 24 GB total across all A1.Flex nodes) ───
+# Default: 3 HA control-plane nodes + 1 standalone extra worker = 4 × (1 OCPU / 6 GB)
+k3s_server_pool_size  = 3
+k3s_worker_pool_size  = 0
+k3s_extra_worker_node = true
+
+# ── Optional ──────────────────────────────────────────────────────────────────
+# enable_bastion = true   # Adds a free E2.1.Micro bastion; nodes move to private subnet
+# expose_kubeapi = false  # Set to true to reach kubeapi via public NLB (restricted to my_public_ip_cidr)
