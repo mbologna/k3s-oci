@@ -1,0 +1,40 @@
+# Longhorn UI IngressRoute
+#
+# To enable: set longhorn_hostname = "longhorn.example.com" in terraform.tfvars
+# cloud-init will create this manifest automatically when longhorn_hostname is set.
+#
+# If you prefer to manage it via GitOps instead, fill in the hostname below
+# and apply via: kubectl apply -f gitops/longhorn/ingress.yaml
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: longhorn-frontend
+  namespace: longhorn-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      # TODO: replace with your actual hostname
+      match: Host(`longhorn.example.com`)
+      priority: 10
+      services:
+        - name: longhorn-frontend
+          port: 80
+  tls:
+    secretName: longhorn-frontend-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: longhorn-frontend-tls
+  namespace: longhorn-system
+spec:
+  secretName: longhorn-frontend-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    # TODO: replace with your actual hostname
+    - longhorn.example.com
