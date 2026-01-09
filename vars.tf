@@ -49,8 +49,18 @@ variable "unique_tag_value" {
 
 variable "public_key_path" {
   type        = string
-  description = "Path to the SSH public key placed on every instance"
+  description = "Path to SSH public key file. Used as fallback when public_key is null."
   default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "public_key" {
+  type        = string
+  description = <<-EOT
+    SSH public key content placed on every instance. Preferred over public_key_path —
+    pass the key string directly for CI pipelines where ~/.ssh does not exist.
+    When null, the key is read from public_key_path at plan time.
+  EOT
+  default     = null
 }
 
 variable "my_public_ip_cidr" {
@@ -67,7 +77,7 @@ variable "my_public_ip_cidr" {
 
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image (Ubuntu 22.04 or Oracle Linux 9 recommended)"
+  description = "OCID of the Ubuntu 24.04 LTS (Noble) image for A1.Flex and E2.1.Micro instances. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/"
 }
 
 variable "compute_shape" {
@@ -273,40 +283,27 @@ variable "oci_identity_policy_name" {
 
 variable "disable_ingress" {
   type        = bool
-  description = "When true, no ingress controller is installed (disables Traefik and skips additional controllers)"
+  description = "When true, no ingress controller is installed (disables Traefik and skips Traefik 2 install)"
   default     = false
 }
 
 variable "ingress_controller" {
   type        = string
-  description = "Ingress controller to deploy. 'traefik' keeps the k3s built-in, 'nginx' and 'istio' replace it."
+  description = "'traefik' keeps the k3s built-in Traefik v2; 'traefik2' installs Traefik via Helm for finer control."
   default     = "traefik"
 
   validation {
-    condition     = contains(["traefik", "nginx", "traefik2", "istio"], var.ingress_controller)
-    error_message = "Supported values: traefik, traefik2, nginx, istio."
+    condition     = contains(["traefik", "traefik2"], var.ingress_controller)
+    error_message = "Supported values: traefik (k3s built-in), traefik2 (Helm-managed)."
   }
 }
 
-variable "nginx_ingress_release" {
-  type    = string
-  default = "v1.12.1"
-}
-
-variable "istio_release" {
-  type    = string
-  default = "1.21.2"
-}
-
-# ── cert-manager ──────────────────────────────────────────────────────────────
-
-variable "install_certmanager" {
-  type    = bool
-  default = true
-}
+# ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
 
 variable "certmanager_release" {
-  type    = string
+  type        = string
+  description = "cert-manager release to install."
+  # renovate: datasource=github-releases depName=cert-manager/cert-manager
   default = "v1.16.3"
 }
 
@@ -320,50 +317,42 @@ variable "certmanager_email_address" {
   }
 }
 
-# ── Longhorn ──────────────────────────────────────────────────────────────────
-
-variable "install_longhorn" {
-  type    = bool
-  default = true
-}
+# ── Longhorn (always installed — provides distributed storage + cluster activity) ──
 
 variable "longhorn_release" {
-  type    = string
+  type        = string
+  description = "Longhorn release to install."
+  # renovate: datasource=github-releases depName=longhorn/longhorn
   default = "v1.8.1"
 }
 
-# ── ArgoCD ────────────────────────────────────────────────────────────────────
-
-variable "install_argocd" {
-  type    = bool
-  default = true
-}
+# ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
 
 variable "argocd_release" {
-  type    = string
+  type        = string
+  description = "ArgoCD release to install."
+  # renovate: datasource=github-releases depName=argoproj/argo-cd
   default = "v2.14.9"
 }
 
-variable "install_argocd_image_updater" {
-  type    = bool
-  default = true
-}
-
 variable "argocd_image_updater_release" {
-  type    = string
+  type        = string
+  description = "ArgoCD Image Updater release to install."
+  # renovate: datasource=github-releases depName=argoproj-labs/argocd-image-updater
   default = "v0.16.0"
 }
 
-# ── kured ─────────────────────────────────────────────────────────────────────
-
-variable "install_kured" {
-  type        = bool
-  description = "Install kured for automatic node reboots after unattended-upgrades"
-  default     = true
+variable "argocd_hostname" {
+  type        = string
+  description = "Fully-qualified hostname for the ArgoCD UI IngressRoute (e.g. argocd.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created."
+  default     = null
 }
+
+# ── kured (always installed — graceful kernel reboot management) ──────────────
 
 variable "kured_release" {
   type        = string
-  description = "kured Helm chart version"
-  default     = "5.5.1"
+  description = "kured Helm chart version."
+  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+  default = "5.5.1"
 }

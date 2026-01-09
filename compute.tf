@@ -59,7 +59,7 @@ resource "oci_core_instance_configuration" "k3s_server" {
       }
 
       metadata = {
-        ssh_authorized_keys = file(var.public_key_path)
+        ssh_authorized_keys = local.ssh_public_key
         user_data           = data.cloudinit_config.k3s_server.rendered
       }
 
@@ -144,7 +144,7 @@ resource "oci_core_instance_configuration" "k3s_worker" {
       }
 
       metadata = {
-        ssh_authorized_keys = file(var.public_key_path)
+        ssh_authorized_keys = local.ssh_public_key
         user_data           = data.cloudinit_config.k3s_worker.rendered
       }
 
@@ -230,7 +230,7 @@ resource "oci_core_instance" "k3s_extra_worker" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.public_key_path)
+    ssh_authorized_keys = local.ssh_public_key
     user_data           = data.cloudinit_config.k3s_worker.rendered
   }
 }
@@ -262,6 +262,6 @@ resource "oci_core_instance" "bastion" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.public_key_path)
+    ssh_authorized_keys = local.ssh_public_key
   }
 }
