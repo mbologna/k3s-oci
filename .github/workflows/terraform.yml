@@ -35,6 +35,23 @@ jobs:
         working-directory: example
         run: terraform validate
 
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint init
+        run: tflint --init
+
+      - name: tflint
+        run: tflint --recursive
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest

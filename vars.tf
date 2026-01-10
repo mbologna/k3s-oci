@@ -10,11 +10,6 @@ variable "compartment_ocid" {
   description = "OCID of the compartment where all resources are created"
 }
 
-variable "region" {
-  type        = string
-  description = "OCI region (must be your home region for Always Free resources)"
-}
-
 variable "availability_domain" {
   type        = string
   description = "Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1'"
@@ -225,12 +220,6 @@ variable "private_subnet_dns_label" {
 
 # ── Load balancers ────────────────────────────────────────────────────────────
 
-variable "public_lb_shape" {
-  type        = string
-  description = "Shape for the public NLB"
-  default     = "flexible"
-}
-
 variable "kube_api_port" {
   type        = number
   description = "Port the k3s API server listens on"
@@ -328,16 +317,16 @@ variable "longhorn_release" {
 
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
 
-variable "argocd_release" {
+variable "argocd_chart_release" {
   type        = string
-  description = "ArgoCD release to install."
-  # renovate: datasource=github-releases depName=argoproj/argo-cd
-  default = "v2.14.9"
+  description = "ArgoCD Helm chart version (argo/argo-cd). Chart version maps 1:1 to an ArgoCD app version."
+  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+  default = "7.8.23"
 }
 
 variable "argocd_image_updater_release" {
   type        = string
-  description = "ArgoCD Image Updater release to install."
+  description = "ArgoCD Image Updater release to install (kubectl apply)."
   # renovate: datasource=github-releases depName=argoproj-labs/argocd-image-updater
   default = "v0.16.0"
 }
@@ -348,6 +337,18 @@ variable "argocd_hostname" {
   default     = null
 }
 
+variable "longhorn_hostname" {
+  type        = string
+  description = "Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with basic-auth and a cert-manager TLS certificate is created."
+  default     = null
+}
+
+variable "gitops_repo_url" {
+  type        = string
+  description = "Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo."
+  default     = "https://github.com/mbologna/k3s-oci.git"
+}
+
 # ── kured (always installed — graceful kernel reboot management) ──────────────
 
 variable "kured_release" {
@@ -355,4 +356,31 @@ variable "kured_release" {
   description = "kured Helm chart version."
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
   default = "5.5.1"
+}
+
+variable "kured_reboot_days" {
+  type        = list(string)
+  description = "Days of the week on which kured may reboot nodes. Defaults to all days."
+  default     = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+}
+
+variable "kured_start_time" {
+  type        = string
+  description = "Start of the kured maintenance window (UTC, HH:MM). Default 22:00 UTC = midnight CET / 01:00 CEST."
+  default     = "22:00"
+}
+
+variable "kured_end_time" {
+  type        = string
+  description = "End of the kured maintenance window (UTC, HH:MM). Default 06:00 UTC = 08:00 CET / 09:00 CEST."
+  default     = "06:00"
+}
+
+# ── OCI CLI ───────────────────────────────────────────────────────────────────
+
+variable "oci_cli_version" {
+  type        = string
+  description = "OCI CLI version installed on control-plane nodes for first-server detection."
+  # renovate: datasource=github-releases depName=oracle/oci-cli
+  default = "3.52.0"
 }

@@ -9,12 +9,21 @@
   "terraform": {
     "enabled": true
   },
+  "github-actions": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Group all Terraform provider updates into one PR",
       "matchManagers": ["terraform"],
       "matchDepTypes": ["provider"],
       "groupName": "terraform providers",
+      "automerge": false
+    },
+    {
+      "description": "Pin GitHub Actions to digest SHAs for supply-chain security",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true,
       "automerge": false
     },
     {
