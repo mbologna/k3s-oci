@@ -78,34 +78,84 @@ terraform apply
 
 ## Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `region` | — | OCI home region |
-| `availability_domain` | — | Availability domain name |
-| `tenancy_ocid` | — | Tenancy OCID |
-| `compartment_ocid` | — | Compartment OCID |
-| `cluster_name` | — | Logical cluster name (used in tags and display names) |
-| `os_image_id` | — | Ubuntu 24.04 LTS (Noble) image OCID for A1.Flex and E2.1.Micro |
-| `my_public_ip_cidr` | — | Your workstation CIDR for SSH / kubeapi access |
-| `certmanager_email_address` | — | Real email for Let's Encrypt ACME |
-| `k3s_version` | `"latest"` | k3s version; resolved at `plan` time when `"latest"` |
-| `k3s_server_pool_size` | `3` | Control-plane pool size (must be odd ≥ 1) |
-| `k3s_worker_pool_size` | `0` | Worker instance pool size |
-| `k3s_extra_worker_node` | `true` | Provision the 4th A1.Flex node as a standalone worker |
-| `server_ocpus` | `1` | OCPUs per control-plane node |
-| `server_memory_in_gbs` | `6` | RAM per control-plane node |
-| `worker_ocpus` | `1` | OCPUs per worker node |
-| `worker_memory_in_gbs` | `6` | RAM per worker node |
-| `boot_volume_size_in_gbs` | `50` | Boot volume size (47–200 GB) |
-| `enable_bastion` | `false` | Provision E2.1.Micro bastion in the public subnet |
-| `expose_kubeapi` | `false` | Expose kubeapi via public NLB (restricted to `my_public_ip_cidr`) |
-| `ingress_controller` | `"traefik"` | `traefik` (k3s built-in) or `traefik2` (Helm-managed) |
-| `disable_ingress` | `false` | Skip all ingress installation |
-| `certmanager_release` | `v1.16.3` | cert-manager release (always installed) |
-| `longhorn_release` | `v1.8.1` | Longhorn release (always installed) |
-| `argocd_release` | `v2.14.9` | ArgoCD release (always installed) |
-| `argocd_image_updater_release` | `v0.16.0` | ArgoCD Image Updater release (always installed) |
-| `kured_release` | `5.5.1` | kured Helm chart version (always installed) |
+<!-- BEGIN_TF_DOCS -->
+## Inputs
+
+| Name | Description | Type | Default | Required |
+| ---- | ----------- | ---- | ------- | :------: |
+| <a name="input_argocd_chart_release"></a> [argocd\_chart\_release](#input\_argocd\_chart\_release) | ArgoCD Helm chart version (argo/argo-cd). Chart version maps 1:1 to an ArgoCD app version. | `string` | `"7.8.23"` | no |
+| <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI IngressRoute (e.g. argocd.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created. | `string` | `null` | no |
+| <a name="input_argocd_image_updater_release"></a> [argocd\_image\_updater\_release](#input\_argocd\_image\_updater\_release) | ArgoCD Image Updater release to install (kubectl apply). | `string` | `"v0.16.0"` | no |
+| <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
+| <a name="input_bastion_shape"></a> [bastion\_shape](#input\_bastion\_shape) | Shape for the bastion instance. VM.Standard.E2.1.Micro is Always Free. | `string` | `"VM.Standard.E2.1.Micro"` | no |
+| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB. Max 50 GB per instance to stay within the 200 GB Always Free block storage budget. | `number` | `50` | no |
+| <a name="input_certmanager_email_address"></a> [certmanager\_email\_address](#input\_certmanager\_email\_address) | Email address for Let's Encrypt ACME registration. Must be a real address. | `string` | n/a | yes |
+| <a name="input_certmanager_release"></a> [certmanager\_release](#input\_certmanager\_release) | cert-manager release to install. | `string` | `"v1.16.3"` | no |
+| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Logical name for the cluster. Used in display names and freeform tags. | `string` | n/a | yes |
+| <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | OCID of the compartment where all resources are created | `string` | n/a | yes |
+| <a name="input_compute_shape"></a> [compute\_shape](#input\_compute\_shape) | OCI compute shape for k3s nodes | `string` | `"VM.Standard.A1.Flex"` | no |
+| <a name="input_disable_ingress"></a> [disable\_ingress](#input\_disable\_ingress) | When true, no ingress controller is installed (disables Traefik and skips Traefik 2 install) | `bool` | `false` | no |
+| <a name="input_enable_bastion"></a> [enable\_bastion](#input\_enable\_bastion) | Provision a bastion host using the VM.Standard.E2.1.Micro shape (Always Free, AMD).<br/>When enabled, k3s nodes are placed in a private subnet and the bastion is the only<br/>SSH entry point. Strongly recommended for production. | `bool` | `false` | no |
+| <a name="input_enable_oci_logging"></a> [enable\_oci\_logging](#input\_enable\_oci\_logging) | Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent. | `bool` | `true` | no |
+| <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment label (e.g. staging, production) | `string` | `"staging"` | no |
+| <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |
+| <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
+| <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
+| <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | n/a | `number` | `80` | no |
+| <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | n/a | `number` | `443` | no |
+| <a name="input_ingress_controller"></a> [ingress\_controller](#input\_ingress\_controller) | 'traefik2' installs Traefik via Helm for full control over the release and values. | `string` | `"traefik2"` | no |
+| <a name="input_ingress_controller_http_nodeport"></a> [ingress\_controller\_http\_nodeport](#input\_ingress\_controller\_http\_nodeport) | NodePort on workers that the ingress controller binds for HTTP traffic | `number` | `30080` | no |
+| <a name="input_ingress_controller_https_nodeport"></a> [ingress\_controller\_https\_nodeport](#input\_ingress\_controller\_https\_nodeport) | NodePort on workers that the ingress controller binds for HTTPS traffic | `number` | `30443` | no |
+| <a name="input_k3s_extra_worker_node"></a> [k3s\_extra\_worker\_node](#input\_k3s\_extra\_worker\_node) | When true, provisions one additional standalone worker instance (oci\_core\_instance).<br/>This is the recommended way to use the 4th Always Free A1.Flex OCPU without exceeding<br/>OCI instance pool limits per tenancy. Default topology: 3 servers (pool) + 1 extra worker. | `bool` | `true` | no |
+| <a name="input_k3s_server_pool_size"></a> [k3s\_server\_pool\_size](#input\_k3s\_server\_pool\_size) | Number of k3s control-plane nodes in the instance pool. Use 3 for HA (etcd quorum). Must be an odd number >= 1. | `number` | `3` | no |
+| <a name="input_k3s_subnet"></a> [k3s\_subnet](#input\_k3s\_subnet) | Subnet name used to derive the flannel interface. Leave 'default\_route\_table' to let k3s auto-detect. | `string` | `"default_route_table"` | no |
+| <a name="input_k3s_version"></a> [k3s\_version](#input\_k3s\_version) | k3s version to install. 'latest' resolves the current stable release at plan time via the GitHub API. | `string` | `"latest"` | no |
+| <a name="input_k3s_worker_pool_size"></a> [k3s\_worker\_pool\_size](#input\_k3s\_worker\_pool\_size) | Number of k3s worker nodes managed by an instance pool (can be 0). | `number` | `0` | no |
+| <a name="input_kube_api_port"></a> [kube\_api\_port](#input\_kube\_api\_port) | Port the k3s API server listens on | `number` | `6443` | no |
+| <a name="input_kured_end_time"></a> [kured\_end\_time](#input\_kured\_end\_time) | End of the kured maintenance window (UTC, HH:MM). Default 06:00 UTC = 08:00 CET / 09:00 CEST. | `string` | `"06:00"` | no |
+| <a name="input_kured_reboot_days"></a> [kured\_reboot\_days](#input\_kured\_reboot\_days) | Days of the week on which kured may reboot nodes. Defaults to all days. | `list(string)` | <pre>[<br/>  "mon",<br/>  "tue",<br/>  "wed",<br/>  "thu",<br/>  "fri",<br/>  "sat",<br/>  "sun"<br/>]</pre> | no |
+| <a name="input_kured_release"></a> [kured\_release](#input\_kured\_release) | kured Helm chart version. | `string` | `"5.5.1"` | no |
+| <a name="input_kured_start_time"></a> [kured\_start\_time](#input\_kured\_start\_time) | Start of the kured maintenance window (UTC, HH:MM). Default 22:00 UTC = midnight CET / 01:00 CEST. | `string` | `"22:00"` | no |
+| <a name="input_longhorn_hostname"></a> [longhorn\_hostname](#input\_longhorn\_hostname) | Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with BasicAuth and a cert-manager TLS certificate is created. | `string` | `null` | no |
+| <a name="input_longhorn_release"></a> [longhorn\_release](#input\_longhorn\_release) | Longhorn release to install. | `string` | `"v1.8.1"` | no |
+| <a name="input_longhorn_ui_username"></a> [longhorn\_ui\_username](#input\_longhorn\_ui\_username) | Username for Longhorn UI BasicAuth (only used when longhorn\_hostname is set). | `string` | `"admin"` | no |
+| <a name="input_my_public_ip_cidr"></a> [my\_public\_ip\_cidr](#input\_my\_public\_ip\_cidr) | Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32).<br/>Used to restrict bastion SSH access (when enable\_bastion = true) and<br/>kubeapi access via the public NLB (when expose\_kubeapi = true).<br/>k3s nodes live in the private subnet — direct SSH to nodes always<br/>requires the bastion as a jump host regardless of this setting. | `string` | n/a | yes |
+| <a name="input_oci_cli_version"></a> [oci\_cli\_version](#input\_oci\_cli\_version) | OCI CLI version installed on control-plane nodes for first-server detection. | `string` | `"3.52.0"` | no |
+| <a name="input_oci_core_vcn_cidr"></a> [oci\_core\_vcn\_cidr](#input\_oci\_core\_vcn\_cidr) | CIDR block for the VCN | `string` | `"10.0.0.0/16"` | no |
+| <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | n/a | `string` | `"k3svcn"` | no |
+| <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API | `string` | `"k3s-cluster-dynamic-group"` | no |
+| <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group | `string` | `"k3s-cluster-policy"` | no |
+| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the Ubuntu 24.04 LTS (Noble) image for A1.Flex and E2.1.Micro instances. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/ | `string` | n/a | yes |
+| <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
+| <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | n/a | `string` | `"k3sprivate"` | no |
+| <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path —<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
+| <a name="input_public_key_path"></a> [public\_key\_path](#input\_public\_key\_path) | Path to SSH public key file. Used as fallback when public\_key is null. | `string` | `"~/.ssh/id_rsa.pub"` | no |
+| <a name="input_public_subnet_cidr"></a> [public\_subnet\_cidr](#input\_public\_subnet\_cidr) | CIDR for the public subnet (load balancers and optional bastion) | `string` | `"10.0.0.0/24"` | no |
+| <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | n/a | `string` | `"k3spublic"` | no |
+| <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 24 GB (Always Free). | `number` | `6` | no |
+| <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 4 (Always Free). | `number` | `1` | no |
+| <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | OCID of the tenancy | `string` | n/a | yes |
+| <a name="input_unique_tag_key"></a> [unique\_tag\_key](#input\_unique\_tag\_key) | Freeform tag key applied to every resource for identification | `string` | `"k3s-provisioner"` | no |
+| <a name="input_unique_tag_value"></a> [unique\_tag\_value](#input\_unique\_tag\_value) | Freeform tag value applied to every resource for identification | `string` | `"https://github.com/mbologna/k3s-oci"` | no |
+| <a name="input_worker_memory_in_gbs"></a> [worker\_memory\_in\_gbs](#input\_worker\_memory\_in\_gbs) | RAM in GB per worker node. | `number` | `6` | no |
+| <a name="input_worker_ocpus"></a> [worker\_ocpus](#input\_worker\_ocpus) | OCPUs per worker node. | `number` | `1` | no |
+
+## Outputs
+
+| Name | Description |
+| ---- | ----------- |
+| <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
+| <a name="output_bastion_public_ip"></a> [bastion\_public\_ip](#output\_bastion\_public\_ip) | Public IP of the bastion host (null if enable\_bastion = false) |
+| <a name="output_internal_lb_ip"></a> [internal\_lb\_ip](#output\_internal\_lb\_ip) | Private IP of the internal load balancer (used by agents to join the cluster) |
+| <a name="output_k3s_extra_worker_private_ip"></a> [k3s\_extra\_worker\_private\_ip](#output\_k3s\_extra\_worker\_private\_ip) | Private IP of the standalone extra worker node |
+| <a name="output_k3s_servers_private_ips"></a> [k3s\_servers\_private\_ips](#output\_k3s\_servers\_private\_ips) | Private IPs of k3s control-plane nodes |
+| <a name="output_k3s_token"></a> [k3s\_token](#output\_k3s\_token) | k3s cluster join token (sensitive) |
+| <a name="output_k3s_workers_private_ips"></a> [k3s\_workers\_private\_ips](#output\_k3s\_workers\_private\_ips) | Private IPs of k3s worker nodes (instance pool) |
+| <a name="output_kubeconfig_hint"></a> [kubeconfig\_hint](#output\_kubeconfig\_hint) | How to retrieve kubeconfig after cluster is up |
+| <a name="output_longhorn_ui_credentials"></a> [longhorn\_ui\_credentials](#output\_longhorn\_ui\_credentials) | Longhorn UI credentials (only set when longhorn\_hostname is configured) |
+| <a name="output_oci_log_group_id"></a> [oci\_log\_group\_id](#output\_oci\_log\_group\_id) | OCI Log Group OCID for k3s cloud-init logs (null if enable\_oci\_logging = false) |
+| <a name="output_public_nlb_ip"></a> [public\_nlb\_ip](#output\_public\_nlb\_ip) | Public IP address of the NLB (point your DNS here) |
+<!-- END_TF_DOCS -->
 
 ## kubeconfig
 
