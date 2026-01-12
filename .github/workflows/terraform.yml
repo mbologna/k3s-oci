@@ -3,13 +3,27 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - '**.tf'
+      - 'files/**'
+      - '.github/workflows/**'
+      - '.tflint.hcl'
+      - '.terraform-docs.yml'
+      - 'README.md'
   pull_request:
     branches: [main]
+    paths:
+      - '**.tf'
+      - 'files/**'
+      - '.github/workflows/**'
+      - '.tflint.hcl'
+      - '.terraform-docs.yml'
+      - 'README.md'
 
 jobs:
   validate:
     name: Terraform Validate & Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -37,14 +51,15 @@ jobs:
 
   tflint:
     name: tflint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: terraform-linters/setup-tflint@v4
         with:
-          tflint_version: latest
+          # renovate: datasource=github-releases depName=terraform-linters/tflint
+          tflint_version: v0.56.0
 
       - name: tflint init
         run: tflint --init
@@ -54,7 +69,7 @@ jobs:
 
   shellcheck:
     name: ShellCheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -67,3 +82,23 @@ jobs:
           shellcheck --severity=warning \
             files/k3s-install-server.sh \
             files/k3s-install-agent.sh
+
+  terraform-docs:
+    name: terraform-docs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update README with terraform-docs
+        uses: terraform-docs/gh-actions@v1
+        with:
+          working-dir: .
+          output-file: README.md
+          output-method: inject
+          config-file: .terraform-docs.yml
+          git-push: true
+          git-commit-message: "docs: auto-update README variables via terraform-docs [skip ci]"
+

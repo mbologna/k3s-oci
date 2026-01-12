@@ -1,0 +1,12 @@
+---
+# Traefik RateLimit middleware for ArgoCD UI
+# Limits clients to 50 requests/second average (burst 100) to prevent brute-force and abuse.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: argocd-rate-limit
+  namespace: argocd
+spec:
+  rateLimit:
+    average: 50
+    burst: 100

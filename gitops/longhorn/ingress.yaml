@@ -1,10 +1,29 @@
-# Longhorn UI IngressRoute
+# Longhorn UI IngressRoute with BasicAuth
 #
 # To enable: set longhorn_hostname = "longhorn.example.com" in terraform.tfvars
-# cloud-init will create this manifest automatically when longhorn_hostname is set.
+# cloud-init will create this manifest automatically (with a generated password).
+# The password is available via: terraform output -raw longhorn_ui_credentials
 #
-# If you prefer to manage it via GitOps instead, fill in the hostname below
-# and apply via: kubectl apply -f gitops/longhorn/ingress.yaml
+# If you prefer to manage it via GitOps instead, fill in the hostname and password below.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: longhorn-basicauth
+  namespace: longhorn-system
+type: Opaque
+stringData:
+  # Generate with: openssl passwd -apr1 'your-password'
+  users: "admin:$apr1$replaceme$replaceme"
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: longhorn-basicauth
+  namespace: longhorn-system
+spec:
+  basicAuth:
+    secret: longhorn-basicauth
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -19,6 +38,9 @@ spec:
       # TODO: replace with your actual hostname
       match: Host(`longhorn.example.com`)
       priority: 10
+      middlewares:
+        - name: longhorn-basicauth
+          namespace: longhorn-system
       services:
         - name: longhorn-frontend
           port: 80

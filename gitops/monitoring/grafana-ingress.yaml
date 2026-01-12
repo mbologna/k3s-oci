@@ -1,0 +1,39 @@
+---
+# Grafana IngressRoute via Traefik
+#
+# To enable: set grafana_hostname = "grafana.example.com" in terraform.tfvars
+# then update the hostname below to match before committing.
+#
+# Grafana admin credentials: terraform output -raw grafana_admin_credentials
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      # TODO: replace with your actual Grafana hostname
+      match: Host(`grafana.example.com`)
+      priority: 10
+      services:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+  tls:
+    secretName: grafana-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: monitoring
+spec:
+  secretName: grafana-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    # TODO: replace with your actual Grafana hostname
+    - grafana.example.com
