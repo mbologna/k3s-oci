@@ -10,19 +10,22 @@ gitops/
 │   ├── app-of-apps.yaml            # Root Application — bootstrapped by cloud-init
 │   ├── argocd-config.yaml          # ArgoCD supplementary config (rate-limit middleware)
 │   ├── kube-prometheus-stack.yaml  # Prometheus + Grafana + Alertmanager (Helm)
-│   ├── monitoring-extras.yaml      # PrometheusRules, Grafana IngressRoute
+│   ├── monitoring-extras.yaml      # PrometheusRules, ServiceMonitor, Grafana IngressRoute
 │   ├── network-policies.yaml       # NetworkPolicies for all namespaces
 │   ├── pdbs.yaml                   # PodDisruptionBudgets for core components
-│   └── traefik-config.yaml         # Traefik TLSOptions and Middleware
+│   └── traefik-config.yaml         # Traefik TLSOptions and redirect Middleware
 ├── argocd/                         # ArgoCD supplementary config
 │   └── rate-limit.yaml             # Traefik RateLimit Middleware for ArgoCD UI
 ├── cert-manager/                   # ClusterIssuer templates (see adoption notes)
 │   ├── cluster-issuers.yaml        # Template — update email before using
 │   └── application-template.yaml  # Copy to apps/ after updating email
 ├── longhorn/                       # Longhorn supplementary config
-│   └── ingress.yaml                # BasicAuth IngressRoute template
+│   ├── ingress.yaml                # BasicAuth IngressRoute template
+│   └── backup-target.yaml         # OCI Object Storage backup target template (see file for setup)
 ├── monitoring/                     # Supplementary monitoring resources
+│   ├── alertmanager-config.yaml    # AlertmanagerConfig template (Slack/email/webhook)
 │   ├── grafana-ingress.yaml        # Traefik IngressRoute for Grafana (update hostname)
+│   ├── longhorn-servicemonitor.yaml # ServiceMonitor for Longhorn metrics scraping
 │   ├── prometheus-rules.yaml       # Disk + Longhorn alert rules
 │   └── README.md                   # Grafana access, dashboards, alerting how-to
 ├── network-policies/               # NetworkPolicies (default-deny + allow rules)
@@ -34,9 +37,26 @@ gitops/
 ├── pdbs/                           # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml # ArgoCD, cert-manager PDBs
 ├── traefik/                        # Traefik configuration
+│   ├── redirect.yaml               # HTTP→HTTPS RedirectScheme middleware + catch-all route
 │   └── tlsoptions.yaml             # TLSOption enforcing TLS 1.2+ and strong ciphers
+├── update-repo-url.sh              # Helper: update repoURL after forking (see below)
 └── README.md
 ```
+
+## Forking this repo
+
+All `Application` manifests in `gitops/apps/` contain a hardcoded `repoURL` pointing to
+`https://github.com/mbologna/k3s-oci.git`. If you fork the repo, run the helper script
+**once** after cloning to update all references:
+
+```bash
+bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
+git add gitops/apps/ && git commit -m "chore: update gitops repoURL to fork"
+git push
+```
+
+Then set `gitops_repo_url = "https://github.com/your-org/your-fork.git"` in your
+`terraform.tfvars` so cloud-init bootstraps the App of Apps with the correct URL.
 
 ## Bootstrap
 

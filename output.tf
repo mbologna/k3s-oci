@@ -33,9 +33,9 @@ output "k3s_workers_private_ips" {
   value       = data.oci_core_instance.k3s_workers[*].private_ip
 }
 
-output "k3s_extra_worker_private_ip" {
-  description = "Private IP of the standalone extra worker node"
-  value       = var.k3s_extra_worker_node ? oci_core_instance.k3s_extra_worker[0].private_ip : null
+output "k3s_standalone_worker_private_ip" {
+  description = "Private IP of the standalone worker node (oci_core_instance, not pool-managed)"
+  value       = var.k3s_standalone_worker ? oci_core_instance.k3s_standalone_worker[0].private_ip : null
 }
 
 output "internal_lb_ip" {
@@ -61,14 +61,5 @@ output "k3s_token" {
 
 output "kubeconfig_hint" {
   description = "How to retrieve kubeconfig after cluster is up"
-  value       = <<-EOT
-    # Via bastion (if enabled):
-    ssh -J ubuntu@${var.enable_bastion ? oci_core_instance.bastion[0].public_ip : "<bastion-ip>"} \
-        ubuntu@${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
-        "sudo cat /etc/rancher/k3s/k3s.yaml" \
-      | sed 's|https://127.0.0.1:6443|https://${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|' \
-      > ~/.kube/k3s-oci.yaml
-
-    # Or with expose_kubeapi = true, retrieve directly via the public NLB IP.
-  EOT
+  value       = var.enable_bastion ? local._kubeconfig_hint_bastion : local._kubeconfig_hint_no_bastion
 }
