@@ -119,3 +119,16 @@ data "oci_core_instance" "k3s_workers" {
   count       = var.k3s_worker_pool_size
   instance_id = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
+
+# ── Bastion image (Ubuntu 24.04 x86_64 — required for VM.Standard.E2.1.Micro) ─
+# The main os_image_id is aarch64 (A1.Flex). E2.1.Micro is x86, so we look up
+# the matching Ubuntu 24.04 x86 image automatically.
+data "oci_core_images" "bastion" {
+  count                    = var.enable_bastion ? 1 : 0
+  compartment_id           = var.compartment_ocid
+  operating_system         = "Canonical Ubuntu"
+  operating_system_version = "24.04"
+  shape                    = var.bastion_shape
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+}

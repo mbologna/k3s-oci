@@ -48,14 +48,14 @@ resource "oci_network_load_balancer_backend" "k3s_http_workers" {
   target_id                = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
 
-resource "oci_network_load_balancer_backend" "k3s_http_extra_worker" {
-  count = var.k3s_extra_worker_node ? 1 : 0
+resource "oci_network_load_balancer_backend" "k3s_http_standalone_worker" {
+  count = var.k3s_standalone_worker ? 1 : 0
 
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_http.name
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", oci_core_instance.k3s_extra_worker[0].id, var.ingress_controller_http_nodeport)
+  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, var.ingress_controller_http_nodeport)
   port                     = var.ingress_controller_http_nodeport
-  target_id                = oci_core_instance.k3s_extra_worker[0].id
+  target_id                = oci_core_instance.k3s_standalone_worker[0].id
 }
 
 # ── HTTPS ─────────────────────────────────────────────────────────────────────
@@ -91,14 +91,14 @@ resource "oci_network_load_balancer_backend" "k3s_https_workers" {
   target_id                = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
 
-resource "oci_network_load_balancer_backend" "k3s_https_extra_worker" {
-  count = var.k3s_extra_worker_node ? 1 : 0
+resource "oci_network_load_balancer_backend" "k3s_https_standalone_worker" {
+  count = var.k3s_standalone_worker ? 1 : 0
 
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_https.name
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", oci_core_instance.k3s_extra_worker[0].id, var.ingress_controller_https_nodeport)
+  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, var.ingress_controller_https_nodeport)
   port                     = var.ingress_controller_https_nodeport
-  target_id                = oci_core_instance.k3s_extra_worker[0].id
+  target_id                = oci_core_instance.k3s_standalone_worker[0].id
 }
 
 # ── kubeapi (optional) ────────────────────────────────────────────────────────

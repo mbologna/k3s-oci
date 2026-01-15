@@ -1,0 +1,51 @@
+---
+# Longhorn BackupTarget — configures OCI Object Storage as the backup destination.
+#
+# OCI Object Storage is S3-compatible and has a 20 GB Always Free tier.
+#
+# Prerequisites:
+# 1. Create an OCI Object Storage bucket in your tenancy.
+# 2. Create an OCI Customer Secret Key (S3-compatible) for the backup user.
+#    Console → Identity → Users → <user> → Customer Secret Keys → Generate Secret Key.
+# 3. Create the backup credentials secret:
+#    kubectl create secret generic longhorn-backup-secret \
+#      --from-literal=AWS_ACCESS_KEY_ID='<customer-secret-key-id>' \
+#      --from-literal=AWS_SECRET_ACCESS_KEY='<customer-secret-key>' \
+#      -n longhorn-system
+#
+# 4. Update the backupTarget URL below with your region and namespace:
+#    Format: s3://<bucket-name>@<region>/<subfolder>
+#    OCI S3-compatible endpoint: https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
+#
+# 5. Uncomment this file and commit to enable backups.
+#
+# Example for Frankfurt (eu-frankfurt-1), namespace "axabcdefg", bucket "k3s-longhorn-backup":
+#   backupTarget: s3://k3s-longhorn-backup@eu-frankfurt-1/
+#   backupTargetCredentialSecret: longhorn-backup-secret
+#   s3Endpoint: https://axabcdefg.compat.objectstorage.eu-frankfurt-1.oraclecloud.com
+#
+# See: https://longhorn.io/docs/latest/snapshots-and-backups/backup-and-restore/set-backup-target/
+
+# apiVersion: longhorn.io/v1beta2
+# kind: Setting
+# metadata:
+#   name: backup-target
+#   namespace: longhorn-system
+# spec:
+#   value: "s3://<your-bucket>@<your-region>/"
+# ---
+# apiVersion: longhorn.io/v1beta2
+# kind: Setting
+# metadata:
+#   name: backup-target-credential-secret
+#   namespace: longhorn-system
+# spec:
+#   value: "longhorn-backup-secret"
+# ---
+# apiVersion: longhorn.io/v1beta2
+# kind: Setting
+# metadata:
+#   name: s3-compatible-endpoint
+#   namespace: longhorn-system
+# spec:
+#   value: "https://<your-namespace>.compat.objectstorage.<your-region>.oraclecloud.com"

@@ -1,0 +1,36 @@
+---
+# RedirectScheme middleware — redirects HTTP to HTTPS (301 permanent).
+# Used by the catch-all HTTP IngressRoute below.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: traefik
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# Catch-all HTTP IngressRoute — redirects any HTTP request to HTTPS.
+# Priority 1 (lowest) ensures cert-manager ACME HTTP-01 challenge routes
+# (created as standard Ingress objects by cert-manager) take precedence.
+# cert-manager's Ingress-based routes are processed before IngressRoute rules
+# in Traefik's routing table, so ACME challenges are never redirected.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: traefik
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: HostRegexp(`{host:.+}`)
+      priority: 1
+      middlewares:
+        - name: redirect-to-https
+          namespace: traefik
+      services:
+        - kind: TraefikService
+          name: noop@internal
