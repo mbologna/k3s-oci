@@ -1,0 +1,84 @@
+---
+# PrometheusRule: alerts for node disk pressure and Longhorn volume health
+# Managed by ArgoCD via monitoring-extras Application.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: k3s-oci-alerts
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack selects rules by this label
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: node.disk
+      interval: 1m
+      rules:
+        - alert: NodeDiskPressure
+          expr: |
+            kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.node }} is under disk pressure"
+            description: "Node {{ $labels.node }} has been under disk pressure for more than 2 minutes. Free up space or expand the boot volume."
+
+        - alert: NodeDiskSpaceLow
+          expr: |
+            (
+              node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+            ) * 100 < 15
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} disk space below 15%"
+            description: "Node {{ $labels.instance }} has less than 15% free disk space on /. Current: {{ $value | humanize }}%"
+
+        - alert: NodeDiskSpaceCritical
+          expr: |
+            (
+              node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+            ) * 100 < 5
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.instance }} disk space critically low (<5%)"
+            description: "Node {{ $labels.instance }} has less than 5% free disk space on /. Immediate action required."
+
+    - name: longhorn.volume
+      interval: 1m
+      rules:
+        - alert: LonghornVolumeDegraded
+          expr: |
+            longhorn_volume_robustness == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn volume {{ $labels.volume }} is degraded"
+            description: "Longhorn volume {{ $labels.volume }} has been in degraded state for more than 2 minutes. Check Longhorn UI for details."
+
+        - alert: LonghornVolumeFaulted
+          expr: |
+            longhorn_volume_robustness == 3
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Longhorn volume {{ $labels.volume }} is faulted"
+            description: "Longhorn volume {{ $labels.volume }} is in a faulted state. Data may be at risk. Check Longhorn UI immediately."
+
+        - alert: LonghornNodeStorageWarning
+          expr: |
+            (longhorn_node_storage_usage_bytes / longhorn_node_storage_capacity_bytes) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn node {{ $labels.node }} storage usage above 80%"
+            description: "Longhorn node {{ $labels.node }} is using {{ $value | humanize }}% of its storage capacity."

@@ -17,6 +17,7 @@ locals {
   agent_plugins = [
     { name = "Vulnerability Scanning", desired_state = "DISABLED" },
     { name = "Compute Instance Monitoring", desired_state = "ENABLED" },
+    { name = "Custom Logs Monitoring", desired_state = "ENABLED" },
     { name = "Bastion", desired_state = "DISABLED" },
   ]
 
