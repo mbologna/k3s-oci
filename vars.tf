@@ -410,6 +410,25 @@ variable "kured_end_time" {
   default     = "06:00"
 }
 
+# ── k3s automated upgrades (system-upgrade-controller) ───────────────────────
+
+variable "system_upgrade_controller_release" {
+  type        = string
+  description = "system-upgrade-controller version for k3s automated upgrades."
+  # renovate: datasource=github-releases depName=rancher/system-upgrade-controller
+  default = "v0.15.2"
+}
+
+variable "k3s_upgrade_channel" {
+  type        = string
+  description = "k3s release channel to track for automated upgrades. 'stable' is recommended; 'latest' tracks RC releases."
+  default     = "stable"
+  validation {
+    condition     = contains(["stable", "latest", "testing"], var.k3s_upgrade_channel)
+    error_message = "k3s_upgrade_channel must be one of: stable, latest, testing."
+  }
+}
+
 # ── OCI CLI ───────────────────────────────────────────────────────────────────
 
 variable "oci_cli_version" {
