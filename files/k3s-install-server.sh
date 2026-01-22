@@ -80,6 +80,19 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 UUEOF
 
+  # Align the apt-daily-upgrade timer with the kured maintenance window so
+  # package installation and reboots both happen in the same window.
+  # A 60-minute RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
+  mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
+  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/maintenance-window.conf << TIMEREOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${kured_start_time}:00
+RandomizedDelaySec=60min
+TIMEREOF
+  systemctl daemon-reload
+  systemctl restart apt-daily-upgrade.timer
+
   systemctl enable --now unattended-upgrades
 }
 
@@ -384,6 +397,74 @@ install_kured() {
   echo "kured installed (maintenance window: ${kured_start_time}–${kured_end_time} UTC)."
 }
 
+# ── k3s automated upgrades (system-upgrade-controller) ───────────────────────
+# Upgrades k3s binaries across all nodes, tracking the configured release channel.
+# Servers are upgraded first (k3s-server Plan); agents wait for all servers to
+# finish (prepare step references the k3s-server Plan).
+#
+# Coordination with kured (OS reboots) and unattended-upgrades:
+#   - system-upgrade-controller: drains → upgrades k3s binary → uncordons
+#   - kured: drains → reboots for kernel update → uncordons
+# Both tools drain before acting and run with concurrency=1, so they naturally
+# serialise on each node. They address orthogonal concerns (k3s vs kernel).
+
+install_system_upgrade_controller() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  local base="https://github.com/rancher/system-upgrade-controller/releases/download/${system_upgrade_controller_release}"
+
+  kubectl apply -f "$${base}/crd.yaml"
+  kubectl apply -f "$${base}/system-upgrade-controller.yaml"
+  kubectl rollout status -n system-upgrade deployment/system-upgrade-controller --timeout=120s
+
+  # Plan: upgrade control-plane nodes one at a time
+  # Plan: upgrade agent nodes one at a time, only after all servers are done
+  kubectl apply -f - << UPGRADEEOF
+---
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-server
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/${k3s_upgrade_channel}
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"
+  serviceAccountName: system-upgrade
+  cordon: true
+  drain:
+    force: false
+    skipWaitForDeleteTimeout: 60
+  upgrade:
+    image: rancher/k3s-upgrade
+---
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-agent
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/${k3s_upgrade_channel}
+  nodeSelector:
+    matchExpressions:
+      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+  serviceAccountName: system-upgrade
+  cordon: true
+  drain:
+    force: false
+    skipWaitForDeleteTimeout: 60
+  prepare:
+    image: rancher/k3s-upgrade
+    args: ["prepare", "k3s-server"]
+  upgrade:
+    image: rancher/k3s-upgrade
+UPGRADEEOF
+
+  echo "system-upgrade-controller installed, tracking channel: ${k3s_upgrade_channel}"
+}
+
 # ── k3s installation ──────────────────────────────────────────────────────────
 
 install_k3s_server() {
@@ -499,6 +580,7 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
   install_certmanager
   install_argocd
   install_kured
+  install_system_upgrade_controller
   echo "==> Stack installed. Network policies and ClusterIssuers are managed via ArgoCD (gitops/)."
 fi
 

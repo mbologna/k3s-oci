@@ -61,6 +61,19 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 UUEOF
 
+  # Align the apt-daily-upgrade timer with the kured maintenance window so
+  # package installation and reboots both happen in the same window.
+  # A 60-minute RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
+  mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
+  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/maintenance-window.conf << TIMEREOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${kured_start_time}:00
+RandomizedDelaySec=60min
+TIMEREOF
+  systemctl daemon-reload
+  systemctl restart apt-daily-upgrade.timer
+
   systemctl enable --now unattended-upgrades
 }
 
