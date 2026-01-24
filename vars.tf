@@ -153,16 +153,22 @@ variable "k3s_server_pool_size" {
 
 variable "k3s_worker_pool_size" {
   type        = number
-  description = "Number of k3s worker nodes managed by an instance pool (can be 0)."
+  description = <<-EOT
+    Number of k3s worker nodes managed by the OCI Instance Pool.
+    Set to 0 (default) when using k3s_standalone_worker = true, which is the recommended
+    Always Free topology. The pool is kept to allow future scaling beyond the free tier.
+  EOT
   default     = 0
 }
 
-variable "k3s_extra_worker_node" {
+variable "k3s_standalone_worker" {
   type        = bool
   description = <<-EOT
-    When true, provisions one additional standalone worker instance (oci_core_instance).
-    This is the recommended way to use the 4th Always Free A1.Flex OCPU without exceeding
-    OCI instance pool limits per tenancy. Default topology: 3 servers (pool) + 1 extra worker.
+    When true (default), provisions one worker node as a plain oci_core_instance resource.
+    This is the recommended approach for OCI Always Free tenancies: instance pools route
+    requests through OCI Capacity Management which can fail for A1.Flex shapes, whereas
+    a direct oci_core_instance reliably claims the free allocation.
+    Default topology: 3 control-plane nodes (pool) + 1 standalone worker = 4 OCPUs / 24 GB.
   EOT
   default     = true
 }

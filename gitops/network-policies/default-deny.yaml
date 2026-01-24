@@ -1,7 +1,7 @@
 ---
 # Default-deny for the default namespace.
-# Namespaces for system apps (kube-system, argocd, longhorn-system, cert-manager, traefik)
-# are managed by their own Helm charts; only add policies for workloads you deploy.
+# Additional namespace-scoped policies (argocd, monitoring, cert-manager, longhorn-system)
+# live in separate files in this directory.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

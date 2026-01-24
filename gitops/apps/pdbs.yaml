@@ -13,6 +13,8 @@ spec:
     path: gitops/pdbs
   destination:
     server: https://kubernetes.default.svc
+    # ArgoCD respects the namespace declared in each manifest, so argocd PDBs land in
+    # argocd and cert-manager PDBs land in cert-manager regardless of this default.
     namespace: argocd
   syncPolicy:
     automated:
