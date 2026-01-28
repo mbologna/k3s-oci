@@ -59,7 +59,7 @@ resource "oci_core_instance_configuration" "k3s_server" {
 
       source_details {
         source_type             = "image"
-        image_id                = var.os_image_id
+        image_id                = local.os_image_id
         boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
       }
 
@@ -74,6 +74,7 @@ resource "oci_core_instance_configuration" "k3s_server" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [instance_details]
   }
 }
 
@@ -153,7 +154,7 @@ resource "oci_core_instance_configuration" "k3s_worker" {
 
       source_details {
         source_type             = "image"
-        image_id                = var.os_image_id
+        image_id                = local.os_image_id
         boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
       }
 
@@ -168,6 +169,7 @@ resource "oci_core_instance_configuration" "k3s_worker" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [instance_details]
   }
 }
 
@@ -239,7 +241,7 @@ resource "oci_core_instance" "k3s_standalone_worker" {
 
   source_details {
     source_type             = "image"
-    source_id               = var.os_image_id
+    source_id               = local.os_image_id
     boot_volume_size_in_gbs = var.boot_volume_size_in_gbs
   }
 
@@ -255,35 +257,9 @@ resource "oci_core_instance" "k3s_standalone_worker" {
     ssh_authorized_keys = local.ssh_public_key
     user_data           = data.cloudinit_config.k3s_worker.rendered
   }
-}
 
-# ── Bastion host (optional, VM.Standard.E2.1.Micro — Always Free) ─────────────
-
-resource "oci_core_instance" "bastion" {
-  count = var.enable_bastion ? 1 : 0
-
-  compartment_id      = var.compartment_ocid
-  availability_domain = var.availability_domain
-  display_name        = "${var.cluster_name}-bastion"
-  freeform_tags       = merge(local.common_tags, { k3s-instance-type = "bastion" })
-
-  shape = var.bastion_shape
-
-  source_details {
-    source_type             = "image"
-    source_id               = data.oci_core_images.bastion[0].images[0].id
-    boot_volume_size_in_gbs = 47
-  }
-
-  create_vnic_details {
-    assign_public_ip          = true
-    assign_private_dns_record = true
-    subnet_id                 = oci_core_subnet.public.id
-    nsg_ids                   = [oci_core_network_security_group.bastion[0].id]
-    hostname_label            = "${var.cluster_name}-bastion"
-  }
-
-  metadata = {
-    ssh_authorized_keys = local.ssh_public_key
+  lifecycle {
+    ignore_changes = [metadata]
   }
 }
+

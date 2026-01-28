@@ -4,7 +4,10 @@ variable "region" { type = string }
 variable "availability_domain" { type = string }
 variable "my_public_ip_cidr" { type = string }
 variable "cluster_name" { type = string }
-variable "os_image_id" { type = string }
+variable "os_image_id" {
+  type    = string
+  default = null
+}
 variable "certmanager_email_address" { type = string }
 
 # Optional explicit API key auth — when null, the OCI provider reads from ~/.oci/config.
@@ -101,5 +104,5 @@ output "k3s_workers_private_ips" { value = module.k3s_cluster.k3s_workers_privat
 output "k3s_standalone_worker_private_ip" { value = module.k3s_cluster.k3s_standalone_worker_private_ip }
 output "internal_lb_ip" { value = module.k3s_cluster.internal_lb_ip }
 output "public_nlb_ip" { value = module.k3s_cluster.public_nlb_ip }
-output "bastion_public_ip" { value = module.k3s_cluster.bastion_public_ip }
+output "bastion_ocid" { value = module.k3s_cluster.bastion_ocid }
 output "kubeconfig_hint" { value = module.k3s_cluster.kubeconfig_hint }

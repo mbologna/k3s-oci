@@ -23,12 +23,13 @@ availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 cluster_name  = "my-k3s"
 environment   = "staging"
 
-# Ubuntu 24.04 LTS (Noble) Minimal for aarch64 — find current OCIDs at:
-# https://docs.oracle.com/en-us/iaas/images/
-os_image_id = "ocid1.image.oc1..example"
+# OS images — optional; latest Ubuntu 24.04 Minimal is auto-detected from the tenancy.
+# Override if you need a pinned or custom image OCID.
+# Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
+# os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
 
-# Your workstation IP — restricts bastion SSH (enable_bastion=true) and
-# kubeapi access (expose_kubeapi=true). Nodes are private; bastion is required for SSH.
+# Your workstation IP — restricts OCI Bastion Service session creation (enable_bastion=true)
+# and kubeapi access (expose_kubeapi=true). Nodes are private; OCI Bastion is required for SSH.
 my_public_ip_cidr = "1.2.3.4/32"
 
 # cert-manager — must be a real email for Let's Encrypt
@@ -47,7 +48,7 @@ k3s_worker_pool_size  = 0   # Keep at 0; pool is reserved for future non-free sc
 k3s_standalone_worker = true
 
 # ── Optional features ─────────────────────────────────────────────────────────
-# enable_bastion = true             # Adds a free E2.1.Micro bastion in the public subnet
+# enable_bastion = true             # OCI Bastion Service (managed, Always Free, no storage cost)
 # expose_kubeapi = false            # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 
 # ── Hostnames (set to create Traefik IngressRoutes + cert-manager TLS certs) ──

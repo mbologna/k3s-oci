@@ -5,6 +5,9 @@ locals {
   # SSH public key: prefer the string value; fall back to reading the file path
   ssh_public_key = var.public_key != null ? var.public_key : trimspace(file(pathexpand(var.public_key_path)))
 
+  # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy
+  os_image_id = coalesce(var.os_image_id, data.oci_core_images.k3s_nodes[0].images[0].id)
+
   # Applied to every OCI resource for consistent identification and cost tracking
   common_tags = {
     provisioner          = "terraform"
@@ -18,7 +21,7 @@ locals {
     { name = "Vulnerability Scanning", desired_state = "DISABLED" },
     { name = "Compute Instance Monitoring", desired_state = "ENABLED" },
     { name = "Custom Logs Monitoring", desired_state = "ENABLED" },
-    { name = "Bastion", desired_state = "DISABLED" },
+    { name = "Bastion", desired_state = var.enable_bastion ? "ENABLED" : "DISABLED" },
   ]
 
   # Internal LB IP used as the k3s server URL for agent join
@@ -33,14 +36,23 @@ locals {
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────
 
   _kubeconfig_hint_bastion = <<-EOT
-    # ── Fetch kubeconfig via bastion ─────────────────────────────────────────
-    ssh -J ubuntu@${var.enable_bastion ? oci_core_instance.bastion[0].public_ip : ""} \
-        ubuntu@${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
-        "sudo cat /etc/rancher/k3s/k3s.yaml" \
-      | sed 's|https://127.0.0.1:6443|https://${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|' \
-      > ~/.kube/k3s-oci.yaml
-    export KUBECONFIG=~/.kube/k3s-oci.yaml
-    kubectl get nodes
+    # ── Fetch kubeconfig via OCI Bastion Service ─────────────────────────────
+    # Run from the example/ directory (requires oci CLI, tofu, jq, nc, ssh):
+    #   ./get-kubeconfig.sh
+    #
+    # Or manually — port-forwarding session (no Bastion plugin required):
+    #   oci bastion session create-port-forwarding \
+    #     --bastion-id ${var.enable_bastion ? oci_bastion_bastion.k3s[0].id : "<bastion-ocid>"} \
+    #     --ssh-public-key-file ~/.ssh/id_rsa.pub \
+    #     --target-private-ip ${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
+    #     --target-port 22 \
+    #     --session-ttl 1800
+    #   # Open tunnel (replace SESSION and REGION):
+    #   ssh -N -L 22222:${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")}:22 \
+    #       -p 22 ocid1.bastionsession...@host.bastion.<region>.oci.oraclecloud.com &
+    #   # Fetch kubeconfig through tunnel:
+    #   ssh -p 22222 ubuntu@localhost "sudo cat /etc/rancher/k3s/k3s.yaml" \
+    #     | sed 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|'
   EOT
 
   _kubeconfig_hint_no_bastion = <<-EOT
@@ -59,7 +71,7 @@ locals {
     #
     # Options B & C — both require a tofu apply:
     #
-    # Option B — Enable bastion (recommended, free E2.1.Micro):
+    # Option B — Enable OCI Bastion Service (managed, Always Free, no storage):
     #   Add  enable_bastion = true  to terraform.tfvars, then run tofu apply.
     #   Then re-run: tofu output kubeconfig_hint
     #
