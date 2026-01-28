@@ -146,23 +146,31 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
   }
 }
 
-# ── Bastion NSG ───────────────────────────────────────────────────────────────
-
-resource "oci_core_network_security_group" "bastion" {
-  count          = var.enable_bastion ? 1 : 0
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.k3s.id
-  display_name   = "${var.cluster_name}-bastion-nsg"
-  freeform_tags  = local.common_tags
-}
-
-resource "oci_core_network_security_group_security_rule" "bastion_allow_ssh" {
+resource "oci_core_network_security_group_security_rule" "servers_allow_ssh_from_private_subnet" {
   count                     = var.enable_bastion ? 1 : 0
-  network_security_group_id = oci_core_network_security_group.bastion[0].id
+  network_security_group_id = oci_core_network_security_group.servers.id
   direction                 = "INGRESS"
   protocol                  = "6"
-  description               = "SSH from operator"
-  source                    = var.my_public_ip_cidr
+  description               = "SSH from OCI Bastion Service (private subnet)"
+  source                    = var.private_subnet_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = 22
+      max = 22
+    }
+  }
+}
+
+resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_from_private_subnet" {
+  count                     = var.enable_bastion ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.workers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "SSH from OCI Bastion Service (private subnet)"
+  source                    = var.private_subnet_cidr
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 

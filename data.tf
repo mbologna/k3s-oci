@@ -101,6 +101,7 @@ data "cloudinit_config" "k3s_worker" {
   }
 }
 
+
 data "oci_core_instance_pool_instances" "k3s_servers" {
   depends_on       = [oci_core_instance_pool.k3s_servers]
   compartment_id   = var.compartment_ocid
@@ -123,15 +124,21 @@ data "oci_core_instance" "k3s_workers" {
   instance_id = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
 
-# ── Bastion image (Ubuntu 24.04 x86_64 — required for VM.Standard.E2.1.Micro) ─
-# The main os_image_id is aarch64 (A1.Flex). E2.1.Micro is x86, so we look up
-# the matching Ubuntu 24.04 x86 image automatically.
-data "oci_core_images" "bastion" {
-  count                    = var.enable_bastion ? 1 : 0
-  compartment_id           = var.compartment_ocid
+# ── k3s node image (Ubuntu 24.04 aarch64 — A1.Flex) ──────────────────────────
+# Auto-resolved from tenancy when os_image_id is not set explicitly.
+data "oci_core_images" "k3s_nodes" {
+  count                    = var.os_image_id == null ? 1 : 0
+  compartment_id           = var.tenancy_ocid
   operating_system         = "Canonical Ubuntu"
   operating_system_version = "24.04"
-  shape                    = var.bastion_shape
+  shape                    = var.compute_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.images) > 0
+      error_message = "No Ubuntu 24.04 image found for shape ${var.compute_shape} in tenancy. Set os_image_id explicitly."
+    }
+  }
 }
