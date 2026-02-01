@@ -31,10 +31,10 @@ do not introduce resources that incur cost.
 | Resource | Free allowance | This module |
 |---|---|---|
 | A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker |
-| Block storage | 200 GB | 4 × 50 GB boot volumes |
+| Block storage | 200 GB | 4 × 50 GB boot volumes = 200 GB; bastion is OCI Bastion Service (managed, no VM, no storage) |
 | NLB | 1 | 1 public NLB |
 | Flex LB | 2 × 10 Mbps | 1 internal LB |
-| E2.1.Micro | 2 | 0–1 optional bastion |
+| E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
@@ -52,7 +52,7 @@ security.tf      — Security Lists
 nsg.tf           — Network Security Groups
 iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, includes log-content)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
-compute.tf       — Instance pool (servers), pool (workers), standalone extra worker, bastion
+compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi HA)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id)
@@ -129,7 +129,7 @@ terraform-docs .
 
 ## What NOT to do
 
-- Do not add paid OCI resources (compute shapes other than A1.Flex / E2.1.Micro, extra NLBs, etc.)
+- Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
 - Do not add Oracle Linux support — Ubuntu 24.04 LTS only
 - Do not remove `lifecycle { prevent_destroy = true }` from load balancers
 - Do not hardcode secrets, OCIDs, or credentials anywhere
@@ -147,6 +147,9 @@ terraform-docs .
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
+- **Do not reduce `boot_volume_size_in_gbs` below 50 GB** — OCI requires ≥ 50 GB for boot
+  volumes on all shapes (A1.Flex and E2.1.Micro alike). 4 × 50 GB = 200 GB exactly fills the
+  Always Free block storage limit. Do not suggest 47 GB as an optimisation — it is not valid.
 
 ## Special implementation notes
 

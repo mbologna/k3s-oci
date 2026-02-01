@@ -33,8 +33,12 @@ bootstrap() {
   systemctl stop    netfilter-persistent.service || true
   systemctl disable netfilter-persistent.service || true
 
+  # OCI instances only have IPv4 routes; force apt to avoid IPv6 mirror timeouts
+  echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
+  # Tolerate partial mirror failures (transient OCI regional mirror issues)
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 python3-pip \
     open-iscsi util-linux
@@ -52,8 +56,8 @@ bootstrap() {
 
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
-  apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
+  apt-get update -q || apt-get update -q || true
+  apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges needrestart
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 
@@ -80,14 +84,25 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 UUEOF
 
-  # Align the apt-daily-upgrade timer with the kured maintenance window so
-  # package installation and reboots both happen in the same window.
+  # needrestart: automatically restart affected userspace services after package
+  # updates (mode 'a' = automatic). This ensures CVE patches for running daemons
+  # (nginx, openssl-linked services, etc.) take effect immediately without waiting
+  # for the kured reboot window. k3s is excluded — its lifecycle is managed by
+  # the cluster upgrade controller, not apt.
+  mkdir -p /etc/needrestart/conf.d
+  cat > /etc/needrestart/conf.d/99-k3s.conf << 'NREOF'
+$nrconf{restart} = 'a';
+$nrconf{blacklist_rc} = [qr(^k3s)];
+NREOF
+
+  # Do NOT pin apt-daily-upgrade to the kured maintenance window.
+  # Patches must install on Ubuntu's default daily schedule so CVE fixes are
+  # applied as soon as packages are available. Only the reboot is deferred to
+  # the kured window (kured_start_time–kured_end_time on kured_reboot_days).
   # A 60-minute RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
   mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
-  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/maintenance-window.conf << TIMEREOF
+  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/stagger.conf << 'TIMEREOF'
 [Timer]
-OnCalendar=
-OnCalendar=*-*-* ${kured_start_time}:00
 RandomizedDelaySec=60min
 TIMEREOF
   systemctl daemon-reload
@@ -385,7 +400,7 @@ install_kured() {
     --set configuration.rebootSentinelFile=/var/run/reboot-required \
     --set configuration.startTime="${kured_start_time}" \
     --set configuration.endTime="${kured_end_time}" \
-    --set configuration.rebootDays="${kured_reboot_days}" \
+    --set configuration.rebootDays="{${kured_reboot_days}}" \
     --set configuration.timeZone=UTC \
     --set tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set tolerations[0].operator=Exists \
@@ -553,10 +568,20 @@ INSTANCE_DISPLAY_NAME=$(curl -sfL \
 FIRST_SERVER=$(oci compute instance list \
   --compartment-id "${compartment_ocid}" \
   --availability-domain "${availability_domain}" \
-  --lifecycle-state RUNNING \
   --sort-by TIMECREATED \
-  --query 'data[?freeformTags."k3s-cluster-name"==`${cluster_name}` && freeformTags."k3s-instance-type"==`k3s-server`].['"'"'display-name'"'"'] | [0][0]' \
-  --raw-output 2>/dev/null || echo "")
+  --sort-order ASC 2>/dev/null \
+  | jq -re --arg cluster "${cluster_name}" \
+      '.data
+       | map(select(
+           .["freeform-tags"]["k3s-cluster-name"] == $cluster and
+           .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
+           (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
+         ))
+       | first
+       | .["display-name"]' \
+  2>/dev/null || echo "")
+
+echo "Election: FIRST_SERVER='$FIRST_SERVER'  SELF='$INSTANCE_DISPLAY_NAME'"
 
 IS_FIRST_SERVER="false"
 [[ "$FIRST_SERVER" == "$INSTANCE_DISPLAY_NAME" ]] && IS_FIRST_SERVER="true"
