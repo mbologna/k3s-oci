@@ -214,7 +214,7 @@ install_longhorn() {
 
   %{ if longhorn_hostname != "" }
   # Generate htpasswd hash using openssl (available on Ubuntu 24.04 without extra packages)
-  LONGHORN_HASH=$(openssl passwd -apr1 "${longhorn_ui_password}")
+  LONGHORN_HASH=$(openssl passwd -apr1 "$${LONGHORN_UI_PASSWORD}")
 
   kubectl apply -f - << LHEOF
 apiVersion: v1
@@ -355,9 +355,60 @@ metadata:
 type: Opaque
 stringData:
   admin-user: admin
-  admin-password: "${grafana_admin_password}"
+  admin-password: "$${GRAFANA_ADMIN_PASSWORD}"
 GRAFEOF
   echo "Grafana admin secret pre-created in monitoring namespace."
+
+  # ── Alertmanager config — created always so kube-prometheus-stack can reference
+  # it via alertmanagerSpec.configSecret. Null receiver when OCI Notifications is
+  # disabled; OCI webhook receiver when enabled.
+%{ if notification_topic_endpoint != "" }
+  kubectl apply -n monitoring -f - << AMEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-oci-config
+  namespace: monitoring
+type: Opaque
+stringData:
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'oci-notifications'
+    receivers:
+    - name: 'oci-notifications'
+      webhook_configs:
+      - url: '${notification_topic_endpoint}'
+        send_resolved: true
+AMEOF
+%{ else }
+  kubectl apply -n monitoring -f - << 'AMEOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-oci-config
+  namespace: monitoring
+type: Opaque
+stringData:
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'null'
+    receivers:
+    - name: 'null'
+AMEOF
+%{ endif }
+  echo "Alertmanager config secret created."
 
   # Bootstrap the App of Apps so ArgoCD self-manages gitops/
   kubectl apply -n argocd -f - << APPEOF
@@ -510,7 +561,7 @@ install_k3s_server() {
   if [[ "$IS_FIRST_SERVER" == "true" ]]; then
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="${k3s_token}" \
+        INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
         sh -s - --cluster-init $params_str; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s init failed after $${max_attempts} attempts."; exit 1; }
@@ -521,7 +572,7 @@ install_k3s_server() {
     echo "==> Joining existing cluster"
     wait_for_kubeapi
     until curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="${k3s_token}" \
+        INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
         sh -s - --server "https://${k3s_url}:6443" $params_str; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s join failed after $${max_attempts} attempts."; exit 1; }
@@ -588,6 +639,38 @@ IS_FIRST_SERVER="false"
 
 echo "Instance: $INSTANCE_DISPLAY_NAME  First: $IS_FIRST_SERVER"
 
+# ── Resolve cluster secrets (OCI Vault when enabled, else from user-data) ─────
+
+%{ if vault_secret_id_k3s_token != "" }
+echo "Fetching k3s token from OCI Vault..."
+K3S_TOKEN=$(oci secrets secret-bundle get-secret-bundle \
+  --secret-id "${vault_secret_id_k3s_token}" \
+  --query 'data."secret-bundle-content".content' \
+  --raw-output | base64 -d)
+%{ else }
+K3S_TOKEN="${k3s_token}"
+%{ endif }
+
+%{ if vault_secret_id_longhorn_password != "" }
+echo "Fetching Longhorn UI password from OCI Vault..."
+LONGHORN_UI_PASSWORD=$(oci secrets secret-bundle get-secret-bundle \
+  --secret-id "${vault_secret_id_longhorn_password}" \
+  --query 'data."secret-bundle-content".content' \
+  --raw-output | base64 -d)
+%{ else }
+LONGHORN_UI_PASSWORD="${longhorn_ui_password}"
+%{ endif }
+
+%{ if vault_secret_id_grafana_password != "" }
+echo "Fetching Grafana admin password from OCI Vault..."
+GRAFANA_ADMIN_PASSWORD=$(oci secrets secret-bundle get-secret-bundle \
+  --secret-id "${vault_secret_id_grafana_password}" \
+  --query 'data."secret-bundle-content".content' \
+  --raw-output | base64 -d)
+%{ else }
+GRAFANA_ADMIN_PASSWORD="${grafana_admin_password}"
+%{ endif }
+
 install_k3s_server
 
 # Stack installs run only on the first server — all keep the cluster active.
@@ -604,6 +687,23 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
 
   install_certmanager
   install_argocd
+%{ if mysql_endpoint != "" }
+  # Pre-create MySQL credentials Kubernetes Secret
+  kubectl apply -n default -f - << MYSQLEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-credentials
+  namespace: default
+type: Opaque
+stringData:
+  host: "${mysql_endpoint}"
+  username: "${mysql_admin_username}"
+  password: "${mysql_admin_password}"
+  jdbc-url: "jdbc:mysql://${mysql_endpoint}/${cluster_name}?useSSL=true&requireSSL=true"
+MYSQLEOF
+  echo "MySQL credentials secret created (host: ${mysql_endpoint})."
+%{ endif }
   install_kured
   install_system_upgrade_controller
   echo "==> Stack installed. Network policies and ClusterIssuers are managed via ArgoCD (gitops/)."
