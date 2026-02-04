@@ -63,3 +63,38 @@ output "kubeconfig_hint" {
   description = "How to retrieve kubeconfig after cluster is up"
   value       = var.enable_bastion ? local._kubeconfig_hint_bastion : local._kubeconfig_hint_no_bastion
 }
+
+output "terraform_state_backend" {
+  description = "S3-compatible backend config snippet for storing Terraform state in the provisioned OCI Object Storage bucket. Replace <region> and add S3 credentials (OCI Customer Secret Key)."
+  value = var.enable_object_storage_state ? {
+    bucket    = oci_objectstorage_bucket.terraform_state[0].name
+    namespace = data.oci_objectstorage_namespace.k3s[0].namespace
+    hint      = "Add to your backend block: endpoint = https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
+  } : null
+}
+
+output "notification_topic_endpoint" {
+  description = "OCI Notifications HTTPS endpoint for the Alertmanager webhook receiver (null if enable_notifications = false)."
+  value       = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : null
+  sensitive   = true
+}
+
+output "mysql_endpoint" {
+  description = "MySQL HeatWave connection endpoint (hostname:port). Null if enable_mysql = false."
+  value       = var.enable_mysql && length(oci_mysql_mysql_db_system.k3s) > 0 ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : null
+}
+
+output "mysql_admin_credentials" {
+  description = "MySQL HeatWave admin credentials (sensitive). Null if enable_mysql = false."
+  value = var.enable_mysql ? {
+    username = var.mysql_admin_username
+    password = random_password.mysql_admin_password[0].result
+    endpoint = var.enable_mysql && length(oci_mysql_mysql_db_system.k3s) > 0 ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : null
+  } : null
+  sensitive = true
+}
+
+output "vault_id" {
+  description = "OCI Vault OCID (null if enable_vault = false)"
+  value       = var.enable_vault ? oci_kms_vault.k3s[0].id : null
+}

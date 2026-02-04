@@ -64,6 +64,7 @@ spec:
         # Alertmanager — minimal
         alertmanager:
           alertmanagerSpec:
+            configSecret: alertmanager-oci-config
             resources:
               requests:
                 memory: 64Mi

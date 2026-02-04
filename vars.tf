@@ -432,3 +432,61 @@ variable "oci_cli_version" {
   # renovate: datasource=github-releases depName=oracle/oci-cli
   default = "3.52.0"
 }
+
+# ── Backup ────────────────────────────────────────────────────────────────────
+
+variable "enable_backup" {
+  type        = bool
+  description = "Enable weekly boot volume backups for all k3s nodes (Always Free: 5 total backups). With 4 nodes at weekly-1-week-retention there are at most 4 active backups."
+  default     = true
+}
+
+# ── Object Storage ────────────────────────────────────────────────────────────
+
+variable "enable_object_storage_state" {
+  type        = bool
+  description = "Provision an Always Free OCI Object Storage bucket for storing Terraform/OpenTofu state (S3-compatible API). See the terraform_state_backend output for the backend configuration snippet."
+  default     = true
+}
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+variable "enable_notifications" {
+  type        = bool
+  description = "Create an OCI Notifications topic and wire it to Alertmanager as a webhook receiver (Always Free: 1M HTTPS + 3K email/month)."
+  default     = false
+}
+
+variable "alertmanager_email" {
+  type        = string
+  description = "Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email."
+  default     = null
+}
+
+# ── MySQL HeatWave ────────────────────────────────────────────────────────────
+
+variable "enable_mysql" {
+  type        = bool
+  description = "Provision an Always Free MySQL HeatWave DB system (single node, 50 GB). Creates a Kubernetes Secret 'mysql-credentials' in the default namespace."
+  default     = false
+}
+
+variable "mysql_shape" {
+  type        = string
+  description = "MySQL HeatWave shape. 'MySQL.Free' is the Always Free shape."
+  default     = "MySQL.Free"
+}
+
+variable "mysql_admin_username" {
+  type        = string
+  description = "Admin username for the MySQL HeatWave DB system."
+  default     = "admin"
+}
+
+# ── Vault ─────────────────────────────────────────────────────────────────────
+
+variable "enable_vault" {
+  type        = bool
+  description = "Store cluster secrets (k3s_token, longhorn_ui_password, grafana_admin_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
+  default     = true
+}
