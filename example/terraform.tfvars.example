@@ -51,6 +51,17 @@ k3s_standalone_worker = true
 # enable_bastion = true             # OCI Bastion Service (managed, Always Free, no storage cost)
 # expose_kubeapi = false            # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 
+# ── Always Free add-ons (enabled by default) ──────────────────────────────────
+# enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
+# enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
+# enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
+
+# ── Opt-in features (disabled by default) ─────────────────────────────────────
+# enable_notifications = false          # OCI Notifications topic wired to Alertmanager webhook (1M HTTPS/month free)
+# alertmanager_email   = "you@example.com"  # Optional email subscription for the Notifications topic
+# enable_mysql         = false          # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
+# mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
+
 # ── Hostnames (set to create Traefik IngressRoutes + cert-manager TLS certs) ──
 # argocd_hostname   = "argocd.example.com"
 # longhorn_hostname = "longhorn.example.com"
