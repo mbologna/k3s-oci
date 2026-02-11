@@ -135,12 +135,37 @@ install_traefik2() {
   helm repo update
   # OCI NLB uses is_preserve_source=true (transparent mode) — real client IPs arrive directly.
   # No proxy-protocol configuration needed.
+  # DaemonSet mode: one Traefik pod per node so that every NLB backend can
+  # serve ingress traffic locally — no cross-node forwarding hop, no single
+  # pod as a SPOF.
+  # priorityClassName=system-cluster-critical: Traefik pods preempt user
+  # workloads under memory pressure and are never evicted before system daemons.
+  # resources.requests: prevents scheduling on nodes that can't sustain ingress.
   helm upgrade --install --namespace=traefik traefik traefik/traefik \
+    --set "deployment.kind=DaemonSet" \
+    --set "priorityClassName=system-cluster-critical" \
+    --set "resources.requests.cpu=100m" \
+    --set "resources.requests.memory=128Mi" \
     --set "service.type=NodePort" \
     --set "ports.web.nodePort=${ingress_controller_http_nodeport}" \
     --set "ports.websecure.nodePort=${ingress_controller_https_nodeport}" \
     --set "ports.websecure.tls.enabled=true" \
     --atomic --wait --timeout 5m
+
+  # PDB: kured (or any drain) can only take down 1 Traefik pod at a time,
+  # so 3 of 4 nodes always serve ingress during rolling maintenance.
+  kubectl apply -n traefik -f - << 'TRAEFIK_PDB_EOF'
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: traefik-pdb
+  namespace: traefik
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+TRAEFIK_PDB_EOF
 }
 
 # ── cert-manager ──────────────────────────────────────────────────────────────
@@ -208,6 +233,8 @@ install_longhorn() {
   helm upgrade --install longhorn longhorn/longhorn \
     --namespace longhorn-system --create-namespace \
     --version "${longhorn_release}" \
+    --set "defaultSettings.defaultReplicaCount=3" \
+    --set "persistence.defaultClassReplicaCount=3" \
     --atomic --wait --timeout 10m
 
   echo "Longhorn deployed via Helm ${longhorn_release}."
@@ -676,6 +703,17 @@ install_k3s_server
 # Stack installs run only on the first server — all keep the cluster active.
 if [[ "$IS_FIRST_SERVER" == "true" ]]; then
   wait_for_cluster_ready
+
+  # Remove the control-plane and etcd NoSchedule taints that k3s ≥ 1.24 adds
+  # automatically to server nodes. With only one worker, keeping these taints
+  # means user workloads have a single-node SPOF. All four A1.Flex nodes have
+  # identical resources (1 OCPU / 6 GB), so co-locating etcd with user workloads
+  # is safe for this Always Free topology.
+  kubectl taint nodes -l node-role.kubernetes.io/control-plane \
+    node-role.kubernetes.io/control-plane:NoSchedule- \
+    node-role.kubernetes.io/etcd:NoSchedule- \
+    2>/dev/null || true
+  echo "Control-plane NoSchedule taints removed — all 4 nodes schedulable."
 
   install_longhorn
 
