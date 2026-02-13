@@ -55,6 +55,7 @@ k3s_standalone_worker = true
 # enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
 # enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
 # enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
+# enable_longhorn_backup      = true   # Dedicated Object Storage bucket for Longhorn PVC backups (see longhorn_backup_setup output)
 
 # ── Opt-in features (disabled by default) ─────────────────────────────────────
 # enable_notifications = false          # OCI Notifications topic wired to Alertmanager webhook (1M HTTPS/month free)

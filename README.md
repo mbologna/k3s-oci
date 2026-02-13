@@ -6,24 +6,84 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 
 ## Architecture
 
+```mermaid
+graph TD
+    Internet(["🌐 Internet"])
+
+    subgraph public["Public Subnet · 10.0.0.0/24"]
+        NLB["🔀 Public NLB (Always Free)\nHTTP :80 · HTTPS :443\noptional: kubeapi :6443"]
+    end
+
+    subgraph private["Private Subnet · 10.0.1.0/24 · no public IPs"]
+        ILB["⚖️ Internal Flex LB (Always Free)\nkubeapi VIP :6443"]
+
+        subgraph cp["Control Plane × 3  ·  A1.Flex (1 OCPU / 6 GB each)\nk3s-server · etcd · Traefik · Longhorn · user workloads"]
+            CP0["control-plane-0"]
+            CP1["control-plane-1"]
+            CP2["control-plane-2"]
+        end
+
+        W["worker-0  ·  A1.Flex (1 OCPU / 6 GB)\nk3s-agent · Traefik · Longhorn · user workloads"]
+    end
+
+    NAT["🌍 NAT Gateway (Always Free)"]
+    Bastion["🔐 OCI Bastion Service\noptional · Always Free"]
+
+    Internet -->|HTTP / HTTPS| NLB
+    NLB -->|"Traefik NodePorts :30080 / :30443"| CP0 & CP1 & CP2 & W
+    NLB -. "kubeapi :6443\nexpose_kubeapi=true" .-> ILB
+    ILB --> CP0 & CP1 & CP2
+    W -->|joins via kubeapi| ILB
+    private -->|outbound| NAT --> Internet
+    Bastion -. "SSH tunnel\nenable_bastion=true" .-> private
+```
+
 All four Always Free A1.Flex instances live in a **private subnet** with no public IPs, reducing the attack surface to near-zero. Internet traffic enters exclusively through two Always Free load balancers:
 
-**Public Network Load Balancer (NLB)** handles HTTP/HTTPS from the internet and forwards it directly to Traefik NodePorts on all nodes (both control-plane and worker), using `is_preserve_source = true` to preserve real client IPs at the hypervisor level with no extra OS-level proxy. Traefik is installed with tolerations for control-plane/etcd taints so it can schedule anywhere, maximising capacity across all four A1.Flex instances. The NLB also optionally exposes the Kubernetes API on port 6443, restricted to your IP. It is the only Always Free-eligible TCP/UDP load balancer on OCI that provides health checks, source IP preservation, and a static public IP simultaneously.
+> **k3s naming note:** k3s calls control-plane nodes "servers" (`k3s server` command) and workers "agents" (`k3s agent`). Throughout this repo, Terraform resources and variable names use `server`/`worker` following k3s conventions. In standard Kubernetes terminology these map to control-plane and worker nodes respectively.
 
-**Internal Flexible Load Balancer** provides a stable private VIP for the k3s API across all three control-plane nodes. Agents and workers always join via this VIP, so the cluster survives the loss of any single server. The Flexible LB (10 Mbps Always Free tier) is the right tool here: it handles HTTP-based health checks against the k3s API port, which the NLB cannot do internally on a private subnet without additional cost.
+**Public Network Load Balancer (NLB)** handles HTTP/HTTPS from the internet and forwards it directly to Traefik NodePorts on all nodes (both control-plane and worker). Traefik runs as a **DaemonSet** (one pod per node) with `priorityClassName: system-cluster-critical` and `PodDisruptionBudget maxUnavailable: 1` so that at most one node is unavailable for ingress at any time — whether due to failure or rolling maintenance. `is_preserve_source = true` preserves real client IPs at the hypervisor level with no extra OS-level proxy. The NLB also optionally exposes the Kubernetes API on port 6443, restricted to your IP. It is the only Always Free-eligible TCP/UDP load balancer on OCI that provides health checks, source IP preservation, and a static public IP simultaneously.
 
-**Why this topology is optimal for Always Free:**
+**Internal Flexible Load Balancer** provides a stable private VIP for the k3s API across all three control-plane nodes. The worker and any future agents always join via this VIP, so the cluster survives the loss of any single control-plane. The Flexible LB (10 Mbps Always Free tier) is the right tool here: it handles HTTP-based health checks against the k3s API port, which the NLB cannot do internally on a private subnet without additional cost.
 
-| Alternative | Why it was rejected |
-|---|---|
-| Single control-plane node | No HA; one reboot takes down the API server |
-| E2.1.Micro instances as nodes | 1 OCPU / 1 GB each — far too small for Kubernetes workloads |
-| nginx stream proxy in front of Traefik | Extra latency and complexity; NLB already preserves source IPs directly |
-| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
-| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance with no waste |
-| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
+**Longhorn** runs on **all four nodes** with `defaultReplicaCount=3` — each PVC is replicated across three different nodes, so storage remains available after any single node failure. The control-plane `NoSchedule` taints (added automatically by k3s ≥ 1.24) are removed immediately after cluster init so that **user workloads schedule across all four nodes**. With only one worker, keeping those taints would make it a single point of failure for all workloads. All A1.Flex nodes are identically sized (1 OCPU / 6 GB), so co-locating etcd with user workloads is safe at this scale.
 
-The result is a 3-server HA etcd cluster plus 1 dedicated worker that saturates every Always Free resource class — compute, storage, NLB, Flexible LB, NAT Gateway — with nothing left unused and nothing that costs money.
+> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** maximum — the hard limit for a 4-node Always Free topology.
+
+### Failure tolerance
+
+| Component | Tolerance | What happens on failure |
+|---|---|---|
+| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (3 replicas) keeps storage up; Traefik DaemonSet keeps ingress up on remaining nodes |
+| **2 nodes simultaneously** | ⚠️ Partial | Workloads and ingress continue on 2 surviving nodes; **if both failed nodes are control-planes**, etcd quorum is lost and the API server stops accepting writes (running pods keep running, no new scheduling) |
+| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore |
+| **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
+| **HTTP/HTTPS ingress** | ✅ 3 node losses | Traefik DaemonSet; NLB health-checks remove unhealthy backends automatically |
+| **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
+| **PVC data (Longhorn)** | ✅ 1 node | 3 replicas across 4 nodes; 1 replica lost, 2 remain serving |
+| **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS **serving** unaffected (certs live in Secrets); only new issuance/renewal is paused |
+| **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
+| **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; OCI provides snapshots but no HA failover |
+
+### Node roles and workload placement
+
+Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available.
+
+| What | control-plane-0/1/2 | worker-0 | Scheduling mechanism |
+|---|:---:|:---:|---|
+| **etcd** | ✅ | ❌ | k3s built-in; servers only |
+| **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
+| **Traefik** (ingress) | ✅ | ✅ | DaemonSet — 1 pod per node |
+| **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet — 1 pod per node |
+| **cert-manager** | ✅ | ✅ | Deployment — schedules on any node |
+| **ArgoCD** | ✅ | ✅ | Deployment — schedules on any node |
+| **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet — any node |
+| **kured** | ✅ | ✅ | DaemonSet — 1 pod per node |
+| **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
+
+> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available for scheduling. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
+>
+> **Recommendation for user workloads:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) so pods spread across nodes and survive any single-node failure.
 
 ## Always Free budget
 
@@ -35,13 +95,49 @@ The result is a 3-server HA etcd cluster plus 1 dedicated worker that saturates 
 | Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service — managed, no VM) |
 | NAT Gateway | 1 per VCN (Always Free) | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB | **1 versioned bucket** for Terraform state (`enable_object_storage_state = true`) |
+| Object Storage | 20 GB | **2 versioned buckets** — Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
 | Vault (shared) | Software keys + 150 secrets | **3 secrets** — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
 | Volume backups | 5 boot + block backups | **4** — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
 > ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
+
+## Why this topology
+
+The result is a 3-server HA etcd cluster plus 1 standalone worker that saturates every Always Free resource class — compute, storage, NLB, Flexible LB, NAT Gateway — with nothing left unused and nothing that costs money.
+
+### Topology comparison
+
+With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The table below shows every meaningful distribution of the 4 instances:
+
+| Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
+|---|:---:|:---:|:---:|---|
+| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal** — HA etcd, all 4 nodes contribute to workloads |
+| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
+| 2 CP + 2 workers | ❌ Invalid | — | — | 2-node etcd cannot form quorum; worse than 1 node |
+| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
+
+†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
+
+**4 × 1 OCPU even split** (vs asymmetric, e.g. 1 × 2 OCPU + others) is also optimal: even OCPU allocation prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
+
+### Why not use the 2 free E2.1.Micro instances as extra workers?
+
+Always Free also includes 2 AMD E2.1.Micro instances. They are **not viable k3s workers** in this cluster for three reasons:
+
+1. **1 GB RAM** — k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+2. **Architecture mismatch** — E2.1.Micro is x86\_64; cluster nodes are aarch64 (ARM). Mixed-arch requires multi-arch container images and per-node taints/tolerations, which breaks many Helm charts and complicates every workload deployment
+3. **1/8 OCPU** — negligible compute; adds operational complexity for near-zero workload benefit
+
+### Previously rejected alternatives
+
+| Alternative | Why it was rejected |
+|---|---|
+| nginx stream proxy in front of Traefik | Extra latency and complexity; NLB already preserves source IPs directly |
+| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
+| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance with no waste |
+| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
 
 ## Features
 
@@ -51,7 +147,7 @@ The result is a 3-server HA etcd cluster plus 1 dedicated worker that saturates 
 - **Automatic security updates** — `unattended-upgrades` configured on every Ubuntu node; kured handles reboots
 - **Graceful node reboots** — [kured](https://github.com/kubereboot/kured) drains and reboots nodes one at a time when a kernel update requires it
 - **Ubuntu 24.04 LTS only** — a single, well-supported OS on aarch64; no multi-distro complexity
-- **Traefik 2 ingress** — Helm-managed Traefik 2 with proxy-protocol support and real client IP preservation
+- **Traefik 2 ingress** — Helm-managed Traefik 2 as a **DaemonSet** (one pod per node), `system-cluster-critical` priority, `PodDisruptionBudget maxUnavailable: 1`; real client IP preservation via NLB transparent mode
 - **k3s version pinned at plan time** — resolved from the GitHub API during `terraform plan`, not at boot time
 - **Cluster-scoped IAM** — the OCI dynamic group and policy are scoped to nodes tagged with the cluster name, not every instance in the compartment
 - **Idempotent cloud-init** — all `kubectl` operations use `apply`; re-provisioning is safe
@@ -206,6 +302,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_disable_ingress"></a> [disable\_ingress](#input\_disable\_ingress) | When true, no ingress controller is installed (disables Traefik and skips Traefik 2 install) | `bool` | `false` | no |
 | <a name="input_enable_backup"></a> [enable\_backup](#input\_enable\_backup) | Enable weekly boot volume backups for all k3s nodes (Always Free: 5 total backups). With 4 nodes at weekly-1-week-retention there are at most 4 active backups. | `bool` | `true` | no |
 | <a name="input_enable_bastion"></a> [enable\_bastion](#input\_enable\_bastion) | Provision an OCI Bastion Service resource (managed SSH proxy, Always Free, no storage).<br/>When enabled, a STANDARD bastion is created and associated with the private subnet.<br/>Use example/get-kubeconfig.sh to retrieve kubeconfig via a Bastion session.<br/>Strongly recommended; without it, nodes are reachable only via serial console. | `bool` | `false` | no |
+| <a name="input_enable_longhorn_backup"></a> [enable\_longhorn\_backup](#input\_enable\_longhorn\_backup) | Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups (S3-compatible). See longhorn\_backup\_setup output for connection instructions. Shares the 20 GB free allowance with the Terraform state bucket. | `bool` | `true` | no |
 | <a name="input_enable_mysql"></a> [enable\_mysql](#input\_enable\_mysql) | Provision an Always Free MySQL HeatWave DB system (single node, 50 GB). Creates a Kubernetes Secret 'mysql-credentials' in the default namespace. | `bool` | `false` | no |
 | <a name="input_enable_notifications"></a> [enable\_notifications](#input\_enable\_notifications) | Create an OCI Notifications topic and wire it to Alertmanager as a webhook receiver (Always Free: 1M HTTPS + 3K email/month). | `bool` | `false` | no |
 | <a name="input_enable_object_storage_state"></a> [enable\_object\_storage\_state](#input\_enable\_object\_storage\_state) | Provision an Always Free OCI Object Storage bucket for storing Terraform/OpenTofu state (S3-compatible API). See the terraform\_state\_backend output for the backend configuration snippet. | `bool` | `true` | no |
@@ -262,7 +359,7 @@ MIT. See [LICENSE](LICENSE).
 ## Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
 | <a name="output_bastion_ocid"></a> [bastion\_ocid](#output\_bastion\_ocid) | OCID of the OCI Bastion Service resource (null if enable\_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh. |
 | <a name="output_grafana_admin_credentials"></a> [grafana\_admin\_credentials](#output\_grafana\_admin\_credentials) | Grafana admin credentials (only available after cluster bootstrap) |
@@ -272,6 +369,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="output_k3s_token"></a> [k3s\_token](#output\_k3s\_token) | k3s cluster join token (sensitive) |
 | <a name="output_k3s_workers_private_ips"></a> [k3s\_workers\_private\_ips](#output\_k3s\_workers\_private\_ips) | Private IPs of k3s worker nodes (instance pool) |
 | <a name="output_kubeconfig_hint"></a> [kubeconfig\_hint](#output\_kubeconfig\_hint) | How to retrieve kubeconfig after cluster is up |
+| <a name="output_longhorn_backup_setup"></a> [longhorn\_backup\_setup](#output\_longhorn\_backup\_setup) | Instructions to connect Longhorn to the OCI Object Storage backup bucket. Null if enable\_longhorn\_backup = false. |
 | <a name="output_longhorn_ui_credentials"></a> [longhorn\_ui\_credentials](#output\_longhorn\_ui\_credentials) | Longhorn UI credentials (only set when longhorn\_hostname is configured) |
 | <a name="output_mysql_admin_credentials"></a> [mysql\_admin\_credentials](#output\_mysql\_admin\_credentials) | MySQL HeatWave admin credentials (sensitive). Null if enable\_mysql = false. |
 | <a name="output_mysql_endpoint"></a> [mysql\_endpoint](#output\_mysql\_endpoint) | MySQL HeatWave connection endpoint (hostname:port). Null if enable\_mysql = false. |
