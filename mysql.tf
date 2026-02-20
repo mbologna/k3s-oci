@@ -5,10 +5,15 @@
 # 'default' namespace so applications can mount it directly.
 
 resource "random_password" "mysql_admin_password" {
-  count   = var.enable_mysql ? 1 : 0
-  length  = 24
-  special = false
-  keepers = { cluster_name = var.cluster_name }
+  count            = var.enable_mysql ? 1 : 0
+  length           = 24
+  special          = true
+  override_special = "@#%^&*"
+  min_upper        = 1
+  min_lower        = 1
+  min_numeric      = 1
+  min_special      = 1
+  keepers          = { cluster_name = var.cluster_name }
 }
 
 resource "oci_mysql_mysql_db_system" "k3s" {
