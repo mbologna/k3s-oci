@@ -11,7 +11,25 @@
 # Override SSH key: SSH_KEY_PATH=~/.ssh/id_ed25519 ./ssh-node.sh
 set -euo pipefail
 
-SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_rsa}"
+# Auto-detect key: prefer ed25519 (OCI Bastion works best with it), fall back to id_rsa
+if [ -z "${SSH_KEY_PATH:-}" ]; then
+  if [ -f "$HOME/.ssh/id_ed25519" ]; then
+    SSH_KEY_PATH="$HOME/.ssh/id_ed25519"
+  elif [ -f "$HOME/.ssh/id_rsa" ]; then
+    SSH_KEY_PATH="$HOME/.ssh/id_rsa"
+  else
+    echo "❌ No SSH key found. Set SSH_KEY_PATH or create ~/.ssh/id_ed25519"
+    exit 1
+  fi
+fi
+
+# The tunnel runs in the background (no TTY), so it cannot prompt for a passphrase.
+# Ensure the key is loaded in the SSH agent now, while we still have a TTY.
+KEY_FP=$(ssh-keygen -lf "${SSH_KEY_PATH}.pub" 2>/dev/null | awk '{print $2}')
+if ! ssh-add -l 2>/dev/null | grep -qF "$KEY_FP"; then
+  echo "🔑 SSH key not in agent — adding now (you may be prompted for your passphrase)..."
+  ssh-add "$SSH_KEY_PATH"
+fi
 LOCAL_PORT=22223
 
 BASTION_OCID=$(tofu output -raw bastion_ocid)
@@ -59,17 +77,33 @@ ssh -i "$SSH_KEY_PATH" \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o ControlPath=none \
+  -o IdentitiesOnly=yes \
   -o Ciphers=aes128-ctr,aes192-ctr,aes256-ctr \
   -N -L "${LOCAL_PORT}:${NODE_IP}:22" \
   -p 22 "$BASTION_ENDPOINT" &
 TUNNEL_PID=$!
 
 echo -n "🔗 Waiting for tunnel on localhost:${LOCAL_PORT}..."
+TUNNEL_UP=false
 for _ in $(seq 1 12); do
   sleep 2
-  nc -z localhost "$LOCAL_PORT" 2>/dev/null && break
+  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    echo ""
+    echo "❌ SSH tunnel process exited unexpectedly. Check that SSH_KEY_PATH points to the correct key."
+    echo "   Default: SSH_KEY_PATH=${SSH_KEY_PATH}"
+    exit 1
+  fi
+  if nc -z localhost "$LOCAL_PORT" 2>/dev/null; then
+    TUNNEL_UP=true
+    break
+  fi
   echo -n "."
 done
+if [ "$TUNNEL_UP" != "true" ]; then
+  echo ""
+  echo "❌ Tunnel did not become ready after 24 seconds."
+  exit 1
+fi
 echo " ✓"
 
 echo "🖥️  Connecting to ${NODE_IP} (ubuntu@localhost:${LOCAL_PORT})..."
@@ -79,4 +113,5 @@ ssh -i "$SSH_KEY_PATH" \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o ControlPath=none \
+  -o IdentitiesOnly=yes \
   -p "$LOCAL_PORT" ubuntu@localhost
