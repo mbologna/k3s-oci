@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+    targetRevision: "1.11.1"
+    helm:
+      valuesObject:
+        defaultSettings:
+          # 3 replicas: any single node can be lost without PVC data loss
+          defaultReplicaCount: 3
+        persistence:
+          defaultClassReplicaCount: 3
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

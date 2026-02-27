@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.traefik.io/traefik
+    chart: traefik
+    # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
+    targetRevision: "39.0.8"
+    helm:
+      valuesObject:
+        deployment:
+          kind: DaemonSet
+        # Traefik pods preempt user workloads under memory pressure
+        priorityClassName: system-cluster-critical
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        # OCI NLB backends use NodePorts; must match ingress_controller_{http,https}_nodeport in vars.tf
+        service:
+          type: NodePort
+        ports:
+          web:
+            nodePort: 30080
+          websecure:
+            nodePort: 30443
+            tls:
+              enabled: true
+        # Allow only 1 pod down at a time so 3 of 4 nodes always serve ingress during maintenance
+        podDisruptionBudget:
+          enabled: true
+          maxUnavailable: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
