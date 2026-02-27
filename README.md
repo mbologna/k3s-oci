@@ -241,12 +241,16 @@ This repo is designed to be forked. The `gitops/apps/` directory ships manifests
    git push
    ```
 
-3. **Set `gitops_repo_url`** in your `terraform.tfvars`:
-   ```hcl
-   gitops_repo_url = "https://github.com/your-org/your-fork.git"
-   ```
+3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` in your fork — ArgoCD syncs them automatically. You can point each app at any Helm chart registry or any Git repository; only the `app-of-apps.yaml` and the built-in manifests need to live in your fork.
 
-4. **Add your ArgoCD `Application` manifests** to `gitops/apps/` in your fork — ArgoCD syncs them automatically. You can point each app at any Helm chart registry or any Git repository; only the `app-of-apps.yaml` and the built-in manifests need to live in your fork.
+> **Deploying for the first time?** Also set `gitops_repo_url` in your `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL into the ArgoCD App of Apps at cluster bootstrap:
+> ```hcl
+> gitops_repo_url = "https://github.com/your-org/your-fork.git"
+> ```
+> **Already have a running cluster?** The `gitops_repo_url` variable has no effect without re-provisioning nodes (cloud-init already ran). Instead, patch the App of Apps directly:
+> ```bash
+> argocd app set app-of-apps --repo https://github.com/your-org/your-fork.git
+> ```
 
 > **Private repos**: configure ArgoCD repository credentials (`argocd repo add`) before adding manifests that pull from private repositories.
 
