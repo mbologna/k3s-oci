@@ -320,7 +320,7 @@ variable "certmanager_release" {
   type        = string
   description = "cert-manager release to install."
   # renovate: datasource=github-releases depName=cert-manager/cert-manager
-  default = "v1.16.3"
+  default = "v1.20.2"
 }
 
 variable "certmanager_email_address" {
@@ -339,7 +339,7 @@ variable "longhorn_release" {
   type        = string
   description = "Longhorn release to install."
   # renovate: datasource=github-releases depName=longhorn/longhorn
-  default = "v1.8.1"
+  default = "v1.11.1"
 }
 
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
@@ -355,7 +355,7 @@ variable "argocd_image_updater_release" {
   type        = string
   description = "ArgoCD Image Updater release to install (kubectl apply)."
   # renovate: datasource=github-releases depName=argoproj-labs/argocd-image-updater
-  default = "v0.16.0"
+  default = "v0.18.0"
 }
 
 variable "argocd_hostname" {
