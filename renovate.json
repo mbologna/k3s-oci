@@ -49,6 +49,16 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*targetRevision:\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "description": "Update system-upgrade-controller version in kustomization.yaml remote resource URLs",
+      "customType": "regex",
+      "fileMatch": ["(^|/)gitops/system-upgrade/kustomization\\.yaml$"],
+      "matchStrings": [
+        "system-upgrade-controller/releases/download/(?<currentValue>[^/]+)/"
+      ],
+      "depNameTemplate": "rancher/system-upgrade-controller",
+      "datasourceTemplate": "github-releases"
     }
   ]
 }
