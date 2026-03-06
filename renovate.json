@@ -6,6 +6,7 @@
   ],
   "labels": ["dependencies"],
   "reviewers": ["mbologna"],
+  "platformAutomerge": true,
   "terraform": {
     "enabled": true
   },
@@ -27,17 +28,21 @@
       "automerge": false
     },
     {
-      "description": "Auto-merge patch-level k3s updates",
+      "description": "Auto-merge patch-level k3s updates after CI passes",
       "matchPackageNames": ["k3s-io/k3s"],
       "matchUpdateTypes": ["patch"],
-      "automerge": true
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
     }
   ],
   "customManagers": [
     {
       "description": "Update versions declared with inline renovate comments in vars.tf",
       "customType": "regex",
-      "fileMatch": ["(^|/)vars\\.tf$"],
+      "managerFilePatterns": [
+        "/(^|/)vars\\.tf$/"
+      ],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*default\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
@@ -45,7 +50,9 @@
     {
       "description": "Update Helm chart versions declared with inline renovate comments in gitops YAML files",
       "customType": "regex",
-      "fileMatch": ["(^|/)gitops/.*\\.yaml$"],
+      "managerFilePatterns": [
+        "/(^|/)gitops/.*\\.yaml$/"
+      ],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*targetRevision:\\s*\"(?<currentValue>[^\"]+)\""
       ]
@@ -53,7 +60,9 @@
     {
       "description": "Update system-upgrade-controller version in kustomization.yaml remote resource URLs",
       "customType": "regex",
-      "fileMatch": ["(^|/)gitops/system-upgrade/kustomization\\.yaml$"],
+      "managerFilePatterns": [
+        "/(^|/)gitops/system-upgrade/kustomization\\.yaml$/"
+      ],
       "matchStrings": [
         "system-upgrade-controller/releases/download/(?<currentValue>[^/]+)/"
       ],
