@@ -140,20 +140,22 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | Terraform validate (root) | `terraform init -backend=false && terraform validate` |
 | Terraform validate (example) | same, in `example/` |
 | OpenTofu validate (root + example) | same as above but with `tofu` |
-| tflint | `tflint --config=.tflint.hcl` (pinned version, Renovate-managed) |
+| tflint | `tflint --init && tflint --recursive` (pinned version, Renovate-managed; auto-discovers `.tflint.hcl`) |
 | ShellCheck | `shellcheck --severity=warning files/*.sh` |
-| YAML lint (gitops/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/` |
+| YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
+| actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
-| terraform-docs | auto-committed by CI if README drift detected |
+| terraform-docs | fails on diff in PRs; auto-committed on push to main |
 
 Run all checks locally before pushing:
 ```bash
 tofu fmt -recursive
 tofu init -backend=false && tofu validate
 (cd example && tofu init -backend=false && tofu validate)
-tflint --config=.tflint.hcl
+tflint --init && tflint --recursive
 shellcheck --severity=warning files/k3s-install-server.sh files/k3s-install-agent.sh
-yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/
+yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
+actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
 terraform-docs .
 ```
