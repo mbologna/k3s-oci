@@ -291,15 +291,14 @@ MIT. See [LICENSE](LICENSE).
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_alertmanager_email"></a> [alertmanager\_email](#input\_alertmanager\_email) | Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email. | `string` | `null` | no |
-| <a name="input_argocd_chart_release"></a> [argocd\_chart\_release](#input\_argocd\_chart\_release) | ArgoCD Helm chart version (argo/argo-cd). Chart version maps 1:1 to an ArgoCD app version. | `string` | `"7.8.23"` | no |
+| <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.5"` | no |
 | <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI IngressRoute (e.g. argocd.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created. | `string` | `null` | no |
-| <a name="input_argocd_image_updater_release"></a> [argocd\_image\_updater\_release](#input\_argocd\_image\_updater\_release) | ArgoCD Image Updater release to install (kubectl apply). | `string` | `"v0.16.0"` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
 | <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `50` | no |
+| <a name="input_certmanager_chart_version"></a> [certmanager\_chart\_version](#input\_certmanager\_chart\_version) | cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate. | `string` | `"v1.20.2"` | no |
 | <a name="input_certmanager_email_address"></a> [certmanager\_email\_address](#input\_certmanager\_email\_address) | Email address for Let's Encrypt ACME registration. Must be a real address. | `string` | n/a | yes |
-| <a name="input_certmanager_release"></a> [certmanager\_release](#input\_certmanager\_release) | cert-manager release to install. | `string` | `"v1.16.3"` | no |
 | <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Logical name for the cluster. Used in display names and freeform tags. | `string` | n/a | yes |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | OCID of the compartment where all resources are created | `string` | n/a | yes |
 | <a name="input_compute_shape"></a> [compute\_shape](#input\_compute\_shape) | OCI compute shape for k3s nodes | `string` | `"VM.Standard.A1.Flex"` | no |
@@ -315,6 +314,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment label (e.g. staging, production) | `string` | `"staging"` | no |
 | <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |
 | <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
+| <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
 | <a name="input_grafana_hostname"></a> [grafana\_hostname](#input\_grafana\_hostname) | Fully-qualified hostname for the Grafana UI IngressRoute (e.g. grafana.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created in gitops/monitoring/. | `string` | `null` | no |
 | <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | n/a | `number` | `80` | no |
@@ -325,21 +325,19 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_k3s_server_pool_size"></a> [k3s\_server\_pool\_size](#input\_k3s\_server\_pool\_size) | Number of k3s control-plane nodes in the instance pool. Use 3 for HA (etcd quorum). Must be an odd number >= 1. | `number` | `3` | no |
 | <a name="input_k3s_standalone_worker"></a> [k3s\_standalone\_worker](#input\_k3s\_standalone\_worker) | When true (default), provisions one worker node as a plain oci\_core\_instance resource.<br/>This is the recommended approach for OCI Always Free tenancies: instance pools route<br/>requests through OCI Capacity Management which can fail for A1.Flex shapes, whereas<br/>a direct oci\_core\_instance reliably claims the free allocation.<br/>Default topology: 3 control-plane nodes (pool) + 1 standalone worker = 4 OCPUs / 24 GB. | `bool` | `true` | no |
 | <a name="input_k3s_subnet"></a> [k3s\_subnet](#input\_k3s\_subnet) | Subnet name used to derive the flannel interface. Leave 'default\_route\_table' to let k3s auto-detect. | `string` | `"default_route_table"` | no |
-| <a name="input_k3s_upgrade_channel"></a> [k3s\_upgrade\_channel](#input\_k3s\_upgrade\_channel) | k3s release channel to track for automated upgrades. 'stable' is recommended; 'latest' tracks RC releases. | `string` | `"stable"` | no |
 | <a name="input_k3s_version"></a> [k3s\_version](#input\_k3s\_version) | k3s version to install. 'latest' resolves the current stable release at plan time via the GitHub API. | `string` | `"latest"` | no |
 | <a name="input_k3s_worker_pool_size"></a> [k3s\_worker\_pool\_size](#input\_k3s\_worker\_pool\_size) | Number of k3s worker nodes managed by the OCI Instance Pool.<br/>Set to 0 (default) when using k3s\_standalone\_worker = true, which is the recommended<br/>Always Free topology. The pool is kept to allow future scaling beyond the free tier. | `number` | `0` | no |
 | <a name="input_kube_api_port"></a> [kube\_api\_port](#input\_kube\_api\_port) | Port the k3s API server listens on | `number` | `6443` | no |
+| <a name="input_kured_chart_version"></a> [kured\_chart\_version](#input\_kured\_chart\_version) | kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate. | `string` | `"5.11.0"` | no |
 | <a name="input_kured_end_time"></a> [kured\_end\_time](#input\_kured\_end\_time) | End of the kured maintenance window (UTC, HH:MM). Default 06:00 UTC = 08:00 CET / 09:00 CEST. | `string` | `"06:00"` | no |
 | <a name="input_kured_reboot_days"></a> [kured\_reboot\_days](#input\_kured\_reboot\_days) | Days of the week on which kured may reboot nodes. Defaults to all days. | `list(string)` | <pre>[<br/>  "mon",<br/>  "tue",<br/>  "wed",<br/>  "thu",<br/>  "fri",<br/>  "sat",<br/>  "sun"<br/>]</pre> | no |
-| <a name="input_kured_release"></a> [kured\_release](#input\_kured\_release) | kured Helm chart version. | `string` | `"5.5.1"` | no |
 | <a name="input_kured_start_time"></a> [kured\_start\_time](#input\_kured\_start\_time) | Start of the kured maintenance window (UTC, HH:MM). Default 22:00 UTC = midnight CET / 01:00 CEST. | `string` | `"22:00"` | no |
+| <a name="input_longhorn_chart_version"></a> [longhorn\_chart\_version](#input\_longhorn\_chart\_version) | Longhorn Helm chart version used for the bootstrap install. Must match gitops/apps/longhorn.yaml targetRevision. Managed by Renovate. | `string` | `"1.11.1"` | no |
 | <a name="input_longhorn_hostname"></a> [longhorn\_hostname](#input\_longhorn\_hostname) | Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with BasicAuth and a cert-manager TLS certificate is created. | `string` | `null` | no |
-| <a name="input_longhorn_release"></a> [longhorn\_release](#input\_longhorn\_release) | Longhorn release to install. | `string` | `"v1.8.1"` | no |
 | <a name="input_longhorn_ui_username"></a> [longhorn\_ui\_username](#input\_longhorn\_ui\_username) | Username for Longhorn UI BasicAuth (only used when longhorn\_hostname is set). | `string` | `"admin"` | no |
 | <a name="input_my_public_ip_cidr"></a> [my\_public\_ip\_cidr](#input\_my\_public\_ip\_cidr) | Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32).<br/>Restricts OCI Bastion Service session creation (enable\_bastion = true) and<br/>kubeapi access via the public NLB (expose\_kubeapi = true).<br/>k3s nodes are in a private subnet and are only reachable via OCI Bastion sessions. | `string` | n/a | yes |
 | <a name="input_mysql_admin_username"></a> [mysql\_admin\_username](#input\_mysql\_admin\_username) | Admin username for the MySQL HeatWave DB system. | `string` | `"admin"` | no |
 | <a name="input_mysql_shape"></a> [mysql\_shape](#input\_mysql\_shape) | MySQL HeatWave shape. 'MySQL.Free' is the Always Free shape. | `string` | `"MySQL.Free"` | no |
-| <a name="input_oci_cli_version"></a> [oci\_cli\_version](#input\_oci\_cli\_version) | OCI CLI version installed on control-plane nodes for first-server detection. | `string` | `"3.52.0"` | no |
 | <a name="input_oci_core_vcn_cidr"></a> [oci\_core\_vcn\_cidr](#input\_oci\_core\_vcn\_cidr) | CIDR block for the VCN | `string` | `"10.0.0.0/16"` | no |
 | <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | n/a | `string` | `"k3svcn"` | no |
 | <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API | `string` | `"k3s-cluster-dynamic-group"` | no |
@@ -353,8 +351,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | n/a | `string` | `"k3spublic"` | no |
 | <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 24 GB (Always Free). | `number` | `6` | no |
 | <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 4 (Always Free). | `number` | `1` | no |
-| <a name="input_system_upgrade_controller_release"></a> [system\_upgrade\_controller\_release](#input\_system\_upgrade\_controller\_release) | system-upgrade-controller version for k3s automated upgrades. | `string` | `"v0.15.2"` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | OCID of the tenancy | `string` | n/a | yes |
+| <a name="input_traefik_chart_version"></a> [traefik\_chart\_version](#input\_traefik\_chart\_version) | Traefik Helm chart version used for the bootstrap install. Must match gitops/apps/traefik.yaml targetRevision. Managed by Renovate. | `string` | `"39.0.8"` | no |
 | <a name="input_unique_tag_key"></a> [unique\_tag\_key](#input\_unique\_tag\_key) | Freeform tag key applied to every resource for identification | `string` | `"k3s-provisioner"` | no |
 | <a name="input_unique_tag_value"></a> [unique\_tag\_value](#input\_unique\_tag\_value) | Freeform tag value applied to every resource for identification | `string` | `"https://github.com/mbologna/k3s-oci"` | no |
 | <a name="input_worker_memory_in_gbs"></a> [worker\_memory\_in\_gbs](#input\_worker\_memory\_in\_gbs) | RAM in GB per worker node. | `number` | `6` | no |
@@ -363,7 +361,7 @@ MIT. See [LICENSE](LICENSE).
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
 | <a name="output_bastion_ocid"></a> [bastion\_ocid](#output\_bastion\_ocid) | OCID of the OCI Bastion Service resource (null if enable\_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh. |
 | <a name="output_grafana_admin_credentials"></a> [grafana\_admin\_credentials](#output\_grafana\_admin\_credentials) | Grafana admin credentials (only available after cluster bootstrap) |
