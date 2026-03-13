@@ -41,7 +41,7 @@ bootstrap() {
   apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 python3-pip \
-    open-iscsi util-linux
+    open-iscsi nfs-common util-linux
   apt-get upgrade -y -q
   apt-get clean
   rm -rf /var/lib/apt/lists/*
@@ -146,48 +146,175 @@ install_helm() {
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 }
 
-# ── Ingress: Traefik 2 (Helm-managed) ────────────────────────────────────────
+# ── Ingress: Envoy Gateway (Gateway API) ─────────────────────────────────────
 
-install_traefik2() {
+install_envoy_gateway() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
-  kubectl create namespace traefik --dry-run=client -o yaml | kubectl apply -f -
-  helm repo add traefik https://helm.traefik.io/traefik
-  helm repo update
-  # OCI NLB uses is_preserve_source=true (transparent mode) — real client IPs arrive directly.
-  # No proxy-protocol configuration needed.
-  # DaemonSet mode: one Traefik pod per node so that every NLB backend can
-  # serve ingress traffic locally — no cross-node forwarding hop, no single
-  # pod as a SPOF.
-  # priorityClassName=system-cluster-critical: Traefik pods preempt user
-  # workloads under memory pressure and are never evicted before system daemons.
-  # resources.requests: prevents scheduling on nodes that can't sustain ingress.
-  helm upgrade --install --namespace=traefik traefik traefik/traefik \
-    --version "${traefik_chart_version}" \
-    --set "deployment.kind=DaemonSet" \
-    --set "priorityClassName=system-cluster-critical" \
-    --set "resources.requests.cpu=100m" \
-    --set "resources.requests.memory=128Mi" \
-    --set "service.type=NodePort" \
-    --set "ports.web.nodePort=${ingress_controller_http_nodeport}" \
-    --set "ports.websecure.nodePort=${ingress_controller_https_nodeport}" \
-    --set "ports.websecure.tls.enabled=true" \
-    --atomic --wait --timeout 5m
 
-  # PDB: kured (or any drain) can only take down 1 Traefik pod at a time,
-  # so 3 of 4 nodes always serve ingress during rolling maintenance.
-  kubectl apply -n traefik -f - << 'TRAEFIK_PDB_EOF'
-apiVersion: policy/v1
-kind: PodDisruptionBudget
+  # 1. Gateway API standard channel CRDs (HTTPRoute, Gateway, GatewayClass, etc.)
+  kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${gateway_api_version}/standard-install.yaml"
+  echo "Gateway API CRDs ${gateway_api_version} installed."
+
+  # 2. Envoy Gateway via OCI Helm registry
+  # DaemonSet mode: one Envoy proxy pod per node — no cross-node forwarding,
+  # no single-pod SPOF. priorityClassName=system-cluster-critical prevents eviction.
+  kubectl create namespace envoy-gateway-system --dry-run=client -o yaml | kubectl apply -f -
+  helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
+    --version "${envoy_gateway_chart_version}" \
+    --namespace envoy-gateway-system \
+    --atomic --wait --timeout 5m
+  echo "Envoy Gateway ${envoy_gateway_chart_version} installed."
+
+  # 3. EnvoyProxy config: DaemonSet + NodePort service (30080/30443)
+  # These NodePorts must match ingress_controller_{http,https}_nodeport and the OCI NLB backends.
+  kubectl apply -n envoy-gateway-system -f - << PROXYEOF
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
 metadata:
-  name: traefik-pdb
-  namespace: traefik
+  name: proxy-config
+  namespace: envoy-gateway-system
 spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: traefik
-TRAEFIK_PDB_EOF
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDaemonSet:
+        patch:
+          type: StrategicMergePatch
+          value:
+            spec:
+              updateStrategy:
+                type: RollingUpdate
+                rollingUpdate:
+                  maxUnavailable: 1
+              template:
+                spec:
+                  priorityClassName: system-cluster-critical
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+      envoyService:
+        type: NodePort
+        patch:
+          type: MergePatch
+          value:
+            spec:
+              ports:
+                - name: http
+                  port: 80
+                  protocol: TCP
+                  nodePort: ${ingress_controller_http_nodeport}
+                - name: https
+                  port: 443
+                  protocol: TCP
+                  nodePort: ${ingress_controller_https_nodeport}
+PROXYEOF
+
+  # 4. GatewayClass
+  kubectl apply -f - << 'GCEOF'
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: proxy-config
+    namespace: envoy-gateway-system
+GCEOF
+
+  # 5. Gateway: HTTP listener (always) + one HTTPS listener per configured hostname.
+  # TLS certs live in envoy-gateway-system (same namespace as Gateway) so no ReferenceGrant needed.
+  kubectl apply -n envoy-gateway-system -f - << GWEOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+%{ if argocd_hostname != "" }
+    - name: https-argocd
+      port: 443
+      protocol: HTTPS
+      hostname: "${argocd_hostname}"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: argocd-server-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+%{ endif }
+%{ if longhorn_hostname != "" }
+    - name: https-longhorn
+      port: 443
+      protocol: HTTPS
+      hostname: "${longhorn_hostname}"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: longhorn-frontend-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+%{ endif }
+GWEOF
+
+  # 6. HTTP → HTTPS redirect HTTPRoute (catch-all on the http listener)
+  kubectl apply -n envoy-gateway-system -f - << 'REDIREOF'
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: envoy-gateway-system
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+REDIREOF
+
+  # 7. TLS policy: TLS 1.2+ and strong cipher suites for all HTTPS listeners
+  kubectl apply -n envoy-gateway-system -f - << 'TLSEOF'
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: tls-policy
+  namespace: envoy-gateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+  tls:
+    minVersion: "1.2"
+    ciphers:
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+TLSEOF
+
+  echo "Envoy Gateway configured: DaemonSet proxy, NodePorts ${ingress_controller_http_nodeport}/${ingress_controller_https_nodeport}."
 }
 
 # ── cert-manager ──────────────────────────────────────────────────────────────
@@ -203,11 +330,64 @@ install_certmanager() {
     --namespace cert-manager --create-namespace \
     --version "${certmanager_chart_version}" \
     --set crds.enabled=true \
+    --set "extraArgs[0]=--feature-gates=ExperimentalGatewayAPISupport=true" \
     --atomic --wait --timeout 5m
 
+%{ if enable_dns01_challenge }
+  # DNS-01 challenge via Cloudflare — supports wildcard certs, no inbound port 80 required.
+  kubectl apply -n cert-manager -f - << CFEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-token: "${cloudflare_api_token}"
+CFEOF
+
+  kubectl apply -f - << ISSEOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${certmanager_email_address}
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+ISSEOF
+
+  kubectl apply -f - << ISSEOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${certmanager_email_address}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+ISSEOF
+%{ else }
   # Bootstrap ClusterIssuers with the correct email address.
   # These are then adoptable by ArgoCD via gitops/cert-manager/ (update email there first).
-  kubectl apply -f - << 'ISSEOF'
+  # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) — no Ingress controller needed.
+  kubectl apply -f - << ISSEOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -220,11 +400,14 @@ spec:
       name: letsencrypt-staging
     solvers:
       - http01:
-          ingress:
-            ingressClassName: traefik
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: eg
+                namespace: envoy-gateway-system
+                kind: Gateway
 ISSEOF
 
-  kubectl apply -f - << 'ISSEOF'
+  kubectl apply -f - << ISSEOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -237,11 +420,91 @@ spec:
       name: letsencrypt-prod
     solvers:
       - http01:
-          ingress:
-            ingressClassName: traefik
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: eg
+                namespace: envoy-gateway-system
+                kind: Gateway
 ISSEOF
-  echo "cert-manager installed with ClusterIssuers. See gitops/cert-manager/ to adopt into ArgoCD."
+%{ endif }
+  echo "cert-manager installed with ClusterIssuers (Gateway API HTTP-01 solver). See gitops/cert-manager/ to adopt into ArgoCD."
 }
+
+# ── External DNS ──────────────────────────────────────────────────────────────
+
+%{ if enable_external_dns }
+install_external_dns() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
+
+  # Pre-create the Cloudflare credentials secret before the Helm chart deploys,
+  # so external-dns starts reconciling immediately without a pod restart.
+  kubectl create namespace external-dns --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -n external-dns -f - << CFEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-credentials
+  namespace: external-dns
+type: Opaque
+stringData:
+  apiToken: "${cloudflare_api_token}"
+CFEOF
+
+  helm repo add external-dns https://kubernetes-sigs.github.io/external-dns
+  helm repo update
+
+  helm upgrade --install external-dns external-dns/external-dns \
+    --namespace external-dns --create-namespace \
+    --version "${external_dns_chart_version}" \
+    --set provider.name=cloudflare \
+    --set "env[0].name=CF_API_TOKEN" \
+    --set "env[0].valueFrom.secretKeyRef.name=cloudflare-credentials" \
+    --set "env[0].valueFrom.secretKeyRef.key=apiToken" \
+    --set "domainFilters[0]=${external_dns_domain_filter}" \
+    --set policy=sync \
+    --set txtOwnerId=${cluster_name} \
+    --atomic --wait --timeout 5m
+
+  echo "external-dns installed (Cloudflare, domain: ${external_dns_domain_filter})."
+}
+%{ endif }
+
+# ── External Secrets Operator ─────────────────────────────────────────────────
+
+%{ if enable_external_secrets }
+install_external_secrets() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
+
+  helm repo add external-secrets https://charts.external-secrets.io
+  helm repo update
+
+  helm upgrade --install external-secrets external-secrets/external-secrets \
+    --namespace external-secrets --create-namespace \
+    --version "${external_secrets_chart_version}" \
+    --atomic --wait --timeout 5m
+
+  # Bootstrap ClusterSecretStore pointing to OCI Vault via instance_principal.
+  # The store is then adoptable into ArgoCD via gitops/external-secrets/.
+  kubectl apply -f - << ESSEOF
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: oci-vault
+spec:
+  provider:
+    oracle:
+      vault: "${vault_ocid}"
+      region: "${oci_region}"
+      auth:
+        instancePrincipal: {}
+ESSEOF
+
+  echo "External Secrets Operator installed. ClusterSecretStore 'oci-vault' ready."
+  echo "See gitops/external-secrets/ for ExternalSecret examples."
+}
+%{ endif }
 
 # ── Longhorn ──────────────────────────────────────────────────────────────────
 
@@ -269,50 +532,51 @@ install_longhorn() {
 apiVersion: v1
 kind: Secret
 metadata:
-  name: longhorn-basicauth
+  name: longhorn-basic-auth-secret
   namespace: longhorn-system
 type: Opaque
 stringData:
-  users: "${longhorn_ui_username}:$${LONGHORN_HASH}"
+  .htpasswd: "${longhorn_ui_username}:$${LONGHORN_HASH}"
 ---
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
+# SecurityPolicy enforces BasicAuth for the Longhorn HTTPRoute via Envoy Gateway.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
 metadata:
-  name: longhorn-basicauth
+  name: longhorn-basic-auth
   namespace: longhorn-system
 spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: longhorn-frontend
   basicAuth:
-    secret: longhorn-basicauth
+    users:
+      name: longhorn-basic-auth-secret
 ---
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: longhorn-frontend
   namespace: longhorn-system
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - kind: Rule
-      match: Host(\`${longhorn_hostname}\`)
-      priority: 10
-      middlewares:
-        - name: longhorn-basicauth
-          namespace: longhorn-system
-      services:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: https-longhorn
+  hostnames:
+    - ${longhorn_hostname}
+  rules:
+    - backendRefs:
         - name: longhorn-frontend
           port: 80
-  tls:
-    secretName: longhorn-frontend-tls
-    options:
-      name: tls-modern
-      namespace: traefik
 ---
+# TLS cert lives in the Gateway namespace (envoy-gateway-system) — same namespace
+# as the Gateway so no ReferenceGrant is needed.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: longhorn-frontend-tls
-  namespace: longhorn-system
+  namespace: envoy-gateway-system
 spec:
   secretName: longhorn-frontend-tls
   issuerRef:
@@ -321,7 +585,7 @@ spec:
   dnsNames:
     - ${longhorn_hostname}
 LHEOF
-  echo "Longhorn IngressRoute with BasicAuth created for https://${longhorn_hostname}"
+  echo "Longhorn HTTPRoute with BasicAuth created for https://${longhorn_hostname}"
   %{ endif }
 }
 
@@ -335,7 +599,7 @@ install_argocd() {
   helm repo add argo https://argoproj.github.io/argo-helm
   helm repo update
 
-  # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
+  # server.insecure=true: Envoy Gateway terminates TLS; ArgoCD backend serves plain HTTP.
   helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
     --version "${argocd_chart_version}" \
@@ -343,36 +607,31 @@ install_argocd() {
     --atomic --wait --timeout 5m
 
   %{ if argocd_hostname != "" }
-  kubectl apply -f - << 'ARGOEOF'
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+  kubectl apply -f - << ARGOEOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: argocd-server
   namespace: argocd
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - kind: Rule
-      match: Host(`${argocd_hostname}`)
-      priority: 10
-      middlewares:
-        - name: argocd-rate-limit
-          namespace: argocd
-      services:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: https-argocd
+  hostnames:
+    - ${argocd_hostname}
+  rules:
+    - backendRefs:
         - name: argocd-server
           port: 80
-  tls:
-    secretName: argocd-server-tls
-    options:
-      name: tls-modern
-      namespace: traefik
 ---
+# TLS cert lives in the Gateway namespace (envoy-gateway-system) — same namespace
+# as the Gateway so no ReferenceGrant is needed.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: argocd-server-tls
-  namespace: argocd
+  namespace: envoy-gateway-system
 spec:
   secretName: argocd-server-tls
   issuerRef:
@@ -380,8 +639,32 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - ${argocd_hostname}
+---
+# BackendTrafficPolicy: local rate limiting — 100 req/s per source IP (burst-friendly).
+# Local mode requires no external rate-limit service; each Envoy proxy pod maintains
+# its own counter independently.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: argocd-rate-limit
+  namespace: argocd
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: argocd-server
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - remoteAddress:
+                type: Distinct
+          limit:
+            requests: 100
+            unit: Second
 ARGOEOF
-  echo "ArgoCD IngressRoute created for https://${argocd_hostname}"
+  echo "ArgoCD HTTPRoute created for https://${argocd_hostname}"
   %{ endif }
 
   # Pre-create grafana-admin secret so kube-prometheus-stack (via ArgoCD) uses generated credentials.
@@ -539,26 +822,20 @@ install_k3s_server() {
   install_params+=("--node-ip $local_ip" "--advertise-address $local_ip" "--flannel-iface $flannel_iface")
 %{ endif }
 
-%{ if disable_ingress }
+  # Always disable k3s built-in Traefik; we install Envoy Gateway instead.
   install_params+=("--disable traefik")
-%{ else }
-%{ if ingress_controller != "traefik" }
-  install_params+=("--disable traefik")
-%{ endif }
-%{ endif }
 
 %{ if expose_kubeapi }
   install_params+=("--tls-san ${k3s_tls_san_public}")
 %{ endif }
 
-  local params_str="$${install_params[*]}"
   local max_attempts=10 attempt=0
 
   if [[ "$IS_FIRST_SERVER" == "true" ]]; then
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
-        sh -s - --cluster-init $params_str; do
+        sh -s - --cluster-init "$${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s init failed after $${max_attempts} attempts."; exit 1; }
       echo "  retrying ($${attempt}/$${max_attempts}) ..."
@@ -569,7 +846,7 @@ install_k3s_server() {
     wait_for_kubeapi
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
-        sh -s - --server "https://${k3s_url}:6443" $params_str; do
+        sh -s - --server "https://${k3s_url}:6443" "$${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s join failed after $${max_attempts} attempts."; exit 1; }
       echo "  retrying ($${attempt}/$${max_attempts}) ..."
@@ -684,13 +961,17 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
   install_longhorn
 
 %{ if ! disable_ingress }
-%{ if ingress_controller == "traefik2" }
-  install_traefik2
-%{ endif }
+  install_envoy_gateway
 %{ endif }
 
   install_certmanager
   install_argocd
+%{ if enable_external_dns }
+  install_external_dns
+%{ endif }
+%{ if enable_external_secrets }
+  install_external_secrets
+%{ endif }
 %{ if mysql_endpoint != "" }
   # Pre-create MySQL credentials Kubernetes Secret
   kubectl apply -n default -f - << MYSQLEOF

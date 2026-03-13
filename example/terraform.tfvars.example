@@ -66,7 +66,7 @@ k3s_standalone_worker = true
 # enable_mysql         = false          # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 
-# ── Hostnames (set to create Traefik IngressRoutes + cert-manager TLS certs) ──
+# ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
 # argocd_hostname   = "argocd.example.com"
 # longhorn_hostname = "longhorn.example.com"
 # grafana_hostname  = "grafana.example.com"
@@ -74,6 +74,24 @@ k3s_standalone_worker = true
 # ── GitOps ────────────────────────────────────────────────────────────────────
 # Set to your fork URL so ArgoCD pulls from the right repository:
 # gitops_repo_url = "https://github.com/your-org/k3s-oci.git"
+
+# ── External DNS (Cloudflare) ─────────────────────────────────────────────────
+# Automatically creates/updates DNS records for Ingress/Service resources.
+# enable_external_dns    = false
+# cloudflare_api_token   = "your-cloudflare-api-token"   # needs Zone:DNS:Edit
+# cloudflare_zone_id     = "your-cloudflare-zone-id"
+# external_dns_domain_filter = "example.com"
+
+# ── External Secrets Operator (OCI Vault) ─────────────────────────────────────
+# Sync OCI Vault secrets into Kubernetes Secrets via ExternalSecret CRs.
+# Requires enable_vault = true. region must match your OCI tenancy home region.
+# enable_external_secrets = false
+# region                  = "eu-frankfurt-1"   # required when enable_external_secrets = true
+
+# ── DNS-01 ACME challenge (Cloudflare) ────────────────────────────────────────
+# Use Cloudflare DNS-01 solver instead of HTTP-01 for cert-manager.
+# Enables wildcard certs (*.example.com); requires enable_external_dns = true.
+# enable_dns01_challenge = false
 
 # ── kured maintenance window (UTC) ────────────────────────────────────────────
 # Default: 22:00–06:00 UTC every day (European night)

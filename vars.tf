@@ -299,19 +299,8 @@ variable "oci_identity_policy_name" {
 
 variable "disable_ingress" {
   type        = bool
-  description = "When true, no ingress controller is installed (disables Traefik and skips Traefik 2 install)"
+  description = "When true, no ingress controller is installed (skips Envoy Gateway install)"
   default     = false
-}
-
-variable "ingress_controller" {
-  type        = string
-  description = "'traefik2' installs Traefik via Helm for full control over the release and values."
-  default     = "traefik2"
-
-  validation {
-    condition     = var.ingress_controller == "traefik2"
-    error_message = "Only 'traefik2' (Helm-managed) is supported. The k3s built-in Traefik option has been removed."
-  }
 }
 
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
@@ -330,13 +319,13 @@ variable "certmanager_email_address" {
 
 variable "argocd_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the ArgoCD UI IngressRoute (e.g. argocd.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created."
   default     = null
 }
 
 variable "longhorn_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with BasicAuth and a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, a Gateway API HTTPRoute with BasicAuth (Envoy Gateway SecurityPolicy) and a cert-manager TLS certificate is created."
   default     = null
 }
 
@@ -348,7 +337,7 @@ variable "longhorn_ui_username" {
 
 variable "grafana_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Grafana UI IngressRoute (e.g. grafana.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
+  description = "Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
   default     = null
 }
 
@@ -447,6 +436,55 @@ variable "enable_vault" {
   default     = true
 }
 
+# ── External DNS (Cloudflare) ─────────────────────────────────────────────────
+
+variable "enable_external_dns" {
+  type        = bool
+  description = "Deploy external-dns (kubernetes-sigs) configured for Cloudflare. Automatically creates/updates DNS A records when Services or Ingresses are annotated. Requires cloudflare_api_token and cloudflare_zone_id."
+  default     = false
+}
+
+variable "cloudflare_api_token" {
+  type        = string
+  sensitive   = true
+  description = "Cloudflare API token. Required when enable_external_dns = true or enable_dns01_challenge = true. Create a scoped token at https://dash.cloudflare.com/profile/api-tokens with Zone:DNS:Edit permissions."
+  default     = null
+}
+
+variable "cloudflare_zone_id" {
+  type        = string
+  description = "Cloudflare Zone ID for the managed domain. Required when enable_external_dns = true."
+  default     = null
+}
+
+variable "external_dns_domain_filter" {
+  type        = string
+  description = "Domain filter for external-dns — only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable_external_dns = true."
+  default     = null
+}
+
+# ── External Secrets Operator ─────────────────────────────────────────────────
+
+variable "enable_external_secrets" {
+  type        = bool
+  description = "Deploy the External Secrets Operator and create a ClusterSecretStore backed by OCI Vault (instance_principal auth). Requires enable_vault = true. Workloads can then create ExternalSecret resources to sync any OCI Vault secret into a Kubernetes Secret without hard-coding values."
+  default     = false
+}
+
+variable "region" {
+  type        = string
+  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable_external_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint."
+  default     = null
+}
+
+# ── DNS-01 ACME challenge via Cloudflare ──────────────────────────────────────
+
+variable "enable_dns01_challenge" {
+  type        = bool
+  description = "Configure cert-manager ClusterIssuers to use DNS-01 ACME challenge via Cloudflare instead of HTTP-01. Enables wildcard certificates (*.example.com) and works even without inbound port 80. Requires cloudflare_api_token."
+  default     = false
+}
+
 # Bootstrap chart versions — must match the targetRevision in the corresponding
 # gitops/apps/*.yaml. Renovate keeps both in sync via a single PR.
 # The bootstrap install uses this version so the cluster never starts with a
@@ -454,9 +492,22 @@ variable "enable_vault" {
 
 variable "traefik_chart_version" {
   type        = string
-  description = "Traefik Helm chart version used for the bootstrap install. Must match gitops/apps/traefik.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
-  default = "39.0.8"
+  description = "Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled."
+  default     = "39.0.8"
+}
+
+variable "gateway_api_version" {
+  type        = string
+  description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
+  # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
+  default = "v1.2.1"
+}
+
+variable "envoy_gateway_chart_version" {
+  type        = string
+  description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=github-releases depName=envoyproxy/gateway
+  default = "v1.3.0"
 }
 
 variable "certmanager_chart_version" {
@@ -485,4 +536,18 @@ variable "kured_chart_version" {
   description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
   default = "5.11.0"
+}
+
+variable "external_dns_chart_version" {
+  type        = string
+  description = "external-dns Helm chart version used for the bootstrap install. Must match gitops/apps/external-dns.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
+  default = "1.20.0"
+}
+
+variable "external_secrets_chart_version" {
+  type        = string
+  description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
+  default = "0.18.2"
 }

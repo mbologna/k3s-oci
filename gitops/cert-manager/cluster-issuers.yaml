@@ -7,7 +7,15 @@
 #      cp gitops/cert-manager/application-template.yaml gitops/apps/cert-manager-issuers.yaml
 #   3. Commit and push — ArgoCD will adopt the existing ClusterIssuers
 #
+# HTTP-01 solver uses Gateway API (gatewayHTTPRoute) via the Envoy Gateway.
+# cert-manager must be installed with --feature-gates=ExperimentalGatewayAPISupport=true
+# (cloud-init does this automatically).
+#
+# DNS-01 (Cloudflare) variant: set enable_dns01_challenge = true in terraform.tfvars.
+# Cloud-init will use the DNS-01 issuers instead of the HTTP-01 ones below.
+# Benefits: supports wildcard certs (*.example.com), no inbound port 80 required.
 ---
+# HTTP-01 issuers (default — enable_dns01_challenge = false)
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -21,8 +29,11 @@ spec:
       name: letsencrypt-staging
     solvers:
       - http01:
-          ingress:
-            ingressClassName: traefik
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: eg
+                namespace: envoy-gateway-system
+                kind: Gateway
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -37,5 +48,48 @@ spec:
       name: letsencrypt-prod
     solvers:
       - http01:
-          ingress:
-            ingressClassName: traefik
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: eg
+                namespace: envoy-gateway-system
+                kind: Gateway
+---
+# DNS-01 issuers (enable_dns01_challenge = true)
+# Uncomment and replace email to adopt DNS-01 issuers into ArgoCD.
+# Requires the cloudflare-api-token Secret in the cert-manager namespace
+# (created by cloud-init when enable_dns01_challenge = true).
+#
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-staging
+# spec:
+#   acme:
+#     server: https://acme-staging-v02.api.letsencrypt.org/directory
+#     email: changeme@example.com
+#     privateKeySecretRef:
+#       name: letsencrypt-staging
+#     solvers:
+#       - dns01:
+#           cloudflare:
+#             apiTokenSecretRef:
+#               name: cloudflare-api-token
+#               key: api-token
+#
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-prod
+# spec:
+#   acme:
+#     server: https://acme-v02.api.letsencrypt.org/directory
+#     email: changeme@example.com
+#     privateKeySecretRef:
+#       name: letsencrypt-prod
+#     solvers:
+#       - dns01:
+#           cloudflare:
+#             apiTokenSecretRef:
+#               name: cloudflare-api-token
+#               key: api-token
