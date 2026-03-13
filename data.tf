@@ -65,7 +65,6 @@ data "cloudinit_config" "k3s_server" {
       k3s_subnet                        = var.k3s_subnet
       k3s_token                         = var.enable_vault ? "" : random_password.k3s_token.result
       disable_ingress                   = var.disable_ingress
-      ingress_controller                = var.ingress_controller
       certmanager_email_address         = var.certmanager_email_address
       compartment_ocid                  = var.compartment_ocid
       availability_domain               = var.availability_domain
@@ -73,7 +72,7 @@ data "cloudinit_config" "k3s_server" {
       k3s_url                           = local.k3s_internal_lb_ip
       k3s_tls_san                       = local.k3s_internal_lb_ip
       expose_kubeapi                    = var.expose_kubeapi
-      k3s_tls_san_public                = local.public_lb_ip[0]
+      k3s_tls_san_public                = try(local.public_lb_ip[0], "")
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
       longhorn_ui_username              = var.longhorn_ui_username
@@ -92,11 +91,22 @@ data "cloudinit_config" "k3s_server" {
       vault_secret_id_k3s_token         = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
       vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
       vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
-      traefik_chart_version             = var.traefik_chart_version
+      gateway_api_version               = var.gateway_api_version
+      envoy_gateway_chart_version       = var.envoy_gateway_chart_version
       certmanager_chart_version         = var.certmanager_chart_version
       longhorn_chart_version            = var.longhorn_chart_version
       argocd_chart_version              = var.argocd_chart_version
       kured_chart_version               = var.kured_chart_version
+      enable_external_dns               = var.enable_external_dns
+      cloudflare_api_token              = var.cloudflare_api_token != null ? var.cloudflare_api_token : ""
+      cloudflare_zone_id                = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
+      external_dns_domain_filter        = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
+      external_dns_chart_version        = var.external_dns_chart_version
+      enable_external_secrets           = var.enable_external_secrets
+      vault_ocid                        = var.enable_vault ? oci_kms_vault.k3s[0].id : ""
+      oci_region                        = var.region != null ? var.region : ""
+      external_secrets_chart_version    = var.external_secrets_chart_version
+      enable_dns01_challenge            = var.enable_dns01_challenge
     })
   }
 }
