@@ -26,11 +26,11 @@ spec:
     - from:
         - podSelector: {}
 ---
-# Allow Traefik to reach Grafana (IngressRoute on port 80)
+# Allow Envoy Gateway to reach Grafana (HTTPRoute on port 80)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-traefik-ingress
+  name: allow-envoy-gateway-ingress
   namespace: monitoring
 spec:
   podSelector:
@@ -42,7 +42,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: traefik
+              kubernetes.io/metadata.name: envoy-gateway-system
 ---
 # Allow Prometheus to scrape metrics from any namespace
 # (This policy is in monitoring; the scraped pods' namespaces need corresponding egress/ingress rules)

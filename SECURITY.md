@@ -27,7 +27,7 @@ Issues in scope:
 - Supply-chain issues in pinned versions or Renovate configuration
 
 Out of scope:
-- Vulnerabilities in upstream projects (k3s, Longhorn, ArgoCD, Traefik, cert-manager) —
+- Vulnerabilities in upstream projects (k3s, Longhorn, ArgoCD, Envoy Gateway, cert-manager) —
   please report those to the respective upstream projects
 - Issues requiring physical access to OCI infrastructure
 - Best-practice suggestions (open a regular issue instead)

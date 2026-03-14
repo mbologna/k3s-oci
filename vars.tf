@@ -299,19 +299,8 @@ variable "oci_identity_policy_name" {
 
 variable "disable_ingress" {
   type        = bool
-  description = "When true, no ingress controller is installed (disables Traefik and skips Traefik 2 install)"
+  description = "When true, no ingress controller is installed (skips Envoy Gateway install)"
   default     = false
-}
-
-variable "ingress_controller" {
-  type        = string
-  description = "'traefik2' installs Traefik via Helm for full control over the release and values."
-  default     = "traefik2"
-
-  validation {
-    condition     = var.ingress_controller == "traefik2"
-    error_message = "Only 'traefik2' (Helm-managed) is supported. The k3s built-in Traefik option has been removed."
-  }
 }
 
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
@@ -330,13 +319,13 @@ variable "certmanager_email_address" {
 
 variable "argocd_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the ArgoCD UI IngressRoute (e.g. argocd.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created."
   default     = null
 }
 
 variable "longhorn_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with BasicAuth and a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, a Gateway API HTTPRoute with BasicAuth (Envoy Gateway SecurityPolicy) and a cert-manager TLS certificate is created."
   default     = null
 }
 
@@ -348,7 +337,7 @@ variable "longhorn_ui_username" {
 
 variable "grafana_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Grafana UI IngressRoute (e.g. grafana.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
+  description = "Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
   default     = null
 }
 
@@ -454,9 +443,22 @@ variable "enable_vault" {
 
 variable "traefik_chart_version" {
   type        = string
-  description = "Traefik Helm chart version used for the bootstrap install. Must match gitops/apps/traefik.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
-  default = "39.0.8"
+  description = "Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled."
+  default     = "39.0.8"
+}
+
+variable "gateway_api_version" {
+  type        = string
+  description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
+  # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
+  default = "v1.2.1"
+}
+
+variable "envoy_gateway_chart_version" {
+  type        = string
+  description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=github-releases depName=envoyproxy/gateway
+  default = "v1.3.0"
 }
 
 variable "certmanager_chart_version" {
