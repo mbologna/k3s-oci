@@ -254,13 +254,15 @@ variable "kube_api_port" {
 }
 
 variable "http_lb_port" {
-  type    = number
-  default = 80
+  type        = number
+  description = "Public HTTP port on the NLB frontend (default 80)."
+  default     = 80
 }
 
 variable "https_lb_port" {
-  type    = number
-  default = 443
+  type        = number
+  description = "Public HTTPS port on the NLB frontend (default 443)."
+  default     = 443
 }
 
 variable "ingress_controller_http_nodeport" {
@@ -490,24 +492,18 @@ variable "enable_dns01_challenge" {
 # The bootstrap install uses this version so the cluster never starts with a
 # chart that is newer than what ArgoCD would reconcile to.
 
-variable "traefik_chart_version" {
-  type        = string
-  description = "Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled."
-  default     = "39.0.8"
-}
-
 variable "gateway_api_version" {
   type        = string
   description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.2.1"
+  default = "v1.5.1"
 }
 
 variable "envoy_gateway_chart_version" {
   type        = string
   description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=github-releases depName=envoyproxy/gateway
-  default = "v1.3.0"
+  default = "v1.7.2"
 }
 
 variable "certmanager_chart_version" {
@@ -528,7 +524,7 @@ variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "9.5.5"
+  default = "9.5.6"
 }
 
 variable "kured_chart_version" {
@@ -549,5 +545,5 @@ variable "external_secrets_chart_version" {
   type        = string
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
-  default = "0.18.2"
+  default = "0.20.4"
 }
