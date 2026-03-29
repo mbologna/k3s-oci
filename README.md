@@ -212,8 +212,9 @@ This keeps the cluster fully patched with zero manual intervention and no concur
 | Source | What is updated |
 |---|---|
 | Terraform `required_providers` | OCI provider, hashicorp/http, hashicorp/cloudinit, hashicorp/random |
-| `# renovate:` inline comments in `vars.tf` | k3s, cert-manager, Longhorn, ArgoCD, ArgoCD Image Updater, kured, Envoy Gateway, Gateway API CRDs, External DNS, External Secrets |
-| `# renovate:` inline comments in `gitops/apps/*.yaml` | All GitOps Helm chart `targetRevision` values |
+| `# renovate:` inline comments in `vars.tf` | k3s, cert-manager, Longhorn, ArgoCD, kured, Envoy Gateway, Gateway API CRDs, External DNS, External Secrets |
+| `# renovate:` inline comments in `gitops/apps/*.yaml` | ArgoCD Image Updater, kube-prometheus-stack, and all other GitOps Helm chart `targetRevision` values |
+| `# SUC_VERSION` comment in `gitops/system-upgrade/kustomization.yaml` | system-upgrade-controller (rancher/system-upgrade-controller GitHub releases) |
 
 To enable: install the [Renovate GitHub App](https://github.com/apps/renovate) **or** use the self-hosted workflow at `.github/workflows/renovate.yml` (add a `RENOVATE_TOKEN` repo secret with a personal access token with `repo` scope). Renovate will open PRs for any new releases automatically.
 
@@ -294,7 +295,7 @@ MIT. See [LICENSE](LICENSE).
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_alertmanager_email"></a> [alertmanager\_email](#input\_alertmanager\_email) | Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email. | `string` | `null` | no |
-| <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.5"` | no |
+| <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.6"` | no |
 | <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created. | `string` | `null` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
 | <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `50` | no |
@@ -318,18 +319,18 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_enable_oci_logging"></a> [enable\_oci\_logging](#input\_enable\_oci\_logging) | Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month). | `bool` | `true` | no |
 | <a name="input_enable_vault"></a> [enable\_vault](#input\_enable\_vault) | Store cluster secrets (k3s\_token, longhorn\_ui\_password, grafana\_admin\_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance\_principal at boot — plaintext values are removed from cloud-init user-data. | `bool` | `true` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment label (e.g. staging, production) | `string` | `"staging"` | no |
-| <a name="input_envoy_gateway_chart_version"></a> [envoy\_gateway\_chart\_version](#input\_envoy\_gateway\_chart\_version) | Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate. | `string` | `"v1.3.0"` | no |
+| <a name="input_envoy_gateway_chart_version"></a> [envoy\_gateway\_chart\_version](#input\_envoy\_gateway\_chart\_version) | Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate. | `string` | `"v1.7.2"` | no |
 | <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |
 | <a name="input_external_dns_chart_version"></a> [external\_dns\_chart\_version](#input\_external\_dns\_chart\_version) | external-dns Helm chart version used for the bootstrap install. Must match gitops/apps/external-dns.yaml targetRevision. Managed by Renovate. | `string` | `"1.20.0"` | no |
 | <a name="input_external_dns_domain_filter"></a> [external\_dns\_domain\_filter](#input\_external\_dns\_domain\_filter) | Domain filter for external-dns — only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable\_external\_dns = true. | `string` | `null` | no |
-| <a name="input_external_secrets_chart_version"></a> [external\_secrets\_chart\_version](#input\_external\_secrets\_chart\_version) | External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate. | `string` | `"0.18.2"` | no |
+| <a name="input_external_secrets_chart_version"></a> [external\_secrets\_chart\_version](#input\_external\_secrets\_chart\_version) | External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate. | `string` | `"2.4.1"` | no |
 | <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
-| <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap. | `string` | `"v1.2.1"` | no |
+| <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap. | `string` | `"v1.5.1"` | no |
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
 | <a name="input_grafana_hostname"></a> [grafana\_hostname](#input\_grafana\_hostname) | Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/. | `string` | `null` | no |
-| <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | n/a | `number` | `80` | no |
-| <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | n/a | `number` | `443` | no |
+| <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | Public HTTP port on the NLB frontend (default 80). | `number` | `80` | no |
+| <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | Public HTTPS port on the NLB frontend (default 443). | `number` | `443` | no |
 | <a name="input_ingress_controller_http_nodeport"></a> [ingress\_controller\_http\_nodeport](#input\_ingress\_controller\_http\_nodeport) | NodePort on workers that the ingress controller binds for HTTP traffic | `number` | `30080` | no |
 | <a name="input_ingress_controller_https_nodeport"></a> [ingress\_controller\_https\_nodeport](#input\_ingress\_controller\_https\_nodeport) | NodePort on workers that the ingress controller binds for HTTPS traffic | `number` | `30443` | no |
 | <a name="input_k3s_server_pool_size"></a> [k3s\_server\_pool\_size](#input\_k3s\_server\_pool\_size) | Number of k3s control-plane nodes in the instance pool. Use 3 for HA (etcd quorum). Must be an odd number >= 1. | `number` | `3` | no |
@@ -363,7 +364,6 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 24 GB (Always Free). | `number` | `6` | no |
 | <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 4 (Always Free). | `number` | `1` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | OCID of the tenancy | `string` | n/a | yes |
-| <a name="input_traefik_chart_version"></a> [traefik\_chart\_version](#input\_traefik\_chart\_version) | Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled. | `string` | `"39.0.8"` | no |
 | <a name="input_unique_tag_key"></a> [unique\_tag\_key](#input\_unique\_tag\_key) | Freeform tag key applied to every resource for identification | `string` | `"k3s-provisioner"` | no |
 | <a name="input_unique_tag_value"></a> [unique\_tag\_value](#input\_unique\_tag\_value) | Freeform tag value applied to every resource for identification | `string` | `"https://github.com/mbologna/k3s-oci"` | no |
 | <a name="input_worker_memory_in_gbs"></a> [worker\_memory\_in\_gbs](#input\_worker\_memory\_in\_gbs) | RAM in GB per worker node. | `number` | `6` | no |
