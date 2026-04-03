@@ -297,14 +297,6 @@ variable "oci_identity_policy_name" {
   default     = "k3s-cluster-policy"
 }
 
-# ── Ingress ───────────────────────────────────────────────────────────────────
-
-variable "disable_ingress" {
-  type        = bool
-  description = "When true, no ingress controller is installed (skips Envoy Gateway install)"
-  default     = false
-}
-
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
 
 variable "certmanager_email_address" {
@@ -347,26 +339,6 @@ variable "gitops_repo_url" {
   type        = string
   description = "Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo."
   default     = "https://github.com/mbologna/k3s-oci.git"
-}
-
-# ── kured (always installed — graceful kernel reboot management) ──────────────
-
-variable "kured_reboot_days" {
-  type        = list(string)
-  description = "Days of the week on which kured may reboot nodes. Defaults to all days."
-  default     = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-}
-
-variable "kured_start_time" {
-  type        = string
-  description = "Start of the kured maintenance window (UTC, HH:MM). Default 22:00 UTC = midnight CET / 01:00 CEST."
-  default     = "22:00"
-}
-
-variable "kured_end_time" {
-  type        = string
-  description = "End of the kured maintenance window (UTC, HH:MM). Default 06:00 UTC = 08:00 CET / 09:00 CEST."
-  default     = "06:00"
 }
 
 # ── OCI CLI ───────────────────────────────────────────────────────────────────
@@ -487,23 +459,17 @@ variable "enable_dns01_challenge" {
   default     = false
 }
 
-# Bootstrap chart versions — must match the targetRevision in the corresponding
-# gitops/apps/*.yaml. Renovate keeps both in sync via a single PR.
-# The bootstrap install uses this version so the cluster never starts with a
-# chart that is newer than what ArgoCD would reconcile to.
+# Bootstrap chart versions — installed by cloud-init so the cluster starts with
+# the correct version; ArgoCD adopts and manages ongoing upgrades via gitops/apps/*.yaml.
+# Renovate keeps these in sync. Only charts bootstrapped by cloud-init are listed here;
+# charts managed purely by ArgoCD (kured, Longhorn, Envoy Gateway, external-dns) are
+# versioned in their respective gitops/apps/*.yaml files.
 
 variable "gateway_api_version" {
   type        = string
-  description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
+  description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap. Must exist before ArgoCD syncs gateway-config."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   default = "v1.5.1"
-}
-
-variable "envoy_gateway_chart_version" {
-  type        = string
-  description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=github-releases depName=envoyproxy/gateway
-  default = "v1.7.2"
 }
 
 variable "certmanager_chart_version" {
@@ -513,32 +479,11 @@ variable "certmanager_chart_version" {
   default = "v1.20.2"
 }
 
-variable "longhorn_chart_version" {
-  type        = string
-  description = "Longhorn Helm chart version used for the bootstrap install. Must match gitops/apps/longhorn.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-  default = "1.11.1"
-}
-
 variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "9.5.6"
-}
-
-variable "kured_chart_version" {
-  type        = string
-  description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  default = "5.11.0"
-}
-
-variable "external_dns_chart_version" {
-  type        = string
-  description = "external-dns Helm chart version used for the bootstrap install. Must match gitops/apps/external-dns.yaml targetRevision. Managed by Renovate."
-  # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
-  default = "1.20.0"
+  default = "9.5.7"
 }
 
 variable "external_secrets_chart_version" {
