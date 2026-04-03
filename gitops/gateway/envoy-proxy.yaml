@@ -2,8 +2,13 @@
 # EnvoyProxy configures the Envoy proxy fleet that backs the Gateway.
 # DaemonSet mode: one Envoy proxy pod per node so every NLB backend serves
 # ingress locally — no cross-node forwarding hop, no single-pod SPOF.
-# NodePort 30080/30443 must match ingress_controller_{http,https}_nodeport in
-# vars.tf (defaults 30080/30443) and the OCI NLB backend port.
+#
+# ⚠️  SYNC REQUIRED: nodePort values below must match
+#     ingress_controller_http_nodeport  (default 30080) and
+#     ingress_controller_https_nodeport (default 30443) in vars.tf.
+# The OCI NLB backends are configured from those Terraform vars.
+# If you change the nodeport vars, update the matching nodePort values here
+# and commit both changes together.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyProxy
 metadata:

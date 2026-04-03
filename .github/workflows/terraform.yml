@@ -91,8 +91,10 @@ jobs:
       - name: shellcheck scripts
         run: |
           shellcheck --severity=warning \
-            files/k3s-install-server.sh \
-            files/k3s-install-agent.sh
+            files/lib/common.sh \
+            files/lib/k3s-server.sh \
+            files/lib/k3s-bootstrap.sh \
+            files/lib/k3s-agent.sh
 
   terraform-docs:
     name: terraform-docs
