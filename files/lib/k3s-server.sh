@@ -64,11 +64,9 @@ detect_first_server() {
 install_k3s_server() {
   local install_params=("--tls-san ${K3S_TLS_SAN}")
 
-  if [[ "${K3S_SUBNET}" != "default_route_table" ]]; then
-    local local_ip flannel_iface
-    local_ip=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=src )(\S+)')
-    flannel_iface=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=dev )(\S+)')
-    install_params+=("--node-ip ${local_ip}" "--advertise-address ${local_ip}" "--flannel-iface ${flannel_iface}")
+  resolve_flannel_params
+  if [[ -n "${LOCAL_IP:-}" ]]; then
+    install_params+=("--node-ip ${LOCAL_IP}" "--advertise-address ${LOCAL_IP}" "--flannel-iface ${FLANNEL_IFACE}")
   fi
 
   # Always disable k3s built-in Traefik; Envoy Gateway is managed via ArgoCD.
