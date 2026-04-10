@@ -130,3 +130,17 @@ install_helm() {
   command -v helm &>/dev/null && return 0
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 }
+
+# ── Network helpers ───────────────────────────────────────────────────────────
+# Resolve node IP and flannel interface from K3S_SUBNET when a specific subnet
+# CIDR is provided. Sets LOCAL_IP and FLANNEL_IFACE in the caller's scope.
+# Used by both server and agent install functions.
+
+resolve_flannel_params() {
+  if [[ "${K3S_SUBNET}" != "default_route_table" ]]; then
+    export LOCAL_IP
+    export FLANNEL_IFACE
+    LOCAL_IP=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=src )(\S+)')
+    FLANNEL_IFACE=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=dev )(\S+)')
+  fi
+}

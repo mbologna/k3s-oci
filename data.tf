@@ -61,11 +61,7 @@ data "cloudinit_config" "k3s_server" {
   part {
     content_type = "text/x-shellscript"
     content = join("\n", [
-      templatefile("${path.module}/files/server-vars.sh.tpl", {
-        k3s_version                       = local.k3s_version
-        k3s_subnet                        = var.k3s_subnet
-        k3s_token                         = var.enable_vault ? "" : random_password.k3s_token.result
-        k3s_url                           = local.k3s_internal_lb_ip
+      templatefile("${path.module}/files/server-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
         k3s_tls_san                       = local.k3s_internal_lb_ip
         k3s_tls_san_public                = try(local.public_lb_ip[0], "")
         expose_kubeapi                    = var.expose_kubeapi
@@ -76,7 +72,6 @@ data "cloudinit_config" "k3s_server" {
         longhorn_ui_username              = var.longhorn_ui_username
         longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
         grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
-        vault_secret_id_k3s_token         = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
         vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
         vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
         gateway_api_version               = var.gateway_api_version
@@ -96,7 +91,7 @@ data "cloudinit_config" "k3s_server" {
         mysql_endpoint                    = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
         mysql_admin_username              = var.enable_mysql ? var.mysql_admin_username : ""
         mysql_admin_password              = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
-      }),
+      })),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-server.sh"),
       file("${path.module}/files/lib/k3s-bootstrap.sh"),
@@ -111,13 +106,7 @@ data "cloudinit_config" "k3s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = join("\n", [
-      templatefile("${path.module}/files/agent-vars.sh.tpl", {
-        k3s_version               = local.k3s_version
-        k3s_subnet                = var.k3s_subnet
-        k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
-        k3s_url                   = local.k3s_internal_lb_ip
-        vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
-      }),
+      templatefile("${path.module}/files/agent-vars.sh.tpl", local.k3s_common_cloud_init_vars),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-agent.sh"),
     ])

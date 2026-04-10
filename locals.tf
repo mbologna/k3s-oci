@@ -37,6 +37,16 @@ locals {
     addr.ip_address if addr.is_public == true
   ]
 
+  # Shared cloud-init vars passed to both server and agent template files.
+  # Server-specific vars are merged on top in data.tf.
+  k3s_common_cloud_init_vars = {
+    k3s_version               = local.k3s_version
+    k3s_subnet                = var.k3s_subnet
+    k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
+    k3s_url                   = local.k3s_internal_lb_ip
+    vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
+  }
+
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────
 
   _kubeconfig_hint_bastion = <<-EOT
