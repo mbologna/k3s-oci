@@ -60,21 +60,6 @@ variable "public_key_path" {
   default = "~/.ssh/id_rsa.pub"
 }
 
-variable "kured_reboot_days" {
-  type    = list(string)
-  default = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-}
-
-variable "kured_start_time" {
-  type    = string
-  default = "22:00"
-}
-
-variable "kured_end_time" {
-  type    = string
-  default = "06:00"
-}
-
 # ── Optional Always Free features ─────────────────────────────────────────────
 
 variable "enable_backup" {
@@ -141,9 +126,6 @@ module "k3s_cluster" {
   enable_bastion              = var.enable_bastion
   public_key                  = var.public_key
   public_key_path             = var.public_key_path
-  kured_reboot_days           = var.kured_reboot_days
-  kured_start_time            = var.kured_start_time
-  kured_end_time              = var.kured_end_time
   enable_backup               = var.enable_backup
   enable_vault                = var.enable_vault
   enable_object_storage_state = var.enable_object_storage_state

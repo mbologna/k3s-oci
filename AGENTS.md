@@ -50,7 +50,7 @@ or additional paid resources, flag it explicitly instead of implementing it.
 ```
 vars.tf          — all input variables (add new vars here)
 locals.tf        — derived locals (ssh_public_key, k3s_version, common_tags, agent_plugins)
-data.tf          — cloud-init templatefile rendering, random_password (including longhorn_ui_password)
+data.tf          — cloud-init assembly (join of vars tpl + lib files), random_password resources
 terraform.tf     — required_providers and version constraints
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
@@ -66,8 +66,12 @@ objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable
 notifications.tf — OCI Notifications topic + optional email subscription (enable_notifications)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id)
-files/k3s-install-server.sh  — cloud-init for control-plane nodes (Ubuntu 24.04)
-files/k3s-install-agent.sh   — cloud-init for worker nodes (Ubuntu 24.04)
+files/server-vars.sh.tpl     — cloud-init header for servers: ONLY file with Terraform ${var} syntax
+files/agent-vars.sh.tpl      — cloud-init header for agents: ONLY file with Terraform ${var} syntax
+files/lib/common.sh          — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm
+files/lib/k3s-server.sh      — pure bash: first-server election, k3s install, main entry point
+files/lib/k3s-bootstrap.sh   — pure bash: secrets pre-creation, Gateway API CRDs, cert-manager, ArgoCD
+files/lib/k3s-agent.sh       — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
 gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
@@ -102,17 +106,29 @@ renovate.json    — Automated dependency updates
   Remove `moved {}` blocks only after all users have applied the change.
 
 ### Shell scripts (`files/`)
-- Both scripts are **Terraform templatefiles**, not plain bash. `${var}` is a Terraform
-  interpolation; `$${var}` is a literal `${var}` in the rendered script.
-- The top-of-file `# shellcheck disable=...` comment is required for CI to pass — keep it.
+- **`files/server-vars.sh.tpl`** and **`files/agent-vars.sh.tpl`** are the ONLY Terraform
+  templatefiles. They export all Terraform-resolved values as bash `export KEY="value"`.
+  `${var}` is Terraform interpolation; these files render to a plain bash variable header.
+- **`files/lib/*.sh`** are pure bash — no Terraform syntax, no `$${var}` escaping.
+  ShellCheck runs on these files without workarounds (`# shellcheck disable=SC2154` is the
+  only suppression, covering vars exported by the prepended template header).
+- `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
 - Ubuntu 24.04 only. No Oracle Linux, no multi-distro branches.
-- Always use `set -euo pipefail` and the cloud-init log redirect at the top.
+- Always use `set -euo pipefail` at the top of each file.
 
 ### Adding a new stack component
+If the component must be bootstrapped before ArgoCD starts (e.g. it provides a CRD that
+ArgoCD apps depend on):
 1. Add a version variable to `vars.tf` with a `# renovate:` comment.
-2. Write an `install_<component>()` function in `k3s-install-server.sh`.
-3. Call it inside the `if [[ "$IS_FIRST_SERVER" == "true" ]]; then` block.
-4. Pass the version variable through the templatefile vars map in `data.tf`.
+2. Export the version in `files/server-vars.sh.tpl` as `export MY_VERSION="${my_version}"`.
+3. Write an `install_<component>()` function in `files/lib/k3s-bootstrap.sh`.
+4. Call it from `run_bootstrap()` in `k3s-bootstrap.sh`.
+5. Add the version variable to the `templatefile()` vars map in `data.tf`.
+
+If the component is fully managed by ArgoCD (Helm chart from gitops/apps/):
+1. Add an ArgoCD `Application` manifest to `gitops/apps/` with the chart version pinned
+   and a `# renovate:` comment for automated updates.
+2. No changes to cloud-init or vars.tf are needed.
 
 ### GitOps
 New Kubernetes manifests belong in `gitops/`. Add an ArgoCD `Application` CR in
@@ -155,7 +171,7 @@ tofu fmt -recursive
 tofu init -backend=false && tofu validate
 (cd example && tofu init -backend=false && tofu validate)
 tflint --init && tflint --recursive
-shellcheck --severity=warning files/k3s-install-server.sh files/k3s-install-agent.sh
+shellcheck --severity=warning files/lib/common.sh files/lib/k3s-server.sh files/lib/k3s-bootstrap.sh files/lib/k3s-agent.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
@@ -170,7 +186,7 @@ terraform-docs .
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
-- Do not break the `terraform validate` step — templatefile vars must match what the scripts reference
+- Do not break the `terraform validate` step — `server-vars.sh.tpl` / `agent-vars.sh.tpl` vars must match what `data.tf` passes
 - **Do not add nginx or other ingress controllers** — Envoy Gateway (Gateway API) is the ingress implementation. All HTTP/HTTPS routing uses standard `HTTPRoute`, `Gateway`, and `GatewayClass` resources.
 - **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across all 4 nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and user workloads coexist safely.
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
@@ -199,20 +215,20 @@ terraform-docs .
 - Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
 
 ### Longhorn storage
-- Replica count is **explicitly pinned to 3** via `--set defaultSettings.defaultReplicaCount=3` and `--set persistence.defaultClassReplicaCount=3` in the Helm install. Do not rely on the upstream chart default.
+- Replica count is **explicitly pinned to 3** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=3` and `persistence.defaultClassReplicaCount=3`. Do not rely on the upstream chart default.
+- Longhorn is managed entirely by ArgoCD (`gitops/apps/longhorn.yaml`). Cloud-init does NOT install Longhorn.
 - With 4 nodes and 3 replicas, any single node can be lost without PVC data loss.
 - The etcd HA ceiling applies independently: losing 2 control-plane nodes loses etcd quorum regardless of Longhorn replica count.
 
 ### Longhorn UI BasicAuth
-- Password is generated by `random_password.longhorn_ui_password` in `data.tf` and passed to
-  cloud-init as `longhorn_ui_password`.
-- The cloud-init script generates an APR1 hash: `openssl passwd -apr1 "$LONGHORN_PASSWORD"`
-- A `Secret` (`longhorn-basic-auth-secret`) and Envoy Gateway `SecurityPolicy` (`longhorn-basic-auth`) are created
-  in the `longhorn-system` namespace. The `.htpasswd` key format is used.
-- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `HTTPRoute`.
+- Password is generated by `random_password.longhorn_ui_password` in `data.tf` and exported by
+  `files/server-vars.sh.tpl` as `LONGHORN_UI_PASSWORD_PLAIN` (or fetched from Vault when `enable_vault = true`).
+- `files/lib/k3s-bootstrap.sh` generates the APR1 hash via `openssl passwd -apr1` and creates
+  `Secret/longhorn-basic-auth-secret` in `longhorn-system` at bootstrap time. The hash requires
+  runtime password resolution so it cannot be a static gitops file.
+- `gitops/longhorn/ingress.yaml` is a template — users configure the `HTTPRoute`, `SecurityPolicy`,
+  and `Certificate` resources there pointing to the pre-created Secret.
 - Credentials are available via the `longhorn_ui_credentials` sensitive output.
-- In heredocs where Terraform interpolation is needed (`<< LHEOF` not `<< 'LHEOF'`), Terraform
-  vars use `${var}` and bash vars must use `$${VAR}`.
 
 ### cert-manager GitOps adoption
 - Cloud-init bootstraps ClusterIssuers with the correct email from `var.certmanager_email_address`.
@@ -221,6 +237,26 @@ terraform-docs .
 - To enable ArgoCD management of ClusterIssuers: update the email in `cluster-issuers.yaml`,
   then copy `application-template.yaml` to `gitops/apps/cert-manager.yaml`.
 - Do NOT place the template in `gitops/apps/` as-is — it contains `changeme@example.com`.
+
+### Cloud-init structure (`files/`)
+- **Separation of concerns**: `server-vars.sh.tpl` and `agent-vars.sh.tpl` are the ONLY files
+  with Terraform `${var}` interpolation. All `files/lib/*.sh` are pure bash.
+- **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), file(lib/common.sh), ...])` to
+  produce a single cloud-init script. The rendered vars header is prepended, making all
+  `export KEY="value"` statements available to the lib scripts at runtime.
+- **GitOps-first**: cloud-init only bootstraps what ArgoCD cannot self-manage:
+  - Gateway API CRDs (must exist before ArgoCD syncs `gateway-config` app)
+  - cert-manager Helm + ClusterIssuers (email is a runtime Terraform var, not static git)
+  - ArgoCD Helm + App of Apps bootstrap
+  - External Secrets Operator Helm + ClusterSecretStore (conditional, vault_ocid is runtime)
+  - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
+- **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
+  system-upgrade-controller, external-dns Helm — all in `gitops/apps/*.yaml`.
+- **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
+  `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
+  removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
+- **ShellCheck**: `# shellcheck disable=SC2154` in lib/ files covers exported vars from the
+  prepended template header. No other suppressions needed (was 5+ in the old monolith).
 
 ### OCI Logging (`logging.tf`)
 - Controlled by `enable_oci_logging` variable (default: `true`).
@@ -243,9 +279,9 @@ terraform-docs .
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
 - Stores three secrets: `k3s_token`, `longhorn_ui_password`, `grafana_admin_password`.
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
-- When `enable_vault = false`, the plaintext values are passed through cloud-init templatefile vars (fallback for the `%{ else }` branches in the scripts).
+- When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `GRAFANA_ADMIN_PASSWORD_PLAIN`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
-- Agent script (`k3s-install-agent.sh`) also installs OCI CLI and fetches k3s_token from Vault when enabled.
+- Agent script (`files/lib/k3s-agent.sh`) installs OCI CLI and fetches k3s_token from Vault when `VAULT_SECRET_ID_K3S_TOKEN` is non-empty.
 
 ### Boot Volume Backups (`backup.tf`)
 - Controlled by `enable_backup` variable (default: `true`).

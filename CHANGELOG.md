@@ -13,16 +13,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - DNS-01 ACME challenge support in cert-manager `ClusterIssuer` (commented variants in `gitops/cert-manager/cluster-issuers.yaml`)
 - `system-upgrade-controller` GitOps Application + upgrade Plans for automated k3s rolling upgrades (`gitops/system-upgrade/`)
 - `gitops/cert-manager/application-template.yaml` — ArgoCD Application template for adopting ClusterIssuers into GitOps
+- Cloud-init refactor: `files/server-vars.sh.tpl`, `files/agent-vars.sh.tpl`, `files/lib/common.sh`,
+  `files/lib/k3s-server.sh`, `files/lib/k3s-bootstrap.sh`, `files/lib/k3s-agent.sh` — single source of
+  truth, pure bash lib files, no Terraform syntax outside the `.tpl` headers
 
 ### Changed
 - Ingress: all `IngressRoute` resources replaced with `HTTPRoute`; Traefik `Middleware` replaced with `BackendTrafficPolicy`/`SecurityPolicy`
 - ArgoCD rate limiting uses Envoy Gateway `BackendTrafficPolicy` instead of Traefik `RateLimit` middleware
 - Longhorn UI BasicAuth uses Envoy Gateway `SecurityPolicy` instead of Traefik `Middleware`
 - Network policies updated to `envoy-gateway-system` namespace (was `traefik`)
+- Envoy Gateway, Longhorn, kured, system-upgrade-controller, external-dns now managed **exclusively by ArgoCD** — cloud-init no longer installs their Helm charts
+- `data.tf` uses `join("\n", [templatefile(...), file(...)])` to assemble cloud-init scripts
+- `gitops/apps/kured.yaml`: added explicit `rebootDays` (all days) — previously only set by cloud-init and therefore not enforced after ArgoCD sync
 
 ### Removed
 - `ingress_controller` variable — Envoy Gateway is now the only supported ingress controller
 - `traefik_chart_version` variable — **migration note below**
+- `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version` — configure kured in `gitops/apps/kured.yaml` directly
+- `longhorn_chart_version` — managed by ArgoCD (`gitops/apps/longhorn.yaml`)
+- `envoy_gateway_chart_version` — managed by ArgoCD (`gitops/apps/envoy-gateway.yaml`)
+- `external_dns_chart_version` — managed by ArgoCD (`gitops/apps/external-dns.yaml`)
+- `files/k3s-install-server.sh` and `files/k3s-install-agent.sh` — replaced by modular `files/lib/*.sh`
 
 ### Fixed
 - `max_api_wait` and `max_attempts` were conflated in `k3s-install-agent.sh` (both were `10`; API wait is now correctly `60` seconds)

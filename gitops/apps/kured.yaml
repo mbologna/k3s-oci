@@ -21,6 +21,14 @@ spec:
           startTime: "22:00"
           endTime: "06:00"
           timeZone: UTC
+          rebootDays:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
         tolerations:
           - key: node-role.kubernetes.io/control-plane
             operator: Exists
