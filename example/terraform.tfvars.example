@@ -93,8 +93,6 @@ k3s_standalone_worker = true
 # Enables wildcard certs (*.example.com); requires enable_external_dns = true.
 # enable_dns01_challenge = false
 
-# ── kured maintenance window (UTC) ────────────────────────────────────────────
-# Default: 22:00–06:00 UTC every day (European night)
-# kured_start_time  = "22:00"
-# kured_end_time    = "06:00"
-# kured_reboot_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+# ── kured maintenance window ──────────────────────────────────────────────────
+# kured is managed by ArgoCD. Edit gitops/apps/kured.yaml to change the
+# maintenance window (startTime, endTime, rebootDays) or chart version.

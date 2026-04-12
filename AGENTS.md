@@ -143,7 +143,9 @@ repo. The workflow is:
    `gitops/apps/` with their fork URL. Commit and push.
 3. Set `gitops_repo_url = "https://github.com/their-org/their-fork.git"` in
    `terraform.tfvars` so cloud-init writes the correct URL into `app-of-apps.yaml`.
-4. Add their own ArgoCD `Application` manifests to `gitops/apps/` — each can point
+4. Update `txtOwnerId` in `gitops/apps/external-dns.yaml` to match `var.cluster_name`
+   (important when `enable_external_dns = true` and sharing a Cloudflare zone).
+5. Add their own ArgoCD `Application` manifests to `gitops/apps/` — each can point
    at any Helm registry or any Git repo; only the App of Apps manifest itself must
    live in the fork.
 
@@ -321,7 +323,7 @@ terraform-docs .
 - Requires `cloudflare_api_token` and `cloudflare_zone_id`.
 - `external_dns_domain_filter` limits which zones External DNS manages (prevents accidental changes
   to unrelated zones when the API token covers multiple zones).
-- `txtOwnerId` is set to `var.cluster_name` so multiple clusters can share a Cloudflare zone.
+- `txtOwnerId` is hardcoded to `k3s-cluster` in `gitops/apps/external-dns.yaml`; update it to match `var.cluster_name` in your fork so multiple clusters can share a Cloudflare zone without conflicts.
 
 ### External Secrets (`enable_external_secrets`)
 - Controlled by `enable_external_secrets` variable (default: `false`). Requires `enable_vault = true`.

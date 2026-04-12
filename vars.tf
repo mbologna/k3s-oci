@@ -297,14 +297,6 @@ variable "oci_identity_policy_name" {
   default     = "k3s-cluster-policy"
 }
 
-# ── Ingress ───────────────────────────────────────────────────────────────────
-
-variable "disable_ingress" {
-  type        = bool
-  description = "When true, no ingress controller is installed (skips Envoy Gateway install)"
-  default     = false
-}
-
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
 
 variable "certmanager_email_address" {

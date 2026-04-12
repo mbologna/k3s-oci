@@ -26,7 +26,8 @@ spec:
         # Use policy=upsert-only to prevent deletions if you manage DNS records elsewhere.
         policy: sync
         # txtOwnerId scopes ownership so multiple clusters can share the same zone
-        # without stepping on each other's records. Set via Terraform cluster_name.
+        # without stepping on each other's records.
+        # ⚠️  Must match var.cluster_name in terraform.tfvars. Update here when forking.
         txtOwnerId: k3s-cluster
         resources:
           requests:
