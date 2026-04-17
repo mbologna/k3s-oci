@@ -311,12 +311,6 @@ variable "certmanager_email_address" {
 
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
 
-variable "argocd_hostname" {
-  type        = string
-  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created."
-  default     = null
-}
-
 variable "longhorn_hostname" {
   type        = string
   description = "Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, a Gateway API HTTPRoute with BasicAuth (Envoy Gateway SecurityPolicy) and a cert-manager TLS certificate is created."
@@ -483,7 +477,7 @@ variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "9.5.7"
+  default = "9.5.9"
 }
 
 variable "external_secrets_chart_version" {
