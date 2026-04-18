@@ -8,11 +8,9 @@
 install_k3s_agent() {
   local install_params=()
 
-  if [[ "${K3S_SUBNET}" != "default_route_table" ]]; then
-    local local_ip flannel_iface
-    local_ip=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=src )(\S+)')
-    flannel_iface=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=dev )(\S+)')
-    install_params+=("--node-ip ${local_ip}" "--flannel-iface ${flannel_iface}")
+  resolve_flannel_params
+  if [[ -n "${LOCAL_IP:-}" ]]; then
+    install_params+=("--node-ip ${LOCAL_IP}" "--flannel-iface ${FLANNEL_IFACE}")
   fi
 
   local max_api_wait=60 max_attempts=10 attempt=0

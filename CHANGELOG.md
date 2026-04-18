@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Cloud-init refactor: `files/server-vars.sh.tpl`, `files/agent-vars.sh.tpl`, `files/lib/common.sh`,
   `files/lib/k3s-server.sh`, `files/lib/k3s-bootstrap.sh`, `files/lib/k3s-agent.sh` — single source of
   truth, pure bash lib files, no Terraform syntax outside the `.tpl` headers
+- `local.k3s_common_cloud_init_vars` in `locals.tf` — single source of truth for the five templatefile
+  vars shared between server and agent (`k3s_version`, `k3s_subnet`, `k3s_token`, `k3s_url`,
+  `vault_secret_id_k3s_token`); server uses `merge()`, agent passes the local directly
+- `resolve_flannel_params()` in `common.sh` — extracted shared flannel/node-IP detection logic (was
+  duplicated verbatim in both server and agent install functions)
 
 ### Changed
 - Ingress: all `IngressRoute` resources replaced with `HTTPRoute`; Traefik `Middleware` replaced with `BackendTrafficPolicy`/`SecurityPolicy`
@@ -24,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Network policies updated to `envoy-gateway-system` namespace (was `traefik`)
 - Envoy Gateway, Longhorn, kured, system-upgrade-controller, external-dns now managed **exclusively by ArgoCD** — cloud-init no longer installs their Helm charts
 - `data.tf` uses `join("\n", [templatefile(...), file(...)])` to assemble cloud-init scripts
+- `compute.tf`: instance configurations for server and worker pools now use `dynamic "agent_config"`
+  backed by `local.agent_config` (same pattern as the standalone worker) — one place to update plugins
+- `compute.tf`: removed spurious `oci_core_instance_pool.k3s_workers` from standalone worker's
+  `depends_on` (no real ordering dependency)
 - `gitops/apps/kured.yaml`: added explicit `rebootDays` (all days) — previously only set by cloud-init and therefore not enforced after ArgoCD sync
 
 ### Removed

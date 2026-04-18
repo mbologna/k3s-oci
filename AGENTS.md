@@ -68,7 +68,7 @@ mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id)
 files/server-vars.sh.tpl     — cloud-init header for servers: ONLY file with Terraform ${var} syntax
 files/agent-vars.sh.tpl      — cloud-init header for agents: ONLY file with Terraform ${var} syntax
-files/lib/common.sh          — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm
+files/lib/common.sh          — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm, resolve_flannel_params()
 files/lib/k3s-server.sh      — pure bash: first-server election, k3s install, main entry point
 files/lib/k3s-bootstrap.sh   — pure bash: secrets pre-creation, Gateway API CRDs, cert-manager, ArgoCD
 files/lib/k3s-agent.sh       — pure bash: k3s agent install, main entry point
@@ -257,6 +257,12 @@ terraform-docs .
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
   `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
   removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
+- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the five
+  vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `k3s_token`, `k3s_url`,
+  `vault_secret_id_k3s_token`). The server templatefile call uses `merge(local.k3s_common_cloud_init_vars, {...server-only...})`; the agent call passes the local directly.
+- **Flannel interface resolution**: `resolve_flannel_params()` in `common.sh` sets `LOCAL_IP` and
+  `FLANNEL_IFACE` (exported) when `K3S_SUBNET` is not `default_route_table`. Called by both
+  `install_k3s_server()` and `install_k3s_agent()`; server adds `--advertise-address` too.
 - **ShellCheck**: `# shellcheck disable=SC2154` in lib/ files covers exported vars from the
   prepended template header. No other suppressions needed (was 5+ in the old monolith).
 
