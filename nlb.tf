@@ -2,10 +2,14 @@
 # Uses the OCI Always Free NLB (1 included per tenancy).
 
 resource "oci_network_load_balancer_network_load_balancer" "k3s_public_nlb" {
-  compartment_id             = var.compartment_ocid
-  display_name               = "${var.cluster_name}-public-nlb"
-  subnet_id                  = oci_core_subnet.public.id
-  network_security_group_ids = [oci_core_network_security_group.public_nlb.id]
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  compartment_id                 = var.compartment_ocid
+  display_name                   = "${var.cluster_name}-public-nlb"
+  subnet_id                      = oci_core_subnet.public.id
+  network_security_group_ids     = [oci_core_network_security_group.public_nlb.id]
   is_private                     = false
   is_preserve_source_destination = false
   freeform_tags                  = local.common_tags

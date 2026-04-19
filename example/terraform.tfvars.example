@@ -15,15 +15,19 @@ availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 cluster_name  = "my-k3s"
 environment   = "staging"
 
-# Find Ubuntu 22.04 / Oracle Linux 9 image OCIDs at:
+# Ubuntu 24.04 LTS (Noble) Minimal for aarch64 — find current OCIDs at:
 # https://docs.oracle.com/en-us/iaas/images/
 os_image_id = "ocid1.image.oc1..example"
 
-# Your workstation IP (restrict SSH and optional kubeapi access)
+# Your workstation IP (restricts SSH and optional kubeapi exposure)
 my_public_ip_cidr = "1.2.3.4/32"
 
 # cert-manager — must be a real email for Let's Encrypt
 certmanager_email_address = "you@example.com"
+
+# SSH public key — pass content directly (avoids ~/.ssh path issues in CI)
+# public_key = "ssh-ed25519 AAAA..."
+# public_key_path = "~/.ssh/id_ed25519.pub"   # fallback when public_key is null
 
 # ── Topology (Always Free: 4 OCPUs / 24 GB total across all A1.Flex nodes) ───
 # Default: 3 HA control-plane nodes + 1 standalone extra worker = 4 × (1 OCPU / 6 GB)
@@ -32,5 +36,6 @@ k3s_worker_pool_size  = 0
 k3s_extra_worker_node = true
 
 # ── Optional ──────────────────────────────────────────────────────────────────
-# enable_bastion = true   # Adds a free E2.1.Micro bastion; nodes move to private subnet
-# expose_kubeapi = false  # Set to true to reach kubeapi via public NLB (restricted to my_public_ip_cidr)
+# enable_bastion   = true                      # Adds a free E2.1.Micro bastion
+# expose_kubeapi   = false                     # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
+# argocd_hostname  = "argocd.example.com"      # Creates Traefik IngressRoute + cert-manager certificate for ArgoCD

@@ -46,14 +46,13 @@ module "k3s_cluster" {
   k3s_extra_worker_node     = var.k3s_extra_worker_node
   expose_kubeapi            = var.expose_kubeapi
   enable_bastion            = var.enable_bastion
-  ingress_controller        = "nginx"
-  install_kured             = true
+  ingress_controller        = "traefik2"
 }
 
-output "k3s_servers_private_ips"   { value = module.k3s_cluster.k3s_servers_private_ips }
-output "k3s_workers_private_ips"   { value = module.k3s_cluster.k3s_workers_private_ips }
+output "k3s_servers_private_ips" { value = module.k3s_cluster.k3s_servers_private_ips }
+output "k3s_workers_private_ips" { value = module.k3s_cluster.k3s_workers_private_ips }
 output "k3s_extra_worker_private_ip" { value = module.k3s_cluster.k3s_extra_worker_private_ip }
-output "internal_lb_ip"            { value = module.k3s_cluster.internal_lb_ip }
-output "public_nlb_ip"             { value = module.k3s_cluster.public_nlb_ip }
-output "bastion_public_ip"         { value = module.k3s_cluster.bastion_public_ip }
-output "kubeconfig_hint"           { value = module.k3s_cluster.kubeconfig_hint }
+output "internal_lb_ip" { value = module.k3s_cluster.internal_lb_ip }
+output "public_nlb_ip" { value = module.k3s_cluster.public_nlb_ip }
+output "bastion_public_ip" { value = module.k3s_cluster.bastion_public_ip }
+output "kubeconfig_hint" { value = module.k3s_cluster.kubeconfig_hint }

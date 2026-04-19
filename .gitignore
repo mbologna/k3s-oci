@@ -35,3 +35,10 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Terraform lock file — commit this to pin provider versions
+# (remove this comment if the line below is accidentally absent)
+# .terraform.lock.hcl  <- intentionally NOT ignored, commit it
+
+# Keep example file but ignore actual tfvars with real credentials
+example/terraform.tfvars
