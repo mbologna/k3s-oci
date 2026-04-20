@@ -7,10 +7,10 @@ locals {
 
   # Applied to every OCI resource for consistent identification and cost tracking
   common_tags = {
-    provisioner             = "terraform"
-    environment             = var.environment
-    k3s-cluster-name        = var.cluster_name
-    "${var.unique_tag_key}" = var.unique_tag_value
+    provisioner          = "terraform"
+    environment          = var.environment
+    k3s-cluster-name     = var.cluster_name
+    (var.unique_tag_key) = var.unique_tag_value
   }
 
   # Shared OCI agent plugin configuration applied to all compute instances

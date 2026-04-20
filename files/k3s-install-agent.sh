@@ -21,6 +21,8 @@ bootstrap() {
   apt-get install -y -q --no-install-recommends \
     jq curl python3 python3-pip open-iscsi nfs-common util-linux
   apt-get upgrade -y -q
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
 
   echo "SystemMaxUse=100M"      >> /etc/systemd/journald.conf
   echo "SystemMaxFileSize=100M" >> /etc/systemd/journald.conf
@@ -30,7 +32,11 @@ bootstrap() {
 # ── Unattended upgrades ───────────────────────────────────────────────────────
 
 configure_unattended_upgrades() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
 
   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'UUEOF'
 Unattended-Upgrade::Allowed-Origins {
@@ -62,76 +68,7 @@ UUEOF
 
 configure_longhorn_prereqs() {
   systemctl enable --now iscsid.service
-  # ensure nfs-common is present (handles RWX volumes)
   modprobe nfs || true
-}
-
-# ── OCI CLI ───────────────────────────────────────────────────────────────────
-
-install_oci_cli() {
-  local latest
-  latest=$(curl -sfL https://api.github.com/repos/oracle/oci-cli/releases/latest | jq -r '.name')
-  bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-    -- --accept-all-defaults --oci-cli-version "$latest"
-}
-
-# ── Nginx proxy-protocol reverse proxy ───────────────────────────────────────
-
-install_nginx_proxy() {
-  apt-get install -y -q --no-install-recommends nginx libnginx-mod-stream
-  systemctl enable nginx
-}
-
-render_nginx_config() {
-  export OCI_CLI_AUTH=instance_principal
-  export PATH="/root/bin:$PATH"
-
-  local private_ips=()
-  local instance_ocids
-  instance_ocids=$(oci search resource structured-search \
-    --query-text "QUERY instance resources where lifeCycleState='RUNNING' && freeformTags.key = 'k3s-cluster-name' && freeformTags.value = '${cluster_name}'" \
-    --query 'data.items[*].identifier' --raw-output | jq -r '.[]')
-
-  for ocid in $instance_ocids; do
-    local private_ip
-    private_ip=$(oci compute instance list-vnics --instance-id "$ocid" \
-      --raw-output --query 'data[0]."private-ip"' 2>/dev/null || true)
-    [[ -n "$private_ip" && "$private_ip" != "null" ]] && private_ips+=("$private_ip")
-  done
-
-  local http_upstreams="" https_upstreams=""
-  for ip in "$${private_ips[@]}"; do
-    http_upstreams+="    server $${ip}:${ingress_controller_http_nodeport} max_fails=3 fail_timeout=10s;"$'\n'
-    https_upstreams+="    server $${ip}:${ingress_controller_https_nodeport} max_fails=3 fail_timeout=10s;"$'\n'
-  done
-
-  cat > /etc/nginx/nginx.conf << NGINXEOF
-load_module /usr/lib/nginx/modules/ngx_stream_module.so;
-user www-data;
-worker_processes auto;
-pid /run/nginx.pid;
-
-events { worker_connections 768; }
-
-stream {
-  upstream k3s-http {
-$${http_upstreams}  }
-  upstream k3s-https {
-$${https_upstreams}  }
-
-  log_format basic '\$remote_addr [\$time_local] \$protocol \$status \$bytes_sent \$bytes_received \$session_time "\$upstream_addr"';
-  access_log /var/log/nginx/k3s_access.log basic;
-  error_log  /var/log/nginx/k3s_error.log;
-
-  proxy_protocol on;
-
-  server { listen ${http_lb_port};  proxy_pass k3s-http;  proxy_next_upstream on; }
-  server { listen ${https_lb_port}; proxy_pass k3s-https; proxy_next_upstream on; }
-}
-NGINXEOF
-
-  nginx -t
-  systemctl restart nginx
 }
 
 # ── k3s agent ─────────────────────────────────────────────────────────────────
@@ -172,16 +109,6 @@ install_k3s_agent() {
 bootstrap
 configure_unattended_upgrades
 configure_longhorn_prereqs
-
-%{ if ! disable_ingress }
-install_oci_cli
-install_nginx_proxy
-%{ endif }
-
 install_k3s_agent
-
-%{ if ! disable_ingress }
-render_nginx_config
-%{ endif }
 
 echo "==> k3s agent cloud-init complete at $(date -u)"
