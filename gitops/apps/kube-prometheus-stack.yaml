@@ -51,8 +51,12 @@ spec:
               memory: 256Mi
           persistence:
             enabled: false
-          # Default admin credentials — change after first login
-          adminPassword: "prom-operator"
+          # Admin credentials are pre-created by cloud-init as 'grafana-admin-secret'.
+          # Retrieve with: terraform output -raw grafana_admin_credentials
+          admin:
+            existingSecret: "grafana-admin-secret"
+            userKey: "admin-user"
+            passwordKey: "admin-password"
           grafana.ini:
             server:
               root_url: "%(protocol)s://%(domain)s/"

@@ -33,6 +33,15 @@ resource "random_password" "longhorn_ui_password" {
   }
 }
 
+resource "random_password" "grafana_admin_password" {
+  length  = 24
+  special = false
+
+  keepers = {
+    cluster_name = var.cluster_name
+  }
+}
+
 data "cloudinit_config" "k3s_server" {
   gzip          = true
   base64_encode = true
@@ -61,6 +70,7 @@ data "cloudinit_config" "k3s_server" {
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
       longhorn_ui_username              = var.longhorn_ui_username
       longhorn_ui_password              = random_password.longhorn_ui_password.result
+      grafana_admin_password            = random_password.grafana_admin_password.result
       gitops_repo_url                   = var.gitops_repo_url
       kured_release                     = var.kured_release
       kured_start_time                  = var.kured_start_time

@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: network-policies
+  name: pod-disruption-budgets
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -10,11 +10,10 @@ spec:
   source:
     repoURL: https://github.com/mbologna/k3s-oci.git
     targetRevision: HEAD
-    path: gitops/network-policies
+    path: gitops/pdbs
   destination:
     server: https://kubernetes.default.svc
-    # Manifests specify their own namespaces; this is a fallback for un-namespaced resources.
-    namespace: default
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true

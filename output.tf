@@ -1,3 +1,13 @@
+output "grafana_admin_credentials" {
+  description = "Grafana admin credentials (only available after cluster bootstrap)"
+  value = {
+    username = "admin"
+    password = random_password.grafana_admin_password.result
+    hint     = "Access via: https://${var.grafana_hostname != null ? var.grafana_hostname : "<grafana-hostname>"}"
+  }
+  sensitive = true
+}
+
 output "argocd_initial_password_hint" {
   description = "Command to retrieve the ArgoCD initial admin password (run after cluster is up)"
   value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"

@@ -13,6 +13,11 @@ variable "compartment_ocid" {
 variable "availability_domain" {
   type        = string
   description = "Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1'"
+
+  validation {
+    condition     = can(regex("^[^:]+:[A-Z0-9]+-AD-[1-3]$", var.availability_domain))
+    error_message = "availability_domain must match the pattern 'Namespace:REGION-AD-N' (e.g. 'Uocm:EU-FRANKFURT-1-AD-1')."
+  }
 }
 
 # ── Cluster identity ──────────────────────────────────────────────────────────
@@ -79,6 +84,11 @@ variable "my_public_ip_cidr" {
 variable "os_image_id" {
   type        = string
   description = "OCID of the Ubuntu 24.04 LTS (Noble) image for A1.Flex and E2.1.Micro instances. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/"
+
+  validation {
+    condition     = startswith(var.os_image_id, "ocid1.image.")
+    error_message = "os_image_id must be a valid OCI image OCID starting with 'ocid1.image.'."
+  }
 }
 
 variable "compute_shape" {
@@ -117,8 +127,8 @@ variable "boot_volume_size_in_gbs" {
   default     = 50
 
   validation {
-    condition     = var.boot_volume_size_in_gbs >= 47 && var.boot_volume_size_in_gbs <= 200
-    error_message = "boot_volume_size_in_gbs must be between 47 and 200."
+    condition     = var.boot_volume_size_in_gbs >= 47 && var.boot_volume_size_in_gbs <= 50
+    error_message = "boot_volume_size_in_gbs must be between 47 and 50 GB. Max 50 GB per instance to stay within the 200 GB Always Free block storage budget across 4 nodes."
   }
 }
 
@@ -353,6 +363,12 @@ variable "longhorn_ui_username" {
   type        = string
   description = "Username for Longhorn UI BasicAuth (only used when longhorn_hostname is set)."
   default     = "admin"
+}
+
+variable "grafana_hostname" {
+  type        = string
+  description = "Fully-qualified hostname for the Grafana UI IngressRoute (e.g. grafana.example.com). When set, a Traefik IngressRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
+  default     = null
 }
 
 variable "gitops_repo_url" {

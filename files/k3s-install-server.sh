@@ -262,6 +262,10 @@ install_argocd() {
   kubectl apply -n argocd \
     -f "https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/${argocd_image_updater_release}/manifests/install.yaml"
 
+  echo "Waiting for ArgoCD Image Updater to roll out ..."
+  kubectl rollout status deployment/argocd-image-updater \
+    --namespace argocd --timeout=300s
+
   %{ if argocd_hostname != "" }
   kubectl apply -f - << 'ARGOEOF'
 apiVersion: traefik.io/v1alpha1
@@ -276,6 +280,9 @@ spec:
     - kind: Rule
       match: Host(`${argocd_hostname}`)
       priority: 10
+      middlewares:
+        - name: argocd-rate-limit
+          namespace: argocd
       services:
         - name: argocd-server
           port: 80
@@ -297,6 +304,22 @@ spec:
 ARGOEOF
   echo "ArgoCD IngressRoute created for https://${argocd_hostname}"
   %{ endif }
+
+  # Pre-create grafana-admin secret so kube-prometheus-stack (via ArgoCD) uses generated credentials.
+  # The monitoring namespace is created here; ArgoCD will adopt it on first sync.
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -n monitoring -f - << GRAFEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-admin-secret
+  namespace: monitoring
+type: Opaque
+stringData:
+  admin-user: admin
+  admin-password: "${grafana_admin_password}"
+GRAFEOF
+  echo "Grafana admin secret pre-created in monitoring namespace."
 
   # Bootstrap the App of Apps so ArgoCD self-manages gitops/
   kubectl apply -n argocd -f - << APPEOF
@@ -404,14 +427,19 @@ install_k3s_server() {
 
 wait_for_cluster_ready() {
   local max=60 attempt=0
-  echo "Waiting for all nodes to be Ready ..."
+  local timeout_seconds=$(( max * 10 ))
+  echo "Waiting for all nodes to be Ready (timeout: $${timeout_seconds}s) ..."
   until [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
                | grep -v " Ready " | wc -l) -eq 0 ]] && \
         [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
                | wc -l) -gt 0 ]]; do
     attempt=$(( attempt + 1 ))
-    [[ $attempt -ge $max ]] && { echo "ERROR: cluster never became ready."; exit 1; }
-    echo "  waiting ($${attempt}/$${max}) ..."
+    [[ $attempt -ge $max ]] && {
+      echo "ERROR: cluster not ready after $${timeout_seconds}s. Check /var/log/k3s-cloud-init.log for details."
+      kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null || true
+      exit 1
+    }
+    echo "  waiting ($${attempt}/$${max}, $$(( attempt * 10 ))/$${timeout_seconds}s) ..."
     sleep 10
   done
   echo "All nodes are Ready."

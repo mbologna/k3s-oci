@@ -80,6 +80,14 @@ renovate.json    — Automated dependency updates
 - Run `tofu fmt -recursive` (or `terraform fmt -recursive`) before committing — CI enforces it.
 - `terraform validate` runs against both the root module and `example/` — keep both valid.
 - The `lifecycle { prevent_destroy = true }` on both load balancers is intentional; do not remove it.
+- **When renaming a resource**, always add a `moved {}` block so existing states don't require `terraform state mv`:
+  ```hcl
+  moved {
+    from = oci_core_instance.old_name
+    to   = oci_core_instance.new_name
+  }
+  ```
+  Remove `moved {}` blocks only after all users have applied the change.
 
 ### Shell scripts (`files/`)
 - Both scripts are **Terraform templatefiles**, not plain bash. `${var}` is a Terraform
@@ -132,6 +140,10 @@ terraform-docs .
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
+- **Do not add OCI Vault** — OCI Key Management / Vault is NOT an Always Free resource. Secrets
+  (`k3s_token`, `longhorn_ui_password`, `grafana_admin_password`) are passed via cloud-init
+  templatefile vars (stored in instance user-data). This is acceptable given the private subnet
+  placement and OCI NSG boundary. Future improvement: switch to Vault when cost is acceptable.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
