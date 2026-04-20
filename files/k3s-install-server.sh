@@ -174,11 +174,15 @@ install_longhorn() {
   systemctl enable --now iscsid.service
 
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  kubectl apply -f "https://raw.githubusercontent.com/longhorn/longhorn/${longhorn_release}/deploy/longhorn.yaml"
+  install_helm
+  helm repo add longhorn https://charts.longhorn.io
+  helm repo update
+  helm upgrade --install longhorn longhorn/longhorn \
+    --namespace longhorn-system --create-namespace \
+    --version "${longhorn_release}" \
+    --atomic --wait --timeout 10m
 
-  echo "Waiting for Longhorn manager to roll out ..."
-  kubectl rollout status daemonset/longhorn-manager \
-    --namespace longhorn-system --timeout=300s
+  echo "Longhorn deployed via Helm ${longhorn_release}."
 
   %{ if longhorn_hostname != "" }
   # Generate htpasswd hash using openssl (available on Ubuntu 24.04 without extra packages)
@@ -223,6 +227,9 @@ spec:
           port: 80
   tls:
     secretName: longhorn-frontend-tls
+    options:
+      name: tls-modern
+      namespace: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -256,7 +263,7 @@ install_argocd() {
     --namespace argocd \
     --version "${argocd_chart_release}" \
     --set "configs.params.server\.insecure=true" \
-    --wait --timeout 5m
+    --atomic --wait --timeout 5m
 
   echo "Installing ArgoCD Image Updater ..."
   kubectl apply -n argocd \
@@ -288,6 +295,9 @@ spec:
           port: 80
   tls:
     secretName: argocd-server-tls
+    options:
+      name: tls-modern
+      namespace: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

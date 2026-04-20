@@ -1,0 +1,61 @@
+---
+# AlertmanagerConfig — route and receiver template for PrometheusRule alerts.
+#
+# IMPORTANT: Fill in your notification target before enabling this.
+# Options shown: Slack webhook (recommended) and email.
+# Uncomment the one you want and fill in credentials.
+#
+# After updating, ensure the secret referenced below exists:
+#   kubectl create secret generic alertmanager-webhook-url \
+#     --from-literal=url='https://hooks.slack.com/services/...' \
+#     -n monitoring
+#
+# This AlertmanagerConfig only handles alerts from the monitoring namespace
+# (AlertmanagerConfig is namespace-scoped by design).
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: k3s-oci-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  route:
+    receiver: default-receiver
+    groupBy: [alertname, severity]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 12h
+    matchers:
+      - name: namespace
+        value: monitoring
+
+  receivers:
+    - name: default-receiver
+      # ── Option A: Slack webhook ────────────────────────────────────────────
+      # slackConfigs:
+      #   - apiURL:
+      #       name: alertmanager-webhook-url
+      #       key: url
+      #     channel: "#alerts"
+      #     title: '{{ .GroupLabels.alertname }}'
+      #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ "\n" }}{{ end }}'
+      #     sendResolved: true
+
+      # ── Option B: Email ───────────────────────────────────────────────────
+      # emailConfigs:
+      #   - to: alerts@example.com
+      #     from: alertmanager@example.com
+      #     smarthost: smtp.example.com:587
+      #     authUsername: alerts@example.com
+      #     authPassword:
+      #       name: alertmanager-smtp-secret
+      #       key: password
+      #     requireTLS: true
+
+      # ── Option C: Generic webhook ─────────────────────────────────────────
+      # webhookConfigs:
+      #   - urlSecret:
+      #       name: alertmanager-webhook-url
+      #       key: url
+      #     sendResolved: true

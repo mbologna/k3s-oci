@@ -41,6 +41,14 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*default\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "description": "Update Helm chart versions declared with inline renovate comments in gitops YAML files",
+      "customType": "regex",
+      "fileMatch": ["(^|/)gitops/.*\\.yaml$"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*targetRevision:\\s*\"(?<currentValue>[^\"]+)\""
+      ]
     }
   ]
 }

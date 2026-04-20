@@ -154,6 +154,8 @@ resource "oci_core_instance_configuration" "k3s_worker" {
 }
 
 # ── Worker instance pool ───────────────────────────────────────────────────────
+# Pool size is 0 by default. Kept so the NLB backend set can reference pool-managed
+# workers if you ever scale beyond the Always Free limit (k3s_worker_pool_size > 0).
 
 resource "oci_core_instance_pool" "k3s_workers" {
   depends_on = [oci_load_balancer_load_balancer.k3s_internal_lb]
@@ -176,13 +178,15 @@ resource "oci_core_instance_pool" "k3s_workers" {
   }
 }
 
-# ── Extra standalone worker node ──────────────────────────────────────────────
-# Provisions the 4th Always Free A1.Flex instance as a standalone resource.
-# OCI tenancies may restrict instance pools to 3 nodes, so this standalone
-# resource reliably delivers the full 4-OCPU / 24-GB free allocation.
+# ── Standalone worker node ────────────────────────────────────────────────────
+# OCI Always Free A1.Flex capacity is best claimed via a direct oci_core_instance
+# rather than an instance pool. Instance pools go through OCI's Capacity Management
+# API which can return "out of capacity" errors for A1.Flex on Always Free tenancies.
+# With k3s_server_pool_size=3 and k3s_standalone_worker=true this consumes the full
+# Always Free budget: 4 × (1 OCPU / 6 GB RAM) = 4 OCPUs / 24 GB.
 
-resource "oci_core_instance" "k3s_extra_worker" {
-  count = var.k3s_extra_worker_node ? 1 : 0
+resource "oci_core_instance" "k3s_standalone_worker" {
+  count = var.k3s_standalone_worker ? 1 : 0
   depends_on = [
     oci_load_balancer_load_balancer.k3s_internal_lb,
     oci_core_instance_pool.k3s_workers,
@@ -190,7 +194,7 @@ resource "oci_core_instance" "k3s_extra_worker" {
 
   compartment_id      = var.compartment_ocid
   availability_domain = var.availability_domain
-  display_name        = "${var.cluster_name}-extra-worker"
+  display_name        = "${var.cluster_name}-standalone-worker"
   freeform_tags       = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
 
   dynamic "agent_config" {
@@ -226,7 +230,7 @@ resource "oci_core_instance" "k3s_extra_worker" {
     assign_public_ip          = false
     subnet_id                 = oci_core_subnet.private.id
     nsg_ids                   = [oci_core_network_security_group.workers.id]
-    hostname_label            = "${var.cluster_name}-extra-worker"
+    hostname_label            = "${var.cluster_name}-standalone-worker"
   }
 
   metadata = {
