@@ -1,0 +1,31 @@
+# ArgoCD Application for cert-manager ClusterIssuers
+#
+# To enable: copy this file to gitops/apps/ AFTER updating the email in cluster-issuers.yaml:
+#   cp gitops/cert-manager/application-template.yaml gitops/apps/cert-manager-issuers.yaml
+#
+# ArgoCD will adopt the existing ClusterIssuers (created at bootstrap by cloud-init).
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-issuers
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mbologna/k3s-oci.git
+    targetRevision: HEAD
+    path: gitops/cert-manager
+    directory:
+      include: 'cluster-issuers.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

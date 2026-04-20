@@ -24,6 +24,15 @@ resource "random_password" "k3s_token" {
   }
 }
 
+resource "random_password" "longhorn_ui_password" {
+  length  = 24
+  special = false
+
+  keepers = {
+    cluster_name = var.cluster_name
+  }
+}
+
 data "cloudinit_config" "k3s_server" {
   gzip          = true
   base64_encode = true
@@ -50,6 +59,8 @@ data "cloudinit_config" "k3s_server" {
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
       longhorn_release                  = var.longhorn_release
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
+      longhorn_ui_username              = var.longhorn_ui_username
+      longhorn_ui_password              = random_password.longhorn_ui_password.result
       gitops_repo_url                   = var.gitops_repo_url
       kured_release                     = var.kured_release
       kured_start_time                  = var.kured_start_time

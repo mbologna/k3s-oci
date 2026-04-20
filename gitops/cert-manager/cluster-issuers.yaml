@@ -1,0 +1,41 @@
+# cert-manager ClusterIssuers — GitOps adoption template
+#
+# Cloud-init bootstraps these resources with the correct email from certmanager_email_address.
+# To adopt them into ArgoCD (recommended for ongoing management):
+#   1. Replace "changeme@example.com" below with your real email address
+#   2. Add the Application manifest to gitops/apps/:
+#      cp gitops/cert-manager/application-template.yaml gitops/apps/cert-manager-issuers.yaml
+#   3. Commit and push — ArgoCD will adopt the existing ClusterIssuers
+#
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # TODO: set this to match certmanager_email_address in your terraform.tfvars
+    email: changeme@example.com
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # TODO: set this to match certmanager_email_address in your terraform.tfvars
+    email: changeme@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

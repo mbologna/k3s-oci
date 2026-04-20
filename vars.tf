@@ -60,7 +60,13 @@ variable "public_key" {
 
 variable "my_public_ip_cidr" {
   type        = string
-  description = "Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32). Used to restrict SSH and kubeapi access."
+  description = <<-EOT
+    Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32).
+    Used to restrict bastion SSH access (when enable_bastion = true) and
+    kubeapi access via the public NLB (when expose_kubeapi = true).
+    k3s nodes live in the private subnet — direct SSH to nodes always
+    requires the bastion as a jump host regardless of this setting.
+  EOT
 
   validation {
     condition     = can(cidrnetmask(var.my_public_ip_cidr))
@@ -278,12 +284,12 @@ variable "disable_ingress" {
 
 variable "ingress_controller" {
   type        = string
-  description = "'traefik' keeps the k3s built-in Traefik v2; 'traefik2' installs Traefik via Helm for finer control."
-  default     = "traefik"
+  description = "'traefik2' installs Traefik via Helm for full control over the release and values."
+  default     = "traefik2"
 
   validation {
-    condition     = contains(["traefik", "traefik2"], var.ingress_controller)
-    error_message = "Supported values: traefik (k3s built-in), traefik2 (Helm-managed)."
+    condition     = var.ingress_controller == "traefik2"
+    error_message = "Only 'traefik2' (Helm-managed) is supported. The k3s built-in Traefik option has been removed."
   }
 }
 
@@ -339,8 +345,14 @@ variable "argocd_hostname" {
 
 variable "longhorn_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with basic-auth and a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the Longhorn UI IngressRoute (e.g. longhorn.example.com). When set, a Traefik IngressRoute with BasicAuth and a cert-manager TLS certificate is created."
   default     = null
+}
+
+variable "longhorn_ui_username" {
+  type        = string
+  description = "Username for Longhorn UI BasicAuth (only used when longhorn_hostname is set)."
+  default     = "admin"
 }
 
 variable "gitops_repo_url" {

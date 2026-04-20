@@ -111,20 +111,27 @@ install_traefik2() {
     --set "service.type=NodePort" \
     --set "ports.web.nodePort=${ingress_controller_http_nodeport}" \
     --set "ports.websecure.nodePort=${ingress_controller_https_nodeport}" \
-    --set "ports.websecure.tls.enabled=true"
+    --set "ports.websecure.tls.enabled=true" \
+    --atomic --wait --timeout 5m
 }
 
 # ── cert-manager ──────────────────────────────────────────────────────────────
 
 install_certmanager() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
 
-  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${certmanager_release}/cert-manager.yaml"
+  helm repo add jetstack https://charts.jetstack.io
+  helm repo update
 
-  echo "Waiting for cert-manager deployments ..."
-  kubectl wait --for=condition=Available deployment \
-    --namespace cert-manager --all --timeout=300s
+  helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace cert-manager --create-namespace \
+    --version "${certmanager_release}" \
+    --set crds.enabled=true \
+    --atomic --wait --timeout 5m
 
+  # Bootstrap ClusterIssuers with the correct email address.
+  # These are then adoptable by ArgoCD via gitops/cert-manager/ (update email there first).
   kubectl apply -f - << 'ISSEOF'
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -137,9 +144,9 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-staging
     solvers:
-    - http01:
-        ingress:
-          class: traefik
+      - http01:
+          ingress:
+            ingressClassName: traefik
 ISSEOF
 
   kubectl apply -f - << 'ISSEOF'
@@ -154,10 +161,11 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
-    - http01:
-        ingress:
-          class: traefik
+      - http01:
+          ingress:
+            ingressClassName: traefik
 ISSEOF
+  echo "cert-manager installed with ClusterIssuers. See gitops/cert-manager/ to adopt into ArgoCD."
 }
 
 # ── Longhorn ──────────────────────────────────────────────────────────────────
@@ -173,7 +181,28 @@ install_longhorn() {
     --namespace longhorn-system --timeout=300s
 
   %{ if longhorn_hostname != "" }
-  kubectl apply -f - << 'LHEOF'
+  # Generate htpasswd hash using openssl (available on Ubuntu 24.04 without extra packages)
+  LONGHORN_HASH=$(openssl passwd -apr1 "${longhorn_ui_password}")
+
+  kubectl apply -f - << LHEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: longhorn-basicauth
+  namespace: longhorn-system
+type: Opaque
+stringData:
+  users: "${longhorn_ui_username}:$${LONGHORN_HASH}"
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: longhorn-basicauth
+  namespace: longhorn-system
+spec:
+  basicAuth:
+    secret: longhorn-basicauth
+---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -184,8 +213,11 @@ spec:
     - websecure
   routes:
     - kind: Rule
-      match: Host(`${longhorn_hostname}`)
+      match: Host(\`${longhorn_hostname}\`)
       priority: 10
+      middlewares:
+        - name: longhorn-basicauth
+          namespace: longhorn-system
       services:
         - name: longhorn-frontend
           port: 80
@@ -205,7 +237,7 @@ spec:
   dnsNames:
     - ${longhorn_hostname}
 LHEOF
-  echo "Longhorn IngressRoute created for https://${longhorn_hostname}"
+  echo "Longhorn IngressRoute with BasicAuth created for https://${longhorn_hostname}"
   %{ endif }
 }
 
@@ -314,42 +346,9 @@ install_kured() {
     --set tolerations[0].effect=NoSchedule \
     --set tolerations[1].key=node-role.kubernetes.io/etcd \
     --set tolerations[1].operator=Exists \
-    --set tolerations[1].effect=NoSchedule
+    --set tolerations[1].effect=NoSchedule \
+    --atomic --wait --timeout 5m
   echo "kured installed (maintenance window: ${kured_start_time}–${kured_end_time} UTC)."
-}
-
-# ── Default-deny NetworkPolicy ────────────────────────────────────────────────
-
-apply_network_policies() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  kubectl apply -f - << 'NPEOF'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: default
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns
-  namespace: default
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-NPEOF
 }
 
 # ── k3s installation ──────────────────────────────────────────────────────────
@@ -405,14 +404,17 @@ install_k3s_server() {
 
 wait_for_cluster_ready() {
   local max=60 attempt=0
-  echo "Waiting for cluster to be ready ..."
-  until kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get pods -A 2>/dev/null | grep -q Running; do
+  echo "Waiting for all nodes to be Ready ..."
+  until [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
+               | grep -v " Ready " | wc -l) -eq 0 ]] && \
+        [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
+               | wc -l) -gt 0 ]]; do
     attempt=$(( attempt + 1 ))
     [[ $attempt -ge $max ]] && { echo "ERROR: cluster never became ready."; exit 1; }
     echo "  waiting ($${attempt}/$${max}) ..."
     sleep 10
   done
-  echo "Cluster is ready."
+  echo "All nodes are Ready."
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -459,7 +461,7 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
   install_certmanager
   install_argocd
   install_kured
-  apply_network_policies
+  echo "==> Stack installed. Network policies and ClusterIssuers are managed via ArgoCD (gitops/)."
 fi
 
 echo "==> k3s server cloud-init complete at $(date -u)"
