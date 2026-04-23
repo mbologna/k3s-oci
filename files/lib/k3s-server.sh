@@ -7,7 +7,7 @@
 # ── Wait for kubeapi ──────────────────────────────────────────────────────────
 
 wait_for_kubeapi() {
-  local max_attempts=60 attempt=0
+  local max_attempts=180 attempt=0
   echo "Waiting for k3s API at ${K3S_URL}:6443 ..."
   until curl --output /dev/null --silent --insecure "https://${K3S_URL}:6443"; do
     attempt=$(( attempt + 1 ))
@@ -24,31 +24,67 @@ wait_for_kubeapi() {
 # ── First-server election ─────────────────────────────────────────────────────
 # Identifies the oldest running server in the cluster's instance pool via OCI
 # CLI + IMDSv2. The oldest node bootstraps etcd (--cluster-init); all others join.
+#
+# Uses the instance pool membership API (preferred) to avoid electing stale
+# instances from a previous Terraform apply that are still in RUNNING state
+# while being replaced. Falls back to compartment-wide instance list if the
+# pool lookup fails.
 
 detect_first_server() {
   export OCI_CLI_AUTH=instance_principal
   export PATH="/root/bin:$PATH"
 
-  local instance_display_name first_server
+  local instance_display_name first_server pool_id
   instance_display_name=$(curl -sfL \
     -H "Authorization: Bearer Oracle" \
     http://169.254.169.254/opc/v2/instance | jq -r '.displayName')
 
-  first_server=$(oci compute instance list \
+  # Find the server pool by cluster tags — pool membership only includes current
+  # members, so replaced/stale instances from previous applies are excluded.
+  pool_id=$(oci compute-management instance-pool list \
     --compartment-id "${COMPARTMENT_OCID}" \
-    --availability-domain "${AVAILABILITY_DOMAIN}" \
-    --sort-by TIMECREATED \
-    --sort-order ASC 2>/dev/null \
+    --lifecycle-state RUNNING 2>/dev/null \
     | jq -re --arg cluster "${CLUSTER_NAME}" \
         '.data
          | map(select(
              .["freeform-tags"]["k3s-cluster-name"] == $cluster and
-             .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
-             (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
+             .["freeform-tags"]["k3s-instance-type"] == "k3s-server"
            ))
          | first
-         | .["display-name"]' \
-    2>/dev/null || echo "")
+         | .id' 2>/dev/null || echo "")
+
+  if [[ -n "${pool_id}" ]]; then
+    first_server=$(oci compute-management instance-pool list-instances \
+      --instance-pool-id "${pool_id}" \
+      --compartment-id "${COMPARTMENT_OCID}" \
+      --sort-by TIMECREATED \
+      --sort-order ASC 2>/dev/null \
+      | jq -re \
+          '.data
+           | map(select(.state == "Running"))
+           | first
+           | .["display-name"]' 2>/dev/null || echo "")
+  fi
+
+  # Fallback: compartment-wide list (handles edge case where pool lookup fails)
+  if [[ -z "${first_server}" ]]; then
+    echo "Warning: pool lookup failed, falling back to compartment instance list"
+    first_server=$(oci compute instance list \
+      --compartment-id "${COMPARTMENT_OCID}" \
+      --availability-domain "${AVAILABILITY_DOMAIN}" \
+      --sort-by TIMECREATED \
+      --sort-order ASC 2>/dev/null \
+      | jq -re --arg cluster "${CLUSTER_NAME}" \
+          '.data
+           | map(select(
+               .["freeform-tags"]["k3s-cluster-name"] == $cluster and
+               .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
+               (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
+             ))
+           | first
+           | .["display-name"]' \
+      2>/dev/null || echo "")
+  fi
 
   echo "Election: FIRST_SERVER='${first_server}'  SELF='${instance_display_name}'"
 
@@ -62,18 +98,18 @@ detect_first_server() {
 # ── k3s server install ────────────────────────────────────────────────────────
 
 install_k3s_server() {
-  local install_params=("--tls-san ${K3S_TLS_SAN}")
+  local install_params=("--tls-san" "${K3S_TLS_SAN}")
 
   resolve_flannel_params
   if [[ -n "${LOCAL_IP:-}" ]]; then
-    install_params+=("--node-ip ${LOCAL_IP}" "--advertise-address ${LOCAL_IP}" "--flannel-iface ${FLANNEL_IFACE}")
+    install_params+=("--node-ip" "${LOCAL_IP}" "--advertise-address" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
   fi
 
   # Always disable k3s built-in Traefik; Envoy Gateway is managed via ArgoCD.
-  install_params+=("--disable traefik")
+  install_params+=("--disable" "traefik")
 
   if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
-    install_params+=("--tls-san ${K3S_TLS_SAN_PUBLIC}")
+    install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
   fi
 
   local max_attempts=10 attempt=0
@@ -81,7 +117,7 @@ install_k3s_server() {
   if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" \
+        INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
         sh -s - --cluster-init "${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s init failed after ${max_attempts} attempts."; exit 1; }
@@ -92,7 +128,7 @@ install_k3s_server() {
     echo "==> Joining existing cluster"
     wait_for_kubeapi
     until curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" \
+        INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
         sh -s - --server "https://${K3S_URL}:6443" "${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s join failed after ${max_attempts} attempts."; exit 1; }
@@ -159,7 +195,9 @@ if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     2>/dev/null || true
   echo "Control-plane NoSchedule taints removed — all 4 nodes schedulable."
 
-  # Source bootstrap functions (defined in k3s-bootstrap.sh, appended by data.tf)
+  # Source bootstrap functions (defined in k3s-bootstrap.sh, prepended by data.tf)
+  export PATH="/root/bin:${PATH}"
+  export OCI_CLI_AUTH=instance_principal
   run_bootstrap
 fi
 
