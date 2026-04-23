@@ -24,19 +24,24 @@ resource "oci_core_instance_configuration" "k3s_server" {
       availability_domain = var.availability_domain
       display_name        = "${var.cluster_name}-server"
 
-      dynamic "agent_config" {
-        for_each = [local.agent_config]
-        content {
-          is_management_disabled = agent_config.value.is_management_disabled
-          is_monitoring_disabled = agent_config.value.is_monitoring_disabled
-
-          dynamic "plugins_config" {
-            for_each = agent_config.value.plugins_config
-            content {
-              desired_state = plugins_config.value.desired_state
-              name          = plugins_config.value.name
-            }
-          }
+      agent_config {
+        is_management_disabled = false
+        is_monitoring_disabled = false
+        plugins_config {
+          name          = "Vulnerability Scanning"
+          desired_state = "DISABLED"
+        }
+        plugins_config {
+          name          = "Compute Instance Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Custom Logs Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Bastion"
+          desired_state = "DISABLED"
         }
       }
 
@@ -65,6 +70,10 @@ resource "oci_core_instance_configuration" "k3s_server" {
 
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-server" })
     }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -109,19 +118,24 @@ resource "oci_core_instance_configuration" "k3s_worker" {
       availability_domain = var.availability_domain
       display_name        = "${var.cluster_name}-worker"
 
-      dynamic "agent_config" {
-        for_each = [local.agent_config]
-        content {
-          is_management_disabled = agent_config.value.is_management_disabled
-          is_monitoring_disabled = agent_config.value.is_monitoring_disabled
-
-          dynamic "plugins_config" {
-            for_each = agent_config.value.plugins_config
-            content {
-              desired_state = plugins_config.value.desired_state
-              name          = plugins_config.value.name
-            }
-          }
+      agent_config {
+        is_management_disabled = false
+        is_monitoring_disabled = false
+        plugins_config {
+          name          = "Vulnerability Scanning"
+          desired_state = "DISABLED"
+        }
+        plugins_config {
+          name          = "Compute Instance Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Custom Logs Monitoring"
+          desired_state = "ENABLED"
+        }
+        plugins_config {
+          name          = "Bastion"
+          desired_state = "DISABLED"
         }
       }
 
@@ -150,6 +164,10 @@ resource "oci_core_instance_configuration" "k3s_worker" {
 
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
     }
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -253,7 +271,7 @@ resource "oci_core_instance" "bastion" {
 
   source_details {
     source_type             = "image"
-    source_id               = var.os_image_id
+    source_id               = data.oci_core_images.bastion[0].images[0].id
     boot_volume_size_in_gbs = 47
   }
 

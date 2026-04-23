@@ -1,13 +1,22 @@
 # Copy this file to terraform.tfvars and fill in the values.
 # Never commit terraform.tfvars to version control.
+#
+# If you hit intermittent "tls: bad record MAC" errors during apply, run:
+#   GODEBUG=http2client=0 tofu apply
+# This disables Go's HTTP/2 client and forces HTTP/1.1 for OCI API calls.
+# The .envrc file in this directory sets it automatically if you use direnv.
 
 # OCI Authentication
+# user_ocid, fingerprint, private_key_path are optional when ~/.oci/config exists
+# (run `oci setup config` to create it). Set them explicitly for CI or when no config file is present.
 tenancy_ocid     = "ocid1.tenancy.oc1..example"
-user_ocid        = "ocid1.user.oc1..example"
-fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
-private_key_path = "~/.oci/oci_api_key.pem"
+compartment_ocid = "ocid1.compartment.oc1..example"
+# user_ocid        = "ocid1.user.oc1..example"
+# fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+# private_key_path = "~/.oci/oci_api_key.pem"
 
 # Region & placement  (must be your home region for Always Free)
+region              = "eu-frankfurt-1"
 availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 
 # Cluster
