@@ -37,23 +37,22 @@ locals {
 
   _kubeconfig_hint_bastion = <<-EOT
     # ── Fetch kubeconfig via OCI Bastion Service ─────────────────────────────
-    # Run from the example/ directory (requires oci CLI, tofu, jq):
+    # Run from the example/ directory (requires oci CLI, tofu, jq, nc, ssh):
     #   ./get-kubeconfig.sh
     #
-    # Or manually — create a session to the first server:
-    #   SERVER_OCID=$(oci compute instance list \
-    #     --compartment-id ${var.compartment_ocid} --lifecycle-state RUNNING \
-    #     --all --output json \
-    #     | jq -r '.data[] | select(.["display-name"] | endswith("-${var.cluster_name}-servers")) | .id' \
-    #     | head -1)
-    #   oci bastion session create-managed-ssh \
+    # Or manually — port-forwarding session (no Bastion plugin required):
+    #   oci bastion session create-port-forwarding \
     #     --bastion-id ${var.enable_bastion ? oci_bastion_bastion.k3s[0].id : "<bastion-ocid>"} \
     #     --ssh-public-key-file ~/.ssh/id_rsa.pub \
-    #     --target-resource-id $SERVER_OCID \
-    #     --target-os-username ubuntu \
-    #     --session-ttl-in-seconds 3600
-    #   # Then SSH using the proxy command from: oci bastion session get --session-id ...
-    #   # Then: sudo cat /etc/rancher/k3s/k3s.yaml | sed 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|'
+    #     --target-private-ip ${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
+    #     --target-port 22 \
+    #     --session-ttl 1800
+    #   # Open tunnel (replace SESSION and REGION):
+    #   ssh -N -L 22222:${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")}:22 \
+    #       -p 22 ocid1.bastionsession...@host.bastion.<region>.oci.oraclecloud.com &
+    #   # Fetch kubeconfig through tunnel:
+    #   ssh -p 22222 ubuntu@localhost "sudo cat /etc/rancher/k3s/k3s.yaml" \
+    #     | sed 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|'
   EOT
 
   _kubeconfig_hint_no_bastion = <<-EOT

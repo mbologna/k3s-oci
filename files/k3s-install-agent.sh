@@ -38,7 +38,7 @@ bootstrap() {
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -q || apt-get update -q || true
-  apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
+  apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges needrestart
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 
@@ -65,14 +65,22 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 UUEOF
 
-  # Align the apt-daily-upgrade timer with the kured maintenance window so
-  # package installation and reboots both happen in the same window.
-  # A 60-minute RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
+  # needrestart: automatically restart affected userspace services after package
+  # updates (mode 'a' = automatic). CVE patches take effect immediately for
+  # running daemons without waiting for the kured reboot window.
+  # k3s is excluded — its lifecycle is managed by the cluster upgrade controller.
+  mkdir -p /etc/needrestart/conf.d
+  cat > /etc/needrestart/conf.d/99-k3s.conf << 'NREOF'
+$nrconf{restart} = 'a';
+$nrconf{blacklist_rc} = [qr(^k3s)];
+NREOF
+
+  # Do NOT pin apt-daily-upgrade to the kured window — patches must install
+  # daily so CVE fixes are applied ASAP. Only the reboot is deferred to kured.
+  # RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
   mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
-  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/maintenance-window.conf << TIMEREOF
+  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/stagger.conf << 'TIMEREOF'
 [Timer]
-OnCalendar=
-OnCalendar=*-*-* ${kured_start_time}:00
 RandomizedDelaySec=60min
 TIMEREOF
   systemctl daemon-reload

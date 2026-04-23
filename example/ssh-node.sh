@@ -1,31 +1,38 @@
 #!/usr/bin/env bash
-# Retrieves kubeconfig from the first k3s server via OCI Bastion Service.
+# Opens an interactive SSH session to any k3s node via OCI Bastion port-forwarding.
 # Run from the example/ directory after a successful tofu apply.
 #
-# Uses a port-forwarding session (no OCI Agent Bastion plugin required).
+# Usage:
+#   ./ssh-node.sh                        # SSH into the first server (default)
+#   ./ssh-node.sh 10.0.1.82              # SSH into a specific private IP
+#   ./ssh-node.sh worker                 # SSH into the standalone worker
+#   ./ssh-node.sh server2                # SSH into the second server
 #
-# Requirements: oci CLI, tofu, jq, ssh
-# Override SSH key:  SSH_KEY_PATH=~/.ssh/id_ed25519 ./get-kubeconfig.sh
-# Override output:   KUBECONFIG_OUT=~/.kube/custom.yaml ./get-kubeconfig.sh
+# Override SSH key: SSH_KEY_PATH=~/.ssh/id_ed25519 ./ssh-node.sh
 set -euo pipefail
 
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_rsa}"
-KUBECONFIG_OUT="${KUBECONFIG_OUT:-$HOME/.kube/k3s-oci.yaml}"
-LOCAL_PORT=22222
-
-tfvar() { grep -E "^[[:space:]]*$1[[:space:]]*=" terraform.tfvars | awk -F'"' '{print $2}'; }
+LOCAL_PORT=22223
 
 BASTION_OCID=$(tofu output -raw bastion_ocid)
-NLB_IP=$(tofu output -json public_nlb_ip | jq -r '.[0]')
-SERVER_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[0]')
 
-echo "🔐 Creating OCI Bastion port-forwarding session to ${SERVER_IP}:22..."
+# Resolve target IP
+TARGET="${1:-server1}"
+case "$TARGET" in
+  server1) NODE_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[0]') ;;
+  server2) NODE_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[1]') ;;
+  server3) NODE_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[2]') ;;
+  worker)  NODE_IP=$(tofu output -raw k3s_worker_private_ip) ;;
+  *)       NODE_IP="$TARGET" ;;  # treat as raw IP
+esac
+
+echo "🔐 Creating OCI Bastion port-forwarding session to ${NODE_IP}:22..."
 SESSION_OCID=$(oci bastion session create-port-forwarding \
   --bastion-id "$BASTION_OCID" \
   --ssh-public-key-file "${SSH_KEY_PATH}.pub" \
-  --target-private-ip "$SERVER_IP" \
+  --target-private-ip "$NODE_IP" \
   --target-port 22 \
-  --session-ttl 1800 \
+  --session-ttl 3600 \
   --query 'data.id' --raw-output)
 
 echo "   Session: $SESSION_OCID"
@@ -39,12 +46,11 @@ while true; do
 done
 echo " ✓"
 
-# Extract the bastion endpoint (SESSION_OCID@host.bastion.REGION.oci.oraclecloud.com)
 RAW_CMD=$(oci bastion session get --session-id "$SESSION_OCID" \
   --query 'data."ssh-metadata".command' --raw-output)
 BASTION_ENDPOINT=$(echo "$RAW_CMD" | grep -oE 'ocid1\.bastionsession\.[^ ]+@host\.bastion\.[^ ]+')
 
-# Open SSH tunnel in background; clean up on exit
+# Open tunnel in background; clean up on exit
 TUNNEL_PID=""
 cleanup() { [ -n "$TUNNEL_PID" ] && kill "$TUNNEL_PID" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -54,7 +60,7 @@ ssh -i "$SSH_KEY_PATH" \
   -o UserKnownHostsFile=/dev/null \
   -o ControlPath=none \
   -o Ciphers=aes128-ctr,aes192-ctr,aes256-ctr \
-  -N -L "${LOCAL_PORT}:${SERVER_IP}:22" \
+  -N -L "${LOCAL_PORT}:${NODE_IP}:22" \
   -p 22 "$BASTION_ENDPOINT" &
 TUNNEL_PID=$!
 
@@ -66,17 +72,11 @@ for _ in $(seq 1 12); do
 done
 echo " ✓"
 
-echo "📥 Fetching kubeconfig..."
+echo "🖥️  Connecting to ${NODE_IP} (ubuntu@localhost:${LOCAL_PORT})..."
+echo "   (session TTL: 1 hour — type 'exit' to close)"
+echo ""
 ssh -i "$SSH_KEY_PATH" \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
-  -p "$LOCAL_PORT" ubuntu@localhost \
-  "sudo cat /etc/rancher/k3s/k3s.yaml" \
-  2>/dev/null \
-  | sed "s|https://127.0.0.1:6443|https://${NLB_IP}:6443|" \
-  > "$KUBECONFIG_OUT"
-
-echo "✅ Kubeconfig written to ${KUBECONFIG_OUT}"
-echo ""
-echo "   export KUBECONFIG=${KUBECONFIG_OUT}"
-echo "   kubectl get nodes"
+  -o ControlPath=none \
+  -p "$LOCAL_PORT" ubuntu@localhost
