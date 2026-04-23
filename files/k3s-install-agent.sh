@@ -16,8 +16,12 @@ bootstrap() {
   systemctl stop    netfilter-persistent.service || true
   systemctl disable netfilter-persistent.service || true
 
+  # OCI instances only have IPv4 routes; force apt to avoid IPv6 mirror timeouts
+  echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
+  # Tolerate partial mirror failures (transient OCI regional mirror issues)
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
     jq curl python3 python3-pip open-iscsi nfs-common util-linux
   apt-get upgrade -y -q
@@ -33,7 +37,7 @@ bootstrap() {
 
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
   apt-get clean
   rm -rf /var/lib/apt/lists/*

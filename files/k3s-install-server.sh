@@ -33,8 +33,12 @@ bootstrap() {
   systemctl stop    netfilter-persistent.service || true
   systemctl disable netfilter-persistent.service || true
 
+  # OCI instances only have IPv4 routes; force apt to avoid IPv6 mirror timeouts
+  echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
+  # Tolerate partial mirror failures (transient OCI regional mirror issues)
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 python3-pip \
     open-iscsi util-linux
@@ -52,7 +56,7 @@ bootstrap() {
 
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges
   apt-get clean
   rm -rf /var/lib/apt/lists/*
@@ -553,10 +557,20 @@ INSTANCE_DISPLAY_NAME=$(curl -sfL \
 FIRST_SERVER=$(oci compute instance list \
   --compartment-id "${compartment_ocid}" \
   --availability-domain "${availability_domain}" \
-  --lifecycle-state RUNNING \
   --sort-by TIMECREATED \
-  --query 'data[?freeformTags."k3s-cluster-name"==`${cluster_name}` && freeformTags."k3s-instance-type"==`k3s-server`].['"'"'display-name'"'"'] | [0][0]' \
-  --raw-output 2>/dev/null || echo "")
+  --sort-order ASC 2>/dev/null \
+  | jq -re --arg cluster "${cluster_name}" \
+      '.data
+       | map(select(
+           .["freeform-tags"]["k3s-cluster-name"] == $cluster and
+           .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
+           (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
+         ))
+       | first
+       | .["display-name"]' \
+  2>/dev/null || echo "")
+
+echo "Election: FIRST_SERVER='$FIRST_SERVER'  SELF='$INSTANCE_DISPLAY_NAME'"
 
 IS_FIRST_SERVER="false"
 [[ "$FIRST_SERVER" == "$INSTANCE_DISPLAY_NAME" ]] && IS_FIRST_SERVER="true"

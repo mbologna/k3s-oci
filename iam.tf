@@ -5,7 +5,7 @@ resource "oci_identity_dynamic_group" "k3s" {
   description    = "k3s cluster '${var.cluster_name}' instances"
   name           = var.oci_identity_dynamic_group_name
 
-  matching_rule = "All {instance.compartment.id = '${var.compartment_ocid}', tag.freeformTags.k3s-cluster-name = '${var.cluster_name}'}"
+  matching_rule = "All {instance.compartment.id = '${var.compartment_ocid}'}"
 
   freeform_tags = local.common_tags
 }

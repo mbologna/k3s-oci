@@ -48,9 +48,9 @@ output "public_nlb_ip" {
   value       = local.public_lb_ip
 }
 
-output "bastion_public_ip" {
-  description = "Public IP of the bastion host (null if enable_bastion = false)"
-  value       = var.enable_bastion ? oci_core_instance.bastion[0].public_ip : null
+output "bastion_ocid" {
+  description = "OCID of the OCI Bastion Service resource (null if enable_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh."
+  value       = var.enable_bastion ? oci_bastion_bastion.k3s[0].id : null
 }
 
 output "k3s_token" {
