@@ -7,11 +7,41 @@
 
 # ── OS bootstrap ──────────────────────────────────────────────────────────────
 
+# Wait for apt/dpkg locks so our apt calls never race with apt-daily or
+# unattended-upgrades that Ubuntu starts automatically on first boot.
+wait_apt_lock() {
+  local lockfiles=(
+    /var/lib/dpkg/lock-frontend
+    /var/lib/dpkg/lock
+    /var/cache/apt/archives/lock
+    /var/lib/apt/lists/lock
+  )
+  local waited=0
+  while fuser "${lockfiles[@]}" &>/dev/null 2>&1; do
+    if (( waited == 0 )); then
+      echo "Waiting for apt/dpkg lock to be released..."
+    fi
+    sleep 5
+    (( waited += 5 ))
+    if (( waited >= 300 )); then
+      echo "Apt lock held for 5 minutes — killing apt-daily and continuing."
+      systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+      sleep 3
+      break
+    fi
+  done
+}
+
 bootstrap() {
   /usr/sbin/netfilter-persistent stop  || true
   /usr/sbin/netfilter-persistent flush || true
   systemctl stop    netfilter-persistent.service || true
   systemctl disable netfilter-persistent.service || true
+
+  # Stop Ubuntu's apt-daily timer so it doesn't race with our apt calls.
+  # configure_unattended_upgrades() will re-enable it after we're done.
+  systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+  wait_apt_lock
 
   # OCI instances only have IPv4 routes; force apt to avoid IPv6 mirror timeouts
   echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
@@ -22,7 +52,16 @@ bootstrap() {
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 python3-pip \
     open-iscsi nfs-common util-linux
-  apt-get upgrade -y -q
+  # Hold the oracle kernel packages so that apt-get upgrade or unattended-upgrades
+  # cannot install a newer kernel during cloud-init. A new kernel would become the
+  # grub default and the machine would reboot into it on the next boot, potentially
+  # hitting regressions (e.g. 6.17.0-1010 boot loop on OCI A1.Flex).
+  # kured + system-upgrade-controller manage planned kernel upgrades.
+  apt-mark hold linux-oracle linux-image-oracle linux-headers-oracle || true
+  # Security and package upgrades are deferred to unattended-upgrades on its
+  # daily schedule so that the cluster is healthy before any OS changes land.
+  # Never run apt-get upgrade here: it would install the held kernel and trigger
+  # a reboot into a potentially broken kernel, causing a boot loop.
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 
@@ -36,6 +75,7 @@ bootstrap() {
 
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
+  wait_apt_lock
   apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges needrestart
   apt-get clean

@@ -10,10 +10,10 @@ install_k3s_agent() {
 
   resolve_flannel_params
   if [[ -n "${LOCAL_IP:-}" ]]; then
-    install_params+=("--node-ip ${LOCAL_IP}" "--flannel-iface ${FLANNEL_IFACE}")
+    install_params+=("--node-ip" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
   fi
 
-  local max_api_wait=60 max_attempts=10 attempt=0
+  local max_api_wait=180 max_attempts=10 attempt=0
 
   echo "Waiting for k3s API at ${K3S_URL}:6443 ..."
   until curl --output /dev/null --silent --insecure "https://${K3S_URL}:6443"; do
@@ -24,7 +24,7 @@ install_k3s_agent() {
 
   attempt=0
   until curl -sfL https://get.k3s.io | \
-      INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" \
+      INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
       sh -s - agent --server "https://${K3S_URL}:6443" "${install_params[@]}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s agent install failed after ${max_attempts} attempts."; exit 1; }
