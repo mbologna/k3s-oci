@@ -116,3 +116,41 @@ spec:
       namespace: traefik
 ```
 
+
+## Resilience: spread replicas across nodes
+
+With 4 nodes available for user workloads, use `topologySpreadConstraints` so that pod replicas never pile up on a single node. Losing one node then kills at most ⌈replicas/4⌉ pods instead of all of them.
+
+```yaml
+# Add to every Deployment/StatefulSet with replicas > 1
+spec:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: my-app   # match your pod labels
+```
+
+For lower-priority workloads where strict spreading is not required:
+
+```yaml
+      whenUnsatisfiable: ScheduleAnyway  # soft preference instead of hard requirement
+```
+
+Add a `PodDisruptionBudget` alongside to keep at least one replica up during voluntary disruptions (kured reboots, kubectl drain):
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: my-app-pdb
+spec:
+  minAvailable: 1   # or maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: my-app
+```
+
+> **etcd HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** maximum. This is the hard limit for an Always Free 4-node topology.

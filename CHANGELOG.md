@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Grafana admin password auto-generated via `random_password` (pre-created as K8s Secret in cloud-init)
 - Traefik `RateLimit` middleware (50 rps, burst 100) for ArgoCD UI
 - `PodDisruptionBudget` for argocd-server, argocd-repo-server, argocd-application-controller, cert-manager, cert-manager-webhook
+- `PodDisruptionBudget maxUnavailable: 1` for Traefik DaemonSet (`traefik-pdb`) — limits kured/drain to one Traefik pod at a time; 3 of 4 nodes always serve ingress
 - Longhorn `ServiceMonitor` for Prometheus scraping (`gitops/monitoring/longhorn-servicemonitor.yaml`)
 - `AlertmanagerConfig` template with Slack/email/webhook options (`gitops/monitoring/alertmanager-config.yaml`)
 - HTTP→HTTPS redirect via Traefik `RedirectScheme` middleware + low-priority catch-all IngressRoute (`gitops/traefik/redirect.yaml`)
@@ -25,6 +26,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `argocd_initial_password_hint` Terraform output
 - Longhorn UI BasicAuth via Traefik Middleware
 - Renovate custom manager for `targetRevision:` in gitops YAML files
+- OCI Vault (`enable_vault = true`) — cluster secrets stored in a software-protected DEFAULT-type OCI Vault; fetched at boot via instance_principal
+- Boot volume backups (`enable_backup = true`) — weekly policy on all 4 node boot volumes; 1-week retention
+- Object Storage state bucket (`enable_object_storage_state = true`) — versioned bucket, S3-compatible backend
+- Longhorn backup bucket (`enable_longhorn_backup = true`) — versioned OCI Object Storage bucket; instructions in `longhorn_backup_setup` output
+- OCI Notifications + Alertmanager webhook (`enable_notifications = false`) — opt-in; supports email subscription
+- MySQL HeatWave (`enable_mysql = false`) — Always Free standalone DB in private subnet; credentials pre-created as K8s Secret
+- Self-hosted Renovate workflow (`.github/workflows/renovate.yml`, daily 04:00 UTC)
+- OpenTofu validate job in CI
+- yamllint job for `gitops/` in CI
+- Trivy IaC scan (HIGH/CRITICAL) in CI
+- Resilience section in `gitops/README.md` with `topologySpreadConstraints` and PDB patterns for user workloads
 
 ### Changed
 - Longhorn installation switched from `kubectl apply -f URL` to Helm (`longhorn/longhorn` chart) — atomic rollback, version-pinned, Renovate-tracked
@@ -39,6 +51,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ArgoCD installation switched to Helm
 - All Helm installs use `--atomic` for automatic rollback on failure
 - CI workflow has path filters; tflint version pinned
+- **Traefik now runs as DaemonSet** (was single-replica Deployment) — one pod per node eliminates ingress SPOF and removes cross-node forwarding hops
+- Traefik `priorityClassName` set to `system-cluster-critical` — never evicted under memory pressure
+- Traefik resource requests set (`100m` CPU / `128Mi` RAM)
+- **Control-plane `NoSchedule` taints removed** after cluster init — all 4 nodes schedulable for user workloads; single worker is no longer a workload SPOF
+- Longhorn `defaultReplicaCount` and `persistence.defaultClassReplicaCount` explicitly pinned to `3` in Helm values
+- `enable_oci_logging` default changed `false` → `true`
+- `notification_topic_endpoint` output marked `sensitive = true`
+- CI `gitops/**` path added to workflow triggers
 
 ### Fixed
 - Stale comment in `gitops/network-policies/default-deny.yaml`
