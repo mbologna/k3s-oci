@@ -51,7 +51,7 @@ data "cloudinit_config" "k3s_server" {
     content = templatefile("${path.module}/files/k3s-install-server.sh", {
       k3s_version                       = local.k3s_version
       k3s_subnet                        = var.k3s_subnet
-      k3s_token                         = random_password.k3s_token.result
+      k3s_token                         = var.enable_vault ? "" : random_password.k3s_token.result
       disable_ingress                   = var.disable_ingress
       ingress_controller                = var.ingress_controller
       certmanager_release               = var.certmanager_release
@@ -69,8 +69,8 @@ data "cloudinit_config" "k3s_server" {
       longhorn_release                  = var.longhorn_release
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
       longhorn_ui_username              = var.longhorn_ui_username
-      longhorn_ui_password              = random_password.longhorn_ui_password.result
-      grafana_admin_password            = random_password.grafana_admin_password.result
+      longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
+      grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
       gitops_repo_url                   = var.gitops_repo_url
       kured_release                     = var.kured_release
       kured_start_time                  = var.kured_start_time
@@ -81,6 +81,13 @@ data "cloudinit_config" "k3s_server" {
       oci_cli_version                   = var.oci_cli_version
       ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
       ingress_controller_https_nodeport = var.ingress_controller_https_nodeport
+      notification_topic_endpoint       = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : ""
+      mysql_endpoint                    = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
+      mysql_admin_username              = var.enable_mysql ? var.mysql_admin_username : ""
+      mysql_admin_password              = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
+      vault_secret_id_k3s_token         = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
+      vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
+      vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
     })
   }
 }
@@ -92,11 +99,13 @@ data "cloudinit_config" "k3s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/k3s-install-agent.sh", {
-      k3s_version      = local.k3s_version
-      k3s_subnet       = var.k3s_subnet
-      k3s_token        = random_password.k3s_token.result
-      k3s_url          = local.k3s_internal_lb_ip
-      kured_start_time = var.kured_start_time
+      k3s_version               = local.k3s_version
+      k3s_subnet                = var.k3s_subnet
+      k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
+      k3s_url                   = local.k3s_internal_lb_ip
+      kured_start_time          = var.kured_start_time
+      vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
+      oci_cli_version           = var.oci_cli_version
     })
   }
 }

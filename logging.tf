@@ -7,8 +7,8 @@
 
 variable "enable_oci_logging" {
   type        = bool
-  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent."
-  default     = false
+  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month)."
+  default     = true
 }
 
 resource "oci_logging_log_group" "k3s" {

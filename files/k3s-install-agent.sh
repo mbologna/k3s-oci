@@ -96,6 +96,14 @@ configure_longhorn_prereqs() {
   modprobe nfs || true
 }
 
+# ── OCI CLI (for Vault secret fetch when enable_vault = true) ─────────────────
+%{ if vault_secret_id_k3s_token != "" }
+install_oci_cli() {
+  bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
+    -- --accept-all-defaults --oci-cli-version "${oci_cli_version}"
+}
+%{ endif }
+
 # ── k3s agent ─────────────────────────────────────────────────────────────────
 
 install_k3s_agent() {
@@ -120,7 +128,7 @@ install_k3s_agent() {
 
   attempt=0
   until curl -sfL https://get.k3s.io | \
-      INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="${k3s_token}" \
+      INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
       sh -s - agent --server "https://${k3s_url}:6443" $params_str; do
     attempt=$(( attempt + 1 ))
     [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s agent install failed after $${max_attempts} attempts."; exit 1; }
@@ -134,6 +142,21 @@ install_k3s_agent() {
 bootstrap
 configure_unattended_upgrades
 configure_longhorn_prereqs
+
+# ── Resolve k3s token (OCI Vault when enabled, else from user-data) ───────────
+%{ if vault_secret_id_k3s_token != "" }
+install_oci_cli
+export OCI_CLI_AUTH=instance_principal
+export PATH="/root/bin:$PATH"
+echo "Fetching k3s token from OCI Vault..."
+K3S_TOKEN=$(oci secrets secret-bundle get-secret-bundle \
+  --secret-id "${vault_secret_id_k3s_token}" \
+  --query 'data."secret-bundle-content".content' \
+  --raw-output | base64 -d)
+%{ else }
+K3S_TOKEN="${k3s_token}"
+%{ endif }
+
 install_k3s_agent
 
 echo "==> k3s agent cloud-init complete at $(date -u)"
