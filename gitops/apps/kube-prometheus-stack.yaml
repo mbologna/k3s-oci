@@ -28,10 +28,10 @@ spec:
             retentionSize: "8GB"
             resources:
               requests:
-                memory: 256Mi
+                memory: 512Mi
                 cpu: 100m
               limits:
-                memory: 512Mi
+                memory: 1Gi
             storageSpec:
               volumeClaimTemplate:
                 spec:
