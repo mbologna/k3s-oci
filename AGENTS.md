@@ -103,7 +103,8 @@ renovate.json    — Automated dependency updates
     to   = oci_core_instance.new_name
   }
   ```
-  Remove `moved {}` blocks only after all users have applied the change.
+  Remove `moved {}` blocks after one release cycle — leave a comment in `moved.tf` explaining
+  that it's intentionally empty. The file itself must remain so its purpose is clear.
 
 ### Shell scripts (`files/`)
 - **`files/server-vars.sh.tpl`** and **`files/agent-vars.sh.tpl`** are the ONLY Terraform

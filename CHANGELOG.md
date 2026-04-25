@@ -42,7 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `longhorn_chart_version` — managed by ArgoCD (`gitops/apps/longhorn.yaml`)
 - `envoy_gateway_chart_version` — managed by ArgoCD (`gitops/apps/envoy-gateway.yaml`)
 - `external_dns_chart_version` — managed by ArgoCD (`gitops/apps/external-dns.yaml`)
+- `disable_ingress` — dead code removed; the Envoy Gateway DaemonSet is always deployed via ArgoCD and cannot be conditionally disabled through Terraform
 - `files/k3s-install-server.sh` and `files/k3s-install-agent.sh` — replaced by modular `files/lib/*.sh`
+- `moved.tf` migration blocks for `k3s_extra_worker` → `k3s_standalone_worker` (three resources);
+  removed — apply the current version from a fresh state or run `terraform state mv` manually if
+  migrating from a very old release
 
 ### Fixed
 - `max_api_wait` and `max_attempts` were conflated in `k3s-install-agent.sh` (both were `10`; API wait is now correctly `60` seconds)
