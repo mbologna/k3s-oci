@@ -19,8 +19,9 @@ spec:
     local:
       rules:
         - clientSelectors:
-            - remoteAddress:
+            - sourceCIDR:
                 type: Distinct
+                value: "0.0.0.0/0"
           limit:
             requests: 100
             unit: Second
