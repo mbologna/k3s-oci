@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: oci://docker.io/envoyproxy
+    repoURL: registry-1.docker.io/envoyproxy
     chart: gateway-helm
     # renovate: datasource=github-releases depName=envoyproxy/gateway
     targetRevision: "v1.7.2"
@@ -21,3 +21,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

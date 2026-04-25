@@ -21,8 +21,12 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
+        - podSelector: {}
+  egress:
+    - to:
         - podSelector: {}
 ---
 # Allow Envoy Gateway to reach argocd-server (HTTPRoute on port 80)
@@ -58,4 +62,21 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+---
+# Allow argocd to reach GitHub, Helm registries, OCI registries, and Kubernetes API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: argocd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
           protocol: TCP

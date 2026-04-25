@@ -20,9 +20,30 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Allow Longhorn to reach backup targets (S3/NFS) and Kubernetes API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: longhorn-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
 ---
 # Allow Envoy Gateway to reach Longhorn frontend (HTTPRoute on port 80)
 apiVersion: networking.k8s.io/v1
@@ -78,4 +99,26 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+---
+# Allow the Kubernetes API server (runs on host network) to reach the
+# Longhorn admission webhook (port 9502) and conversion webhook (port 9501).
+# The k3s apiserver is not a pod, so allow-same-namespace doesn't cover it;
+# traffic appears to come from the node subnet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apiserver-webhook
+  namespace: longhorn-system
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 9501
+          protocol: TCP
+        - port: 9502
           protocol: TCP

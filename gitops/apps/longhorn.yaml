@@ -19,6 +19,11 @@ spec:
           defaultReplicaCount: 3
         persistence:
           defaultClassReplicaCount: 3
+        # Disable pre-upgrade job: ArgoCD runs it on every sync (including
+        # fresh installs) where longhorn-manager isn't running yet, causing
+        # the job to fail and block the sync.
+        preUpgradeChecker:
+          jobEnabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
