@@ -2,8 +2,12 @@ locals {
   # Resolved k3s version: fetched from GitHub at plan-time when var.k3s_version == "latest"
   k3s_version = var.k3s_version == "latest" ? jsondecode(data.http.k3s_latest_release[0].response_body).name : var.k3s_version
 
-  # SSH public key: prefer the string value; fall back to reading the file path
-  ssh_public_key = var.public_key != null ? var.public_key : trimspace(file(pathexpand(var.public_key_path)))
+  # SSH public key: prefer the string value; fall back to reading the file path.
+  # GitHub keys (github_ssh_keys_username) are appended when set.
+  ssh_public_key = join("\n", compact(concat(
+    [var.public_key != null ? var.public_key : trimspace(file(pathexpand(var.public_key_path)))],
+    var.github_ssh_keys_username != "" ? [for k in split("\n", trimspace(data.http.github_ssh_keys[0].response_body)) : k if k != ""] : []
+  )))
 
   # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy
   os_image_id = coalesce(var.os_image_id, data.oci_core_images.k3s_nodes[0].images[0].id)

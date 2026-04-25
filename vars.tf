@@ -63,6 +63,16 @@ variable "public_key" {
   default     = null
 }
 
+variable "github_ssh_keys_username" {
+  type        = string
+  description = <<-EOT
+    GitHub username whose published SSH keys (https://github.com/<username>.keys)
+    are added to every instance's authorized_keys at plan time, in addition to
+    the primary public_key / public_key_path. Leave empty to skip.
+  EOT
+  default     = ""
+}
+
 variable "my_public_ip_cidr" {
   type        = string
   description = <<-EOT
