@@ -1,9 +1,19 @@
 # ArgoCD Application for cert-manager ClusterIssuers
 #
-# To enable: copy this file to gitops/apps/ AFTER updating the email in cluster-issuers.yaml:
-#   cp gitops/cert-manager/application-template.yaml gitops/apps/cert-manager-issuers.yaml
+# ⚠️  TEMPLATE — DO NOT copy to gitops/apps/ without editing first.
+#
+# REQUIRED before activating:
+#   1. Open gitops/cert-manager/cluster-issuers.yaml
+#   2. Replace EVERY occurrence of "changeme@example.com" with your real
+#      Let's Encrypt registration email (must match certmanager_email_address
+#      in your terraform.tfvars — cloud-init already created live issuers
+#      with that email; ArgoCD will adopt them on first sync).
+#   3. Copy this file to gitops/apps/:
+#        cp gitops/cert-manager/application-template.yaml gitops/apps/cert-manager-issuers.yaml
 #
 # ArgoCD will adopt the existing ClusterIssuers (created at bootstrap by cloud-init).
+# Deploying this Application with "changeme@example.com" still present will overwrite
+# the live issuers with an invalid email and break certificate issuance.
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application

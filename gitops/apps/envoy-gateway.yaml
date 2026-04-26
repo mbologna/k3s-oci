@@ -11,7 +11,7 @@ spec:
     repoURL: oci://docker.io/envoyproxy
     chart: gateway-helm
     # renovate: datasource=github-releases depName=envoyproxy/gateway
-    targetRevision: "v1.3.0"
+    targetRevision: "v1.7.2"
   destination:
     server: https://kubernetes.default.svc
     namespace: envoy-gateway-system
