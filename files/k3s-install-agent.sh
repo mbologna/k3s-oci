@@ -99,8 +99,29 @@ configure_longhorn_prereqs() {
 # ── OCI CLI (for Vault secret fetch when enable_vault = true) ─────────────────
 %{ if vault_secret_id_k3s_token != "" }
 install_oci_cli() {
+  if /root/bin/oci --version &>/dev/null 2>&1; then
+    echo "OCI CLI already installed, skipping."
+    return 0
+  fi
   bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
     -- --accept-all-defaults --oci-cli-version "${oci_cli_version}"
+  # Suppress OCI CLI announcements so they never pollute stdout of subsequent
+  # oci commands (announcements on stdout break pipes to jq / base64).
+  # Ensure suppress_feedback is set in [OCI_CLI_SETTINGS], creating or updating
+  # the section. The installer may already write [OCI_CLI_SETTINGS], so we use
+  # python3 to set the key idempotently rather than blindly appending.
+  python3 - <<'RCEOF'
+import configparser, os
+rc = os.path.expanduser('~/.oci/oci_cli_rc')
+os.makedirs(os.path.dirname(rc), exist_ok=True)
+cfg = configparser.ConfigParser()
+cfg.read(rc)
+if not cfg.has_section('OCI_CLI_SETTINGS'):
+    cfg.add_section('OCI_CLI_SETTINGS')
+cfg.set('OCI_CLI_SETTINGS', 'suppress_feedback', 'True')
+with open(rc, 'w') as f:
+    cfg.write(f)
+RCEOF
 }
 %{ endif }
 
@@ -149,10 +170,9 @@ install_oci_cli
 export OCI_CLI_AUTH=instance_principal
 export PATH="/root/bin:$PATH"
 echo "Fetching k3s token from OCI Vault..."
-K3S_TOKEN=$(oci secrets secret-bundle get-secret-bundle \
+K3S_TOKEN=$(oci secrets secret-bundle get \
   --secret-id "${vault_secret_id_k3s_token}" \
-  --query 'data."secret-bundle-content".content' \
-  --raw-output | base64 -d)
+  --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
 %{ else }
 K3S_TOKEN="${k3s_token}"
 %{ endif }
