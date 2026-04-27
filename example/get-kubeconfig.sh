@@ -9,7 +9,7 @@
 # Override output:   KUBECONFIG_OUT=~/.kube/custom.yaml ./get-kubeconfig.sh
 set -euo pipefail
 
-SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_rsa}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 KUBECONFIG_OUT="${KUBECONFIG_OUT:-$HOME/.kube/k3s-oci.yaml}"
 LOCAL_PORT=22222
 

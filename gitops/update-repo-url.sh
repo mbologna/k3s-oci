@@ -25,17 +25,18 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPS_DIR="$SCRIPT_DIR/apps"
+OPTIONAL_DIR="$SCRIPT_DIR/optional"
 
-echo "Updating repoURL in $APPS_DIR ..."
-find "$APPS_DIR" -name "*.yaml" -exec \
-  sed -i.bak "s|$OLD_URL|$NEW_URL|g" {} \;
-
-# Remove backup files created by sed -i on macOS
-find "$APPS_DIR" -name "*.bak" -delete
+for dir in "$APPS_DIR" "$OPTIONAL_DIR"; do
+  echo "Updating repoURL in $dir ..."
+  find "$dir" -name "*.yaml" -exec \
+    sed -i.bak "s|$OLD_URL|$NEW_URL|g" {} \;
+  find "$dir" -name "*.bak" -delete
+done
 
 echo "Done. Updated files:"
-grep -rl "$NEW_URL" "$APPS_DIR"
+grep -rl "$NEW_URL" "$APPS_DIR" "$OPTIONAL_DIR"
 
 echo ""
 echo "Commit the changes:"
-echo "  git add gitops/apps/ && git commit -m 'chore: update gitops repoURL to $NEW_URL'"
+echo "  git add gitops/apps/ gitops/optional/ && git commit -m 'chore: update gitops repoURL to $NEW_URL'"

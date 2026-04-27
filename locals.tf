@@ -10,7 +10,7 @@ locals {
   )))
 
   # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy
-  os_image_id = coalesce(var.os_image_id, data.oci_core_images.k3s_nodes[0].images[0].id)
+  os_image_id = var.os_image_id != null ? var.os_image_id : data.oci_core_images.k3s_nodes[0].images[0].id
 
   # Applied to every OCI resource for consistent identification and cost tracking
   common_tags = {
@@ -57,7 +57,7 @@ locals {
     # Or manually — port-forwarding session (no Bastion plugin required):
     #   oci bastion session create-port-forwarding \
     #     --bastion-id ${var.enable_bastion ? oci_bastion_bastion.k3s[0].id : "<bastion-ocid>"} \
-    #     --ssh-public-key-file ~/.ssh/id_rsa.pub \
+    #     --ssh-public-key-file ~/.ssh/id_ed25519.pub \
     #     --target-private-ip ${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
     #     --target-port 22 \
     #     --session-ttl 1800

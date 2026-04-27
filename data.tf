@@ -91,6 +91,8 @@ data "cloudinit_config" "k3s_server" {
         mysql_endpoint                    = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
         mysql_admin_username              = var.enable_mysql ? var.mysql_admin_username : ""
         mysql_admin_password              = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
+        dockerhub_username                = var.dockerhub_username
+        dockerhub_password                = var.dockerhub_password
       })),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-bootstrap.sh"),
