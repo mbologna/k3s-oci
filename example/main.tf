@@ -57,7 +57,7 @@ variable "public_key" {
 
 variable "public_key_path" {
   type    = string
-  default = "~/.ssh/id_rsa.pub"
+  default = "~/.ssh/id_ed25519.pub"
 }
 
 # ── Optional Always Free features ─────────────────────────────────────────────

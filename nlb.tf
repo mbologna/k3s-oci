@@ -49,6 +49,10 @@ resource "oci_network_load_balancer_backend" "k3s_http_workers" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_http_standalone_worker" {
+  # OCI NLB has a global lifecycle lock: only one backend operation at a time per NLB.
+  # Chain all backend resource blocks so they execute sequentially and avoid 409 conflicts.
+  depends_on = [oci_network_load_balancer_backend.k3s_http_workers]
+
   count = var.k3s_standalone_worker ? 1 : 0
 
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_http.name
@@ -59,7 +63,11 @@ resource "oci_network_load_balancer_backend" "k3s_http_standalone_worker" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_http_servers" {
-  depends_on = [oci_core_instance_pool.k3s_servers]
+  depends_on = [
+    oci_core_instance_pool.k3s_servers,
+    oci_network_load_balancer_backend.k3s_http_standalone_worker,
+    oci_network_load_balancer_backend.k3s_http_workers,
+  ]
 
   count                    = var.k3s_server_pool_size
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_http.name
@@ -92,7 +100,11 @@ resource "oci_network_load_balancer_listener" "k3s_https" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_https_workers" {
-  depends_on = [oci_core_instance_pool.k3s_workers]
+  depends_on = [
+    oci_core_instance_pool.k3s_workers,
+    oci_network_load_balancer_backend.k3s_http_servers,
+    oci_network_load_balancer_backend.k3s_http_standalone_worker,
+  ]
 
   count                    = var.k3s_worker_pool_size
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_https.name
@@ -103,6 +115,11 @@ resource "oci_network_load_balancer_backend" "k3s_https_workers" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_https_standalone_worker" {
+  depends_on = [
+    oci_network_load_balancer_backend.k3s_https_workers,
+    oci_network_load_balancer_backend.k3s_http_servers,
+  ]
+
   count = var.k3s_standalone_worker ? 1 : 0
 
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_https.name
@@ -113,7 +130,11 @@ resource "oci_network_load_balancer_backend" "k3s_https_standalone_worker" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_https_servers" {
-  depends_on = [oci_core_instance_pool.k3s_servers]
+  depends_on = [
+    oci_core_instance_pool.k3s_servers,
+    oci_network_load_balancer_backend.k3s_https_standalone_worker,
+    oci_network_load_balancer_backend.k3s_https_workers,
+  ]
 
   count                    = var.k3s_server_pool_size
   backend_set_name         = oci_network_load_balancer_backend_set.k3s_https.name
@@ -150,7 +171,11 @@ resource "oci_network_load_balancer_listener" "k3s_kubeapi_public" {
 }
 
 resource "oci_network_load_balancer_backend" "k3s_kubeapi_public_servers" {
-  depends_on = [oci_core_instance_pool.k3s_servers]
+  depends_on = [
+    oci_core_instance_pool.k3s_servers,
+    oci_network_load_balancer_backend.k3s_https_servers,
+    oci_network_load_balancer_backend.k3s_https_standalone_worker,
+  ]
 
   count = var.expose_kubeapi ? var.k3s_server_pool_size : 0
 

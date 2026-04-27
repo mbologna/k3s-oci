@@ -21,8 +21,11 @@
 
 install_gateway_api_crds() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
-  echo "Gateway API CRDs ${GATEWAY_API_VERSION} installed."
+  # Use experimental channel: superset of standard, includes GRPCRoute/TCPRoute/TLSRoute
+  # required by Envoy Gateway. Server-side apply avoids annotation size limit on large CRDs.
+  kubectl apply --server-side --force-conflicts \
+    -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/experimental-install.yaml"
+  echo "Gateway API CRDs ${GATEWAY_API_VERSION} (experimental channel) installed."
 }
 
 # ── Pre-create runtime Kubernetes Secrets ─────────────────────────────────────
@@ -374,7 +377,106 @@ EOF
   echo "ArgoCD ${ARGOCD_CHART_VERSION} installed. App of Apps bootstrapped from ${GITOPS_REPO_URL}."
 }
 
-# ── Bootstrap entry point ─────────────────────────────────────────────────────
+# ── DockerHub OCI Helm registry credentials ───────────────────────────────────
+# Envoy Gateway chart is hosted on registry-1.docker.io. Anonymous Docker Hub
+# pulls are rate-limited; authenticated pulls avoid 401/429 errors in ArgoCD.
+# Only created when DOCKERHUB_USERNAME is non-empty.
+
+create_dockerhub_secret() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  [[ -z "${DOCKERHUB_USERNAME}" ]] && return 0
+
+  kubectl apply -n argocd -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dockerhub-registry
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  url: registry-1.docker.io
+  type: helm
+  enableOCI: "true"
+  username: "${DOCKERHUB_USERNAME}"
+  password: "${DOCKERHUB_PASSWORD}"
+EOF
+  echo "DockerHub ArgoCD repo credentials created."
+}
+
+# ── Optional ArgoCD Applications ──────────────────────────────────────────────
+# Optional apps live in gitops/optional/ (outside the main app-of-apps scope).
+# Cloud-init creates thin wrapper ArgoCD Applications here so that ArgoCD
+# only deploys an optional component when its feature flag is enabled.
+# Each wrapper points to a single file in gitops/optional/ via directory.include,
+# which ArgoCD then applies — creating the actual ArgoCD Application for the
+# Helm chart. This is the standard app-of-apps pattern, kept conditional.
+
+create_optional_apps() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+  if [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]]; then
+    kubectl apply -n argocd -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: optional-external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ${GITOPS_REPO_URL}
+    targetRevision: HEAD
+    path: gitops/optional
+    directory:
+      include: "external-dns.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+EOF
+    echo "optional-external-dns ArgoCD Application created."
+  fi
+
+  if [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]]; then
+    kubectl apply -n argocd -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: optional-external-secrets
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ${GITOPS_REPO_URL}
+    targetRevision: HEAD
+    path: gitops/optional
+    directory:
+      include: "external-secrets.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+EOF
+    echo "optional-external-secrets ArgoCD Application created."
+  fi
+}
 # Called by k3s-server.sh after cluster is Ready and taints are removed.
 
 run_bootstrap() {
@@ -383,5 +485,7 @@ run_bootstrap() {
   install_certmanager
   [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]] && install_external_secrets
   install_argocd
+  create_dockerhub_secret
+  create_optional_apps
   echo "==> Bootstrap complete. ArgoCD will reconcile remaining stack via gitops/."
 }

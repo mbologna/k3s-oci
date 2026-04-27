@@ -50,7 +50,7 @@ variable "unique_tag_value" {
 variable "public_key_path" {
   type        = string
   description = "Path to SSH public key file. Used as fallback when public_key is null."
-  default     = "~/.ssh/id_rsa.pub"
+  default     = "~/.ssh/id_ed25519.pub"
 }
 
 variable "public_key" {
@@ -461,9 +461,22 @@ variable "enable_dns01_challenge" {
 
 variable "gateway_api_version" {
   type        = string
-  description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap. Must exist before ArgoCD syncs gateway-config."
+  description = "Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   default = "v1.5.1"
+}
+
+variable "dockerhub_username" {
+  type        = string
+  description = "Docker Hub username for ArgoCD to authenticate when pulling OCI Helm charts (e.g. Envoy Gateway from registry-1.docker.io). If empty, anonymous pulls are attempted and may be rate-limited. Create a PAT at https://app.docker.com/settings/personal-access-tokens"
+  default     = ""
+}
+
+variable "dockerhub_password" {
+  type        = string
+  description = "Docker Hub access token (PAT) for ArgoCD OCI Helm chart pulls. Paired with dockerhub_username."
+  default     = ""
+  sensitive   = true
 }
 
 variable "certmanager_chart_version" {
