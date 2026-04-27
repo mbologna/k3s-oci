@@ -66,7 +66,6 @@ data "cloudinit_config" "k3s_server" {
       k3s_token                         = var.enable_vault ? "" : random_password.k3s_token.result
       disable_ingress                   = var.disable_ingress
       ingress_controller                = var.ingress_controller
-      certmanager_release               = var.certmanager_release
       certmanager_email_address         = var.certmanager_email_address
       compartment_ocid                  = var.compartment_ocid
       availability_domain               = var.availability_domain
@@ -75,21 +74,15 @@ data "cloudinit_config" "k3s_server" {
       k3s_tls_san                       = local.k3s_internal_lb_ip
       expose_kubeapi                    = var.expose_kubeapi
       k3s_tls_san_public                = local.public_lb_ip[0]
-      argocd_chart_release              = var.argocd_chart_release
-      traefik_chart_release             = var.traefik_chart_release
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
-      longhorn_release                  = var.longhorn_release
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
       longhorn_ui_username              = var.longhorn_ui_username
       longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
       grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
       gitops_repo_url                   = var.gitops_repo_url
-      kured_release                     = var.kured_release
       kured_start_time                  = var.kured_start_time
       kured_end_time                    = var.kured_end_time
       kured_reboot_days                 = join(",", var.kured_reboot_days)
-      system_upgrade_controller_release = var.system_upgrade_controller_release
-      oci_cli_version                   = var.oci_cli_version
       ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
       ingress_controller_https_nodeport = var.ingress_controller_https_nodeport
       notification_topic_endpoint       = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : ""
@@ -99,6 +92,11 @@ data "cloudinit_config" "k3s_server" {
       vault_secret_id_k3s_token         = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
       vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
       vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
+      traefik_chart_version             = var.traefik_chart_version
+      certmanager_chart_version         = var.certmanager_chart_version
+      longhorn_chart_version            = var.longhorn_chart_version
+      argocd_chart_version              = var.argocd_chart_version
+      kured_chart_version               = var.kured_chart_version
     })
   }
 }
@@ -114,9 +112,7 @@ data "cloudinit_config" "k3s_worker" {
       k3s_subnet                = var.k3s_subnet
       k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
       k3s_url                   = local.k3s_internal_lb_ip
-      kured_start_time          = var.kured_start_time
       vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
-      oci_cli_version           = var.oci_cli_version
     })
   }
 }

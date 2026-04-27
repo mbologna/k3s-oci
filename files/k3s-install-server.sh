@@ -119,7 +119,7 @@ install_oci_cli() {
     return 0
   fi
   bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-    -- --accept-all-defaults --oci-cli-version "${oci_cli_version}"
+    -- --accept-all-defaults
   # Suppress OCI CLI announcements so they never pollute stdout of subsequent
   # oci commands (announcements on stdout break pipes to jq / base64).
   # Ensure suppress_feedback is set in [OCI_CLI_SETTINGS], creating or updating
@@ -163,7 +163,7 @@ install_traefik2() {
   # workloads under memory pressure and are never evicted before system daemons.
   # resources.requests: prevents scheduling on nodes that can't sustain ingress.
   helm upgrade --install --namespace=traefik traefik traefik/traefik \
-    --version "${traefik_chart_release}" \
+    --version "${traefik_chart_version}" \
     --set "deployment.kind=DaemonSet" \
     --set "priorityClassName=system-cluster-critical" \
     --set "resources.requests.cpu=100m" \
@@ -201,7 +201,7 @@ install_certmanager() {
 
   helm upgrade --install cert-manager jetstack/cert-manager \
     --namespace cert-manager --create-namespace \
-    --version "${certmanager_release}" \
+    --version "${certmanager_chart_version}" \
     --set crds.enabled=true \
     --atomic --wait --timeout 5m
 
@@ -254,12 +254,12 @@ install_longhorn() {
   helm repo update
   helm upgrade --install longhorn longhorn/longhorn \
     --namespace longhorn-system --create-namespace \
-    --version "${longhorn_release}" \
+    --version "${longhorn_chart_version}" \
     --set "defaultSettings.defaultReplicaCount=3" \
     --set "persistence.defaultClassReplicaCount=3" \
     --atomic --wait --timeout 10m
 
-  echo "Longhorn deployed via Helm ${longhorn_release}."
+  echo "Longhorn deployed via Helm ${longhorn_chart_version}."
 
   %{ if longhorn_hostname != "" }
   # Generate htpasswd hash using openssl (available on Ubuntu 24.04 without extra packages)
@@ -338,7 +338,7 @@ install_argocd() {
   # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
   helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
-    --version "${argocd_chart_release}" \
+    --version "${argocd_chart_version}" \
     --set "configs.params.server\.insecure=true" \
     --atomic --wait --timeout 5m
 
@@ -487,7 +487,7 @@ install_kured() {
   helm repo add kubereboot https://kubereboot.github.io/charts
   helm repo update
   helm upgrade --install kured kubereboot/kured \
-    --version "${kured_release}" \
+    --version "${kured_chart_version}" \
     --namespace kube-system \
     --set configuration.rebootSentinelFile=/var/run/reboot-required \
     --set configuration.startTime="${kured_start_time}" \
@@ -517,7 +517,8 @@ install_kured() {
 
 install_system_upgrade_controller() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  local base="https://github.com/rancher/system-upgrade-controller/releases/download/${system_upgrade_controller_release}"
+  # GitHub provides a stable 'latest' redirect for release assets
+  local base="https://github.com/rancher/system-upgrade-controller/releases/latest/download"
 
   kubectl apply -f "$${base}/crd.yaml"
   kubectl apply -f "$${base}/system-upgrade-controller.yaml"

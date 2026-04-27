@@ -104,7 +104,7 @@ install_oci_cli() {
     return 0
   fi
   bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-    -- --accept-all-defaults --oci-cli-version "${oci_cli_version}"
+    -- --accept-all-defaults
   # Suppress OCI CLI announcements so they never pollute stdout of subsequent
   # oci commands (announcements on stdout break pipes to jq / base64).
   # Ensure suppress_feedback is set in [OCI_CLI_SETTINGS], creating or updating

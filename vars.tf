@@ -314,23 +314,7 @@ variable "ingress_controller" {
   }
 }
 
-# ── Traefik ingress ───────────────────────────────────────────────────────────
-
-variable "traefik_chart_release" {
-  type        = string
-  description = "Traefik Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/traefik.yaml."
-  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
-  default = "39.0.8"
-}
-
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
-
-variable "certmanager_release" {
-  type        = string
-  description = "cert-manager Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/cert-manager.yaml."
-  # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  default = "v1.20.2"
-}
 
 variable "certmanager_email_address" {
   type        = string
@@ -342,23 +326,7 @@ variable "certmanager_email_address" {
   }
 }
 
-# ── Longhorn (always installed — provides distributed storage + cluster activity) ──
-
-variable "longhorn_release" {
-  type        = string
-  description = "Longhorn Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/longhorn.yaml."
-  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-  default = "1.11.1"
-}
-
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
-
-variable "argocd_chart_release" {
-  type        = string
-  description = "ArgoCD Helm chart version (argo/argo-cd) used for the initial bootstrap install. After first apply, ArgoCD self-manages its own upgrades via gitops/apps/argocd.yaml."
-  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "7.8.23"
-}
 
 variable "argocd_hostname" {
   type        = string
@@ -392,13 +360,6 @@ variable "gitops_repo_url" {
 
 # ── kured (always installed — graceful kernel reboot management) ──────────────
 
-variable "kured_release" {
-  type        = string
-  description = "kured Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/kured.yaml."
-  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  default = "5.5.1"
-}
-
 variable "kured_reboot_days" {
   type        = list(string)
   description = "Days of the week on which kured may reboot nodes. Defaults to all days."
@@ -417,33 +378,10 @@ variable "kured_end_time" {
   default     = "06:00"
 }
 
-# ── k3s automated upgrades (system-upgrade-controller) ───────────────────────
-
-variable "system_upgrade_controller_release" {
-  type        = string
-  description = "system-upgrade-controller version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/system-upgrade-controller.yaml."
-  # renovate: datasource=github-releases depName=rancher/system-upgrade-controller
-  default = "v0.15.2"
-}
-
-variable "k3s_upgrade_channel" {
-  type        = string
-  description = "Deprecated: k3s upgrade channel was previously used for system-upgrade-controller Plans. Plans are now managed in gitops/system-upgrade/plans.yaml — edit the 'channel' field there to switch between stable/latest/testing."
-  default     = "stable"
-  validation {
-    condition     = contains(["stable", "latest", "testing"], var.k3s_upgrade_channel)
-    error_message = "k3s_upgrade_channel must be one of: stable, latest, testing."
-  }
-}
-
 # ── OCI CLI ───────────────────────────────────────────────────────────────────
-
-variable "oci_cli_version" {
-  type        = string
-  description = "OCI CLI version installed on control-plane nodes for first-server detection."
-  # renovate: datasource=github-releases depName=oracle/oci-cli
-  default = "3.52.0"
-}
+# OCI CLI is installed at latest available version at bootstrap time.
+# It is only used during node initialisation for Vault secret fetch and is
+# not a running workload — no versioning needed.
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 
@@ -507,4 +445,44 @@ variable "enable_vault" {
   type        = bool
   description = "Store cluster secrets (k3s_token, longhorn_ui_password, grafana_admin_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
   default     = true
+}
+
+# Bootstrap chart versions — must match the targetRevision in the corresponding
+# gitops/apps/*.yaml. Renovate keeps both in sync via a single PR.
+# The bootstrap install uses this version so the cluster never starts with a
+# chart that is newer than what ArgoCD would reconcile to.
+
+variable "traefik_chart_version" {
+  type        = string
+  description = "Traefik Helm chart version used for the bootstrap install. Must match gitops/apps/traefik.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
+  default = "39.0.8"
+}
+
+variable "certmanager_chart_version" {
+  type        = string
+  description = "cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+  default = "v1.20.2"
+}
+
+variable "longhorn_chart_version" {
+  type        = string
+  description = "Longhorn Helm chart version used for the bootstrap install. Must match gitops/apps/longhorn.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+  default = "1.11.1"
+}
+
+variable "argocd_chart_version" {
+  type        = string
+  description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+  default = "7.8.23"
+}
+
+variable "kured_chart_version" {
+  type        = string
+  description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+  default = "5.5.1"
 }
