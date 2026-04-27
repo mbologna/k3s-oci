@@ -1,0 +1,43 @@
+---
+# k3s upgrade Plans managed by system-upgrade-controller.
+# Edit 'channel' below to switch between "stable", "latest", or "testing".
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-server
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/stable
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"
+  serviceAccountName: system-upgrade
+  cordon: true
+  drain:
+    force: false
+    skipWaitForDeleteTimeout: 60
+  upgrade:
+    image: rancher/k3s-upgrade
+---
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-agent
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  channel: https://update.k3s.io/v1-release/channels/stable
+  nodeSelector:
+    matchExpressions:
+      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+  serviceAccountName: system-upgrade
+  cordon: true
+  drain:
+    force: false
+    skipWaitForDeleteTimeout: 60
+  prepare:
+    image: rancher/k3s-upgrade
+    args: ["prepare", "k3s-server"]
+  upgrade:
+    image: rancher/k3s-upgrade

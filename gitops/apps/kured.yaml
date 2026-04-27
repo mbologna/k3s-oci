@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kured
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubereboot.github.io/charts
+    chart: kured
+    # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+    targetRevision: "5.5.1"
+    helm:
+      valuesObject:
+        configuration:
+          rebootSentinelFile: /var/run/reboot-required
+          # Maintenance window: 22:00–06:00 UTC (midnight–08:00 CET / 01:00–09:00 CEST)
+          # Edit here to change the window; must match NLB maintenance expectations.
+          startTime: "22:00"
+          endTime: "06:00"
+          timeZone: UTC
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+          - key: node-role.kubernetes.io/etcd
+            operator: Exists
+            effect: NoSchedule
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

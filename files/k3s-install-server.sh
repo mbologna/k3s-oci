@@ -163,6 +163,7 @@ install_traefik2() {
   # workloads under memory pressure and are never evicted before system daemons.
   # resources.requests: prevents scheduling on nodes that can't sustain ingress.
   helm upgrade --install --namespace=traefik traefik traefik/traefik \
+    --version "${traefik_chart_release}" \
     --set "deployment.kind=DaemonSet" \
     --set "priorityClassName=system-cluster-critical" \
     --set "resources.requests.cpu=100m" \
@@ -340,14 +341,6 @@ install_argocd() {
     --version "${argocd_chart_release}" \
     --set "configs.params.server\.insecure=true" \
     --atomic --wait --timeout 5m
-
-  echo "Installing ArgoCD Image Updater ..."
-  kubectl apply -n argocd \
-    -f "https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/${argocd_image_updater_release}/manifests/install.yaml"
-
-  echo "Waiting for ArgoCD Image Updater to roll out ..."
-  kubectl rollout status deployment/argocd-image-updater \
-    --namespace argocd --timeout=300s
 
   %{ if argocd_hostname != "" }
   kubectl apply -f - << 'ARGOEOF'
@@ -530,53 +523,7 @@ install_system_upgrade_controller() {
   kubectl apply -f "$${base}/system-upgrade-controller.yaml"
   kubectl rollout status -n system-upgrade deployment/system-upgrade-controller --timeout=120s
 
-  # Plan: upgrade control-plane nodes one at a time
-  # Plan: upgrade agent nodes one at a time, only after all servers are done
-  kubectl apply -f - << UPGRADEEOF
----
-apiVersion: upgrade.cattle.io/v1
-kind: Plan
-metadata:
-  name: k3s-server
-  namespace: system-upgrade
-spec:
-  concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/${k3s_upgrade_channel}
-  nodeSelector:
-    matchLabels:
-      node-role.kubernetes.io/control-plane: "true"
-  serviceAccountName: system-upgrade
-  cordon: true
-  drain:
-    force: false
-    skipWaitForDeleteTimeout: 60
-  upgrade:
-    image: rancher/k3s-upgrade
----
-apiVersion: upgrade.cattle.io/v1
-kind: Plan
-metadata:
-  name: k3s-agent
-  namespace: system-upgrade
-spec:
-  concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/${k3s_upgrade_channel}
-  nodeSelector:
-    matchExpressions:
-      - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
-  serviceAccountName: system-upgrade
-  cordon: true
-  drain:
-    force: false
-    skipWaitForDeleteTimeout: 60
-  prepare:
-    image: rancher/k3s-upgrade
-    args: ["prepare", "k3s-server"]
-  upgrade:
-    image: rancher/k3s-upgrade
-UPGRADEEOF
-
-  echo "system-upgrade-controller installed, tracking channel: ${k3s_upgrade_channel}"
+  echo "system-upgrade-controller installed. k3s upgrade Plans are managed via ArgoCD (gitops/system-upgrade/plans.yaml)."
 }
 
 # ── k3s installation ──────────────────────────────────────────────────────────

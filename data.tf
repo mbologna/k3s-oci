@@ -76,7 +76,7 @@ data "cloudinit_config" "k3s_server" {
       expose_kubeapi                    = var.expose_kubeapi
       k3s_tls_san_public                = local.public_lb_ip[0]
       argocd_chart_release              = var.argocd_chart_release
-      argocd_image_updater_release      = var.argocd_image_updater_release
+      traefik_chart_release             = var.traefik_chart_release
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
       longhorn_release                  = var.longhorn_release
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
@@ -89,7 +89,6 @@ data "cloudinit_config" "k3s_server" {
       kured_end_time                    = var.kured_end_time
       kured_reboot_days                 = join(",", var.kured_reboot_days)
       system_upgrade_controller_release = var.system_upgrade_controller_release
-      k3s_upgrade_channel               = var.k3s_upgrade_channel
       oci_cli_version                   = var.oci_cli_version
       ingress_controller_http_nodeport  = var.ingress_controller_http_nodeport
       ingress_controller_https_nodeport = var.ingress_controller_https_nodeport

@@ -314,12 +314,21 @@ variable "ingress_controller" {
   }
 }
 
+# ── Traefik ingress ───────────────────────────────────────────────────────────
+
+variable "traefik_chart_release" {
+  type        = string
+  description = "Traefik Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/traefik.yaml."
+  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
+  default = "39.0.8"
+}
+
 # ── cert-manager (always installed — keeps cluster active, avoids idle reclamation) ───
 
 variable "certmanager_release" {
   type        = string
-  description = "cert-manager release to install."
-  # renovate: datasource=github-releases depName=cert-manager/cert-manager
+  description = "cert-manager Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/cert-manager.yaml."
+  # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   default = "v1.20.2"
 }
 
@@ -337,25 +346,18 @@ variable "certmanager_email_address" {
 
 variable "longhorn_release" {
   type        = string
-  description = "Longhorn release to install."
-  # renovate: datasource=github-releases depName=longhorn/longhorn
-  default = "v1.11.1"
+  description = "Longhorn Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/longhorn.yaml."
+  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+  default = "1.11.1"
 }
 
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
 
 variable "argocd_chart_release" {
   type        = string
-  description = "ArgoCD Helm chart version (argo/argo-cd). Chart version maps 1:1 to an ArgoCD app version."
+  description = "ArgoCD Helm chart version (argo/argo-cd) used for the initial bootstrap install. After first apply, ArgoCD self-manages its own upgrades via gitops/apps/argocd.yaml."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
   default = "7.8.23"
-}
-
-variable "argocd_image_updater_release" {
-  type        = string
-  description = "ArgoCD Image Updater release to install (kubectl apply)."
-  # renovate: datasource=github-releases depName=argoproj-labs/argocd-image-updater
-  default = "v0.18.0"
 }
 
 variable "argocd_hostname" {
@@ -392,7 +394,7 @@ variable "gitops_repo_url" {
 
 variable "kured_release" {
   type        = string
-  description = "kured Helm chart version."
+  description = "kured Helm chart version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/kured.yaml."
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
   default = "5.5.1"
 }
@@ -419,14 +421,14 @@ variable "kured_end_time" {
 
 variable "system_upgrade_controller_release" {
   type        = string
-  description = "system-upgrade-controller version for k3s automated upgrades."
+  description = "system-upgrade-controller version used for the initial bootstrap install. After first apply, ArgoCD manages upgrades via gitops/apps/system-upgrade-controller.yaml."
   # renovate: datasource=github-releases depName=rancher/system-upgrade-controller
   default = "v0.15.2"
 }
 
 variable "k3s_upgrade_channel" {
   type        = string
-  description = "k3s release channel to track for automated upgrades. 'stable' is recommended; 'latest' tracks RC releases."
+  description = "Deprecated: k3s upgrade channel was previously used for system-upgrade-controller Plans. Plans are now managed in gitops/system-upgrade/plans.yaml — edit the 'channel' field there to switch between stable/latest/testing."
   default     = "stable"
   validation {
     condition     = contains(["stable", "latest", "testing"], var.k3s_upgrade_channel)
