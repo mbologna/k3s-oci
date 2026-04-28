@@ -66,7 +66,7 @@ k3s_standalone_worker = true
 # enable_mysql         = false          # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 
-# ── Hostnames (set to create Traefik IngressRoutes + cert-manager TLS certs) ──
+# ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
 # argocd_hostname   = "argocd.example.com"
 # longhorn_hostname = "longhorn.example.com"
 # grafana_hostname  = "grafana.example.com"
