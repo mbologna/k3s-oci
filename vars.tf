@@ -477,12 +477,12 @@ variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "7.8.23"
+  default = "9.5.5"
 }
 
 variable "kured_chart_version" {
   type        = string
   description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  default = "5.5.1"
+  default = "5.11.0"
 }
