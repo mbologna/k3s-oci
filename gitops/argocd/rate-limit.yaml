@@ -1,0 +1,26 @@
+---
+# BackendTrafficPolicy: rate limit ArgoCD UI — 100 req/s per source IP.
+# Local mode: each Envoy proxy pod maintains its own counter independently;
+# no external rate-limit service required.
+# "Distinct" remoteAddress means each client IP gets its own bucket, preventing
+# brute-force and credential-stuffing attacks on the ArgoCD login page.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: argocd-rate-limit
+  namespace: argocd
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: argocd-server
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - remoteAddress:
+                type: Distinct
+          limit:
+            requests: 100
+            unit: Second

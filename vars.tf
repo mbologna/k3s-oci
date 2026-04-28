@@ -444,8 +444,7 @@ variable "enable_vault" {
 variable "traefik_chart_version" {
   type        = string
   description = "Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled."
-  # renovate: datasource=helm depName=traefik registryUrl=https://helm.traefik.io/traefik
-  default = "39.0.8"
+  default     = "39.0.8"
 }
 
 variable "gateway_api_version" {
