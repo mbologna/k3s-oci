@@ -212,8 +212,9 @@ This keeps the cluster fully patched with zero manual intervention and no concur
 | Source | What is updated |
 |---|---|
 | Terraform `required_providers` | OCI provider, hashicorp/http, hashicorp/cloudinit, hashicorp/random |
-| `# renovate:` inline comments in `vars.tf` | k3s, cert-manager, Longhorn, ArgoCD, ArgoCD Image Updater, kured, Envoy Gateway, Gateway API CRDs, External DNS, External Secrets |
-| `# renovate:` inline comments in `gitops/apps/*.yaml` | All GitOps Helm chart `targetRevision` values |
+| `# renovate:` inline comments in `vars.tf` | k3s, cert-manager, Longhorn, ArgoCD, kured, Envoy Gateway, Gateway API CRDs, External DNS, External Secrets |
+| `# renovate:` inline comments in `gitops/apps/*.yaml` | ArgoCD Image Updater, kube-prometheus-stack, and all other GitOps Helm chart `targetRevision` values |
+| `# SUC_VERSION` comment in `gitops/system-upgrade/kustomization.yaml` | system-upgrade-controller (rancher/system-upgrade-controller GitHub releases) |
 
 To enable: install the [Renovate GitHub App](https://github.com/apps/renovate) **or** use the self-hosted workflow at `.github/workflows/renovate.yml` (add a `RENOVATE_TOKEN` repo secret with a personal access token with `repo` scope). Renovate will open PRs for any new releases automatically.
 
@@ -328,8 +329,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
 | <a name="input_grafana_hostname"></a> [grafana\_hostname](#input\_grafana\_hostname) | Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/. | `string` | `null` | no |
-| <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | n/a | `number` | `80` | no |
-| <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | n/a | `number` | `443` | no |
+| <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | Public HTTP port on the NLB frontend (default 80). | `number` | `80` | no |
+| <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | Public HTTPS port on the NLB frontend (default 443). | `number` | `443` | no |
 | <a name="input_ingress_controller_http_nodeport"></a> [ingress\_controller\_http\_nodeport](#input\_ingress\_controller\_http\_nodeport) | NodePort on workers that the ingress controller binds for HTTP traffic | `number` | `30080` | no |
 | <a name="input_ingress_controller_https_nodeport"></a> [ingress\_controller\_https\_nodeport](#input\_ingress\_controller\_https\_nodeport) | NodePort on workers that the ingress controller binds for HTTPS traffic | `number` | `30443` | no |
 | <a name="input_k3s_server_pool_size"></a> [k3s\_server\_pool\_size](#input\_k3s\_server\_pool\_size) | Number of k3s control-plane nodes in the instance pool. Use 3 for HA (etcd quorum). Must be an odd number >= 1. | `number` | `3` | no |

@@ -254,13 +254,15 @@ variable "kube_api_port" {
 }
 
 variable "http_lb_port" {
-  type    = number
-  default = 80
+  type        = number
+  description = "Public HTTP port on the NLB frontend (default 80)."
+  default     = 80
 }
 
 variable "https_lb_port" {
-  type    = number
-  default = 443
+  type        = number
+  description = "Public HTTPS port on the NLB frontend (default 443)."
+  default     = 443
 }
 
 variable "ingress_controller_http_nodeport" {
