@@ -8,13 +8,13 @@ The core stack (Prometheus, Grafana, Alertmanager, node-exporter, kube-state-met
 
 | File | Description |
 |---|---|
-| `grafana-ingress.yaml` | Traefik IngressRoute + cert-manager Certificate for Grafana UI |
+| `grafana-ingress.yaml` | Gateway API HTTPRoute + cert-manager Certificate for Grafana UI |
 | `prometheus-rules.yaml` | PrometheusRule alerts for node disk pressure and Longhorn volume health |
 
 ## Grafana access
 
 1. Update the hostname in `grafana-ingress.yaml` to match your `grafana_hostname` Terraform variable.
-2. Commit and push — ArgoCD will create the IngressRoute and request a TLS certificate.
+2. Commit and push — ArgoCD will create the HTTPRoute and request a TLS certificate.
 3. Retrieve the admin password: `terraform output -raw grafana_admin_credentials`
 
 When `enable_vault = true` (default), the password is fetched from OCI Vault at boot and pre-created as the `grafana-admin-secret` Kubernetes Secret. The `terraform output` value and the Secret are always in sync.
