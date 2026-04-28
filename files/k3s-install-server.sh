@@ -511,6 +511,30 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - ${argocd_hostname}
+---
+# BackendTrafficPolicy: local rate limiting — 100 req/s per source IP (burst-friendly).
+# Local mode requires no external rate-limit service; each Envoy proxy pod maintains
+# its own counter independently.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: argocd-rate-limit
+  namespace: argocd
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: argocd-server
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - remoteAddress:
+                type: Distinct
+          limit:
+            requests: 100
+            unit: Second
 ARGOEOF
   echo "ArgoCD HTTPRoute created for https://${argocd_hostname}"
   %{ endif }
