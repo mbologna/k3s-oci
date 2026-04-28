@@ -7,6 +7,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Envoy Gateway (Gateway API) replaces Traefik as the ingress controller — `GatewayClass`, `Gateway`, `HTTPRoute`, `ClientTrafficPolicy`, `BackendTrafficPolicy`, `SecurityPolicy`
+- External DNS support (`enable_external_dns`) — automatic DNS record management from Kubernetes service/ingress annotations
+- External Secrets Operator (`enable_external_secrets`) — sync secrets from OCI Vault into Kubernetes `Secret` objects
+- DNS-01 ACME challenge support in cert-manager `ClusterIssuer` (commented variants in `gitops/cert-manager/cluster-issuers.yaml`)
+- `system-upgrade-controller` GitOps Application + upgrade Plans for automated k3s rolling upgrades (`gitops/system-upgrade/`)
+- `gitops/cert-manager/application-template.yaml` — ArgoCD Application template for adopting ClusterIssuers into GitOps
+
+### Changed
+- Ingress: all `IngressRoute` resources replaced with `HTTPRoute`; Traefik `Middleware` replaced with `BackendTrafficPolicy`/`SecurityPolicy`
+- ArgoCD rate limiting uses Envoy Gateway `BackendTrafficPolicy` instead of Traefik `RateLimit` middleware
+- Longhorn UI BasicAuth uses Envoy Gateway `SecurityPolicy` instead of Traefik `Middleware`
+- Network policies updated to `envoy-gateway-system` namespace (was `traefik`)
+
+### Removed
+- `ingress_controller` variable — Envoy Gateway is now the only supported ingress controller
+- `traefik_chart_version` variable — **migration note below**
+
+### Fixed
+- `max_api_wait` and `max_attempts` were conflated in `k3s-install-agent.sh` (both were `10`; API wait is now correctly `60` seconds)
+- Unquoted `$params_str` in k3s install invocations replaced with `"${install_params[@]}"` (word-splitting bug)
+- `nfs-common` missing from server node apt packages (was present on agents only; required for Longhorn NFS mounts)
+- `data.tf`: `local.public_lb_ip[0]` wrapped in `try()` to guard against momentarily-empty list during first apply
+- `example/main.tf`: missing `region` and `public_key_path` wiring to module inputs
+- `example/provider.tf`: `required_version` updated from `>= 1.5.0` to `>= 1.9.0`
+- CI: added `permissions: {}` to all read-only jobs; renovate workflow has explicit write permissions
+
+### Migration notes
+- **`traefik_chart_version` removed**: if you have `traefik_chart_version = "..."` in your
+  `terraform.tfvars`, remove that line before running `tofu apply`. Terraform will error on
+  undeclared variable inputs.
+- **`ingress_controller` removed**: remove `ingress_controller = "traefik2"` from any module
+  call or `terraform.tfvars`. The variable no longer exists.
+- **Envoy Gateway replaces Traefik**: existing `IngressRoute`, `Middleware`, and `TLSOption`
+  resources will remain in cluster until manually deleted. Replace them with `HTTPRoute`,
+  `BackendTrafficPolicy`, and `ClientTrafficPolicy` equivalents.
+
 - `grafana_hostname` optional variable for Grafana IngressRoute
 - `grafana_admin_credentials` sensitive Terraform output
 - Grafana admin password auto-generated via `random_password` (pre-created as K8s Secret in cloud-init)

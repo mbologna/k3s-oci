@@ -490,12 +490,6 @@ variable "enable_dns01_challenge" {
 # The bootstrap install uses this version so the cluster never starts with a
 # chart that is newer than what ArgoCD would reconcile to.
 
-variable "traefik_chart_version" {
-  type        = string
-  description = "Traefik Helm chart version — kept for state compatibility, not used when Envoy Gateway is enabled."
-  default     = "39.0.8"
-}
-
 variable "gateway_api_version" {
   type        = string
   description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
