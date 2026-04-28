@@ -97,6 +97,16 @@ data "cloudinit_config" "k3s_server" {
       longhorn_chart_version            = var.longhorn_chart_version
       argocd_chart_version              = var.argocd_chart_version
       kured_chart_version               = var.kured_chart_version
+      enable_external_dns               = var.enable_external_dns
+      cloudflare_api_token              = var.cloudflare_api_token != null ? var.cloudflare_api_token : ""
+      cloudflare_zone_id                = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
+      external_dns_domain_filter        = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
+      external_dns_chart_version        = var.external_dns_chart_version
+      enable_external_secrets           = var.enable_external_secrets
+      vault_ocid                        = var.enable_vault ? oci_kms_vault.k3s[0].id : ""
+      oci_region                        = var.region != null ? var.region : ""
+      external_secrets_chart_version    = var.external_secrets_chart_version
+      enable_dns01_challenge            = var.enable_dns01_challenge
     })
   }
 }
