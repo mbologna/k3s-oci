@@ -500,7 +500,7 @@ variable "gateway_api_version" {
   type        = string
   description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.2.1"
+  default = "v1.5.1"
 }
 
 variable "envoy_gateway_chart_version" {
