@@ -1,22 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: traefik-config
+  name: envoy-gateway
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: https://github.com/mbologna/k3s-oci.git
-    targetRevision: HEAD
-    path: gitops/traefik
+    repoURL: oci://docker.io/envoyproxy
+    chart: gateway-helm
+    # renovate: datasource=github-releases depName=envoyproxy/gateway
+    targetRevision: "v1.3.0"
   destination:
     server: https://kubernetes.default.svc
-    namespace: traefik
+    namespace: envoy-gateway-system
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true

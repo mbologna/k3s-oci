@@ -1,0 +1,21 @@
+---
+# HTTP → HTTPS redirect: all plain HTTP requests get a 301 permanent redirect.
+# Attached to the Gateway's `http` (port 80) listener.
+# Priority note: cert-manager HTTP-01 ACME challenges use standard Ingress objects;
+# switch to DNS-01 (enable_dns01_challenge = true) to avoid any HTTP-01 conflict.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: envoy-gateway-system
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

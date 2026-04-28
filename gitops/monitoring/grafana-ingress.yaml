@@ -1,37 +1,35 @@
 ---
-# Grafana IngressRoute via Traefik
+# Grafana HTTPRoute via Envoy Gateway
 #
 # To enable: set grafana_hostname = "grafana.example.com" in terraform.tfvars
 # then update the hostname below to match before committing.
 #
 # Grafana admin credentials: terraform output -raw grafana_admin_credentials
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: grafana
   namespace: monitoring
 spec:
-  entryPoints:
-    - websecure
-  routes:
-    - kind: Rule
-      # TODO: replace with your actual Grafana hostname
-      match: Host(`grafana.example.com`)
-      priority: 10
-      services:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      # TODO: replace https-grafana with your actual HTTPS listener name
+      sectionName: https-grafana
+  hostnames:
+    # TODO: replace with your actual Grafana hostname
+    - "grafana.example.com"
+  rules:
+    - backendRefs:
         - name: kube-prometheus-stack-grafana
           port: 80
-  tls:
-    secretName: grafana-tls
-    options:
-      name: tls-modern
-      namespace: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: grafana-tls
-  namespace: monitoring
+  # TLS secret lives in the Gateway namespace so no ReferenceGrant is needed.
+  namespace: envoy-gateway-system
 spec:
   secretName: grafana-tls
   issuerRef:

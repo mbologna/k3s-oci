@@ -65,7 +65,6 @@ data "cloudinit_config" "k3s_server" {
       k3s_subnet                        = var.k3s_subnet
       k3s_token                         = var.enable_vault ? "" : random_password.k3s_token.result
       disable_ingress                   = var.disable_ingress
-      ingress_controller                = var.ingress_controller
       certmanager_email_address         = var.certmanager_email_address
       compartment_ocid                  = var.compartment_ocid
       availability_domain               = var.availability_domain
@@ -92,7 +91,8 @@ data "cloudinit_config" "k3s_server" {
       vault_secret_id_k3s_token         = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
       vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
       vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
-      traefik_chart_version             = var.traefik_chart_version
+      gateway_api_version               = var.gateway_api_version
+      envoy_gateway_chart_version       = var.envoy_gateway_chart_version
       certmanager_chart_version         = var.certmanager_chart_version
       longhorn_chart_version            = var.longhorn_chart_version
       argocd_chart_version              = var.argocd_chart_version

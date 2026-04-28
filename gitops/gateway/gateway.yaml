@@ -1,0 +1,69 @@
+---
+# Gateway: central entry point for all HTTP and HTTPS traffic.
+# Cloud-init bootstraps this resource with per-hostname HTTPS listeners.
+# The HTTP listener handles redirects (see redirect.yaml).
+#
+# To adopt into ArgoCD after bootstrap:
+#   1. Update the HTTPS listener hostnames below to match your actual hostnames.
+#   2. This file is managed by the gateway-config ArgoCD Application.
+#
+# TLS: cert-manager Certificate resources (one per HTTPS listener) provision
+# the secrets referenced in certificateRefs. These are created by cloud-init
+# alongside the inline HTTPRoutes and live in the envoy-gateway-system namespace.
+#
+# If you add new services with HTTPS, add a listener here and a Certificate
+# in envoy-gateway-system, then create an HTTPRoute in the service namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+
+    # ── HTTPS listeners — one per hostname ────────────────────────────────────
+    # Uncomment and fill in your hostnames. cert-manager must provision the
+    # corresponding TLS secrets in the envoy-gateway-system namespace first.
+    #
+    # - name: https-argocd
+    #   port: 443
+    #   protocol: HTTPS
+    #   hostname: "argocd.example.com"
+    #   tls:
+    #     mode: Terminate
+    #     certificateRefs:
+    #       - name: argocd-server-tls
+    #   allowedRoutes:
+    #     namespaces:
+    #       from: All
+    #
+    # - name: https-grafana
+    #   port: 443
+    #   protocol: HTTPS
+    #   hostname: "grafana.example.com"
+    #   tls:
+    #     mode: Terminate
+    #     certificateRefs:
+    #       - name: grafana-tls
+    #   allowedRoutes:
+    #     namespaces:
+    #       from: All
+    #
+    # - name: https-longhorn
+    #   port: 443
+    #   protocol: HTTPS
+    #   hostname: "longhorn.example.com"
+    #   tls:
+    #     mode: Terminate
+    #     certificateRefs:
+    #       - name: longhorn-frontend-tls
+    #   allowedRoutes:
+    #     namespaces:
+    #       from: All
