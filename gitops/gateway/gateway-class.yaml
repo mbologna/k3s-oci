@@ -1,0 +1,15 @@
+---
+# GatewayClass declares Envoy Gateway as the controller for all Gateways with
+# gatewayClassName: eg. The parametersRef ties it to the EnvoyProxy config above
+# so the proxy fleet uses DaemonSet mode and NodePort service.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: proxy-config
+    namespace: envoy-gateway-system

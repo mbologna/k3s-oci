@@ -1,12 +1,26 @@
 ---
-# Traefik RateLimit middleware for ArgoCD UI
-# Limits clients to 50 requests/second average (burst 100) to prevent brute-force and abuse.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
+# BackendTrafficPolicy: rate limit ArgoCD UI — 100 req/s per source IP.
+# Local mode: each Envoy proxy pod maintains its own counter independently;
+# no external rate-limit service required.
+# "Distinct" remoteAddress means each client IP gets its own bucket, preventing
+# brute-force and credential-stuffing attacks on the ArgoCD login page.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
 metadata:
   name: argocd-rate-limit
   namespace: argocd
 spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: argocd-server
   rateLimit:
-    average: 50
-    burst: 100
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            - remoteAddress:
+                type: Distinct
+          limit:
+            requests: 100
+            unit: Second

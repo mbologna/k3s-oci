@@ -138,9 +138,7 @@ module "k3s_cluster" {
   k3s_standalone_worker       = var.k3s_standalone_worker
   expose_kubeapi              = var.expose_kubeapi
   enable_bastion              = var.enable_bastion
-  ingress_controller          = "traefik2"
   public_key                  = var.public_key
-  public_key_path             = var.public_key_path
   kured_reboot_days           = var.kured_reboot_days
   kured_start_time            = var.kured_start_time
   kured_end_time              = var.kured_end_time
