@@ -73,6 +73,7 @@ gitops/network-policies/     — Default-deny NetworkPolicies (managed by networ
 gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
+gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage
 .github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
@@ -214,7 +215,7 @@ terraform-docs .
   vars use `${var}` and bash vars must use `$${VAR}`.
 
 ### cert-manager GitOps adoption
-- Cloud-init bootstraps ClusterIssuers with the correct email from `var.letsencrypt_email`.
+- Cloud-init bootstraps ClusterIssuers with the correct email from `var.certmanager_email_address`.
   This must happen at bootstrap time — the email cannot be in git without manual editing.
 - `gitops/cert-manager/` contains template ClusterIssuers and an ArgoCD Application template.
 - To enable ArgoCD management of ClusterIssuers: update the email in `cluster-issuers.yaml`,
@@ -275,3 +276,30 @@ terraform-docs .
 - Cloud-init pre-creates a `mysql-credentials` Kubernetes Secret in the `default` namespace.
 - `mysql_endpoint` and `mysql_admin_credentials` (sensitive) outputs are available after apply.
 - `is_highly_available = false` — HA MySQL is NOT Always Free.
+
+### External DNS (`enable_external_dns`)
+- Controlled by `enable_external_dns` variable (default: `false`).
+- Installs External DNS (chart version tracked by Renovate) configured for the Cloudflare provider.
+- Syncs `HTTPRoute` hostnames to Cloudflare DNS automatically — annotate resources with
+  `external-dns.alpha.kubernetes.io/hostname: your.host.example.com`.
+- Requires `cloudflare_api_token` and `cloudflare_zone_id`.
+- `external_dns_domain_filter` limits which zones External DNS manages (prevents accidental changes
+  to unrelated zones when the API token covers multiple zones).
+- `txtOwnerId` is set to `var.cluster_name` so multiple clusters can share a Cloudflare zone.
+
+### External Secrets (`enable_external_secrets`)
+- Controlled by `enable_external_secrets` variable (default: `false`). Requires `enable_vault = true`.
+- Installs External Secrets Operator and creates a `ClusterSecretStore` backed by OCI Vault using
+  instance_principal auth — no credentials to rotate.
+- The existing IAM `read secret-family` policy (added when `enable_vault = true`) already covers it.
+- See `gitops/external-secrets/` for the ClusterSecretStore template and example ExternalSecret CRs.
+- Users create `ExternalSecret` resources referencing Vault secret OCIDs; the operator syncs them
+  into Kubernetes Secrets automatically and rotates on the configured refresh interval.
+
+### DNS-01 ACME challenge (`enable_dns01_challenge`)
+- Controlled by `enable_dns01_challenge` variable (default: `false`). Requires `cloudflare_api_token`.
+- When enabled, cloud-init creates a `cloudflare-api-token` Secret in `cert-manager` and switches
+  ClusterIssuers to use DNS-01 (Cloudflare) instead of HTTP-01.
+- Benefits: supports wildcard certs (`*.example.com`), no inbound port 80 required.
+- See `gitops/cert-manager/cluster-issuers.yaml` for the commented DNS-01 ClusterIssuer variants
+  to use when adopting cert-manager into ArgoCD.
