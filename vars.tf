@@ -500,14 +500,14 @@ variable "gateway_api_version" {
   type        = string
   description = "Kubernetes Gateway API CRDs version (standard channel) installed at bootstrap."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.2.1"
+  default = "v1.5.1"
 }
 
 variable "envoy_gateway_chart_version" {
   type        = string
   description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=github-releases depName=envoyproxy/gateway
-  default = "v1.3.0"
+  default = "v1.7.2"
 }
 
 variable "certmanager_chart_version" {
@@ -528,7 +528,7 @@ variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "9.5.5"
+  default = "9.5.6"
 }
 
 variable "kured_chart_version" {
@@ -549,5 +549,5 @@ variable "external_secrets_chart_version" {
   type        = string
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
-  default = "0.18.2"
+  default = "0.20.4"
 }

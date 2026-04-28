@@ -11,7 +11,7 @@ spec:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argo-cd
     # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-    targetRevision: "9.5.5"
+    targetRevision: "9.5.6"
     helm:
       valuesObject:
         # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
