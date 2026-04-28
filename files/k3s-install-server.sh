@@ -41,7 +41,7 @@ bootstrap() {
   apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 python3-pip \
-    open-iscsi util-linux
+    open-iscsi nfs-common util-linux
   apt-get upgrade -y -q
   apt-get clean
   rm -rf /var/lib/apt/lists/*
@@ -822,25 +822,20 @@ install_k3s_server() {
   install_params+=("--node-ip $local_ip" "--advertise-address $local_ip" "--flannel-iface $flannel_iface")
 %{ endif }
 
-%{ if disable_ingress }
-  install_params+=("--disable traefik")
-%{ else }
   # Always disable k3s built-in Traefik; we install Envoy Gateway instead.
   install_params+=("--disable traefik")
-%{ endif }
 
 %{ if expose_kubeapi }
   install_params+=("--tls-san ${k3s_tls_san_public}")
 %{ endif }
 
-  local params_str="$${install_params[*]}"
   local max_attempts=10 attempt=0
 
   if [[ "$IS_FIRST_SERVER" == "true" ]]; then
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
-        sh -s - --cluster-init $params_str; do
+        sh -s - --cluster-init "$${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s init failed after $${max_attempts} attempts."; exit 1; }
       echo "  retrying ($${attempt}/$${max_attempts}) ..."
@@ -851,7 +846,7 @@ install_k3s_server() {
     wait_for_kubeapi
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${k3s_version}" K3S_TOKEN="$${K3S_TOKEN}" \
-        sh -s - --server "https://${k3s_url}:6443" $params_str; do
+        sh -s - --server "https://${k3s_url}:6443" "$${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ $attempt -ge $max_attempts ]] && { echo "ERROR: k3s join failed after $${max_attempts} attempts."; exit 1; }
       echo "  retrying ($${attempt}/$${max_attempts}) ..."
