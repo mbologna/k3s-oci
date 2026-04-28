@@ -333,6 +333,57 @@ install_certmanager() {
     --set "extraArgs[0]=--feature-gates=ExperimentalGatewayAPISupport=true" \
     --atomic --wait --timeout 5m
 
+%{ if enable_dns01_challenge }
+  # DNS-01 challenge via Cloudflare — supports wildcard certs, no inbound port 80 required.
+  kubectl apply -n cert-manager -f - << CFEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-token: "${cloudflare_api_token}"
+CFEOF
+
+  kubectl apply -f - << ISSEOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${certmanager_email_address}
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+ISSEOF
+
+  kubectl apply -f - << ISSEOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${certmanager_email_address}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+ISSEOF
+%{ else }
   # Bootstrap ClusterIssuers with the correct email address.
   # These are then adoptable by ArgoCD via gitops/cert-manager/ (update email there first).
   # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) — no Ingress controller needed.
@@ -375,8 +426,85 @@ spec:
                 namespace: envoy-gateway-system
                 kind: Gateway
 ISSEOF
+%{ endif }
   echo "cert-manager installed with ClusterIssuers (Gateway API HTTP-01 solver). See gitops/cert-manager/ to adopt into ArgoCD."
 }
+
+# ── External DNS ──────────────────────────────────────────────────────────────
+
+%{ if enable_external_dns }
+install_external_dns() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
+
+  # Pre-create the Cloudflare credentials secret before the Helm chart deploys,
+  # so external-dns starts reconciling immediately without a pod restart.
+  kubectl create namespace external-dns --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -n external-dns -f - << CFEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-credentials
+  namespace: external-dns
+type: Opaque
+stringData:
+  apiToken: "${cloudflare_api_token}"
+CFEOF
+
+  helm repo add external-dns https://kubernetes-sigs.github.io/external-dns
+  helm repo update
+
+  helm upgrade --install external-dns external-dns/external-dns \
+    --namespace external-dns --create-namespace \
+    --version "${external_dns_chart_version}" \
+    --set provider.name=cloudflare \
+    --set "env[0].name=CF_API_TOKEN" \
+    --set "env[0].valueFrom.secretKeyRef.name=cloudflare-credentials" \
+    --set "env[0].valueFrom.secretKeyRef.key=apiToken" \
+    --set "domainFilters[0]=${external_dns_domain_filter}" \
+    --set policy=sync \
+    --set txtOwnerId=${cluster_name} \
+    --atomic --wait --timeout 5m
+
+  echo "external-dns installed (Cloudflare, domain: ${external_dns_domain_filter})."
+}
+%{ endif }
+
+# ── External Secrets Operator ─────────────────────────────────────────────────
+
+%{ if enable_external_secrets }
+install_external_secrets() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  install_helm
+
+  helm repo add external-secrets https://charts.external-secrets.io
+  helm repo update
+
+  helm upgrade --install external-secrets external-secrets/external-secrets \
+    --namespace external-secrets --create-namespace \
+    --version "${external_secrets_chart_version}" \
+    --atomic --wait --timeout 5m
+
+  # Bootstrap ClusterSecretStore pointing to OCI Vault via instance_principal.
+  # The store is then adoptable into ArgoCD via gitops/external-secrets/.
+  kubectl apply -f - << ESSEOF
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: oci-vault
+spec:
+  provider:
+    oracle:
+      vault: "${vault_ocid}"
+      region: "${oci_region}"
+      auth:
+        instancePrincipal: {}
+ESSEOF
+
+  echo "External Secrets Operator installed. ClusterSecretStore 'oci-vault' ready."
+  echo "See gitops/external-secrets/ for ExternalSecret examples."
+}
+%{ endif }
 
 # ── Longhorn ──────────────────────────────────────────────────────────────────
 
@@ -843,6 +971,12 @@ if [[ "$IS_FIRST_SERVER" == "true" ]]; then
 
   install_certmanager
   install_argocd
+%{ if enable_external_dns }
+  install_external_dns
+%{ endif }
+%{ if enable_external_secrets }
+  install_external_secrets
+%{ endif }
 %{ if mysql_endpoint != "" }
   # Pre-create MySQL credentials Kubernetes Secret
   kubectl apply -n default -f - << MYSQLEOF
