@@ -72,7 +72,7 @@ data "cloudinit_config" "k3s_server" {
       k3s_url                           = local.k3s_internal_lb_ip
       k3s_tls_san                       = local.k3s_internal_lb_ip
       expose_kubeapi                    = var.expose_kubeapi
-      k3s_tls_san_public                = local.public_lb_ip[0]
+      k3s_tls_san_public                = try(local.public_lb_ip[0], "")
       argocd_hostname                   = var.argocd_hostname != null ? var.argocd_hostname : ""
       longhorn_hostname                 = var.longhorn_hostname != null ? var.longhorn_hostname : ""
       longhorn_ui_username              = var.longhorn_ui_username

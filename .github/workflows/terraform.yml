@@ -32,6 +32,7 @@ jobs:
   validate:
     name: Terraform Validate & Lint
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -60,6 +61,7 @@ jobs:
   tflint:
     name: tflint
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -78,6 +80,7 @@ jobs:
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -117,6 +120,7 @@ jobs:
   opentofu:
     name: OpenTofu Validate
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -146,6 +150,7 @@ jobs:
   yamllint:
     name: YAML Lint
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -161,6 +166,7 @@ jobs:
   actionlint:
     name: actionlint
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -171,6 +177,7 @@ jobs:
   trivy:
     name: Trivy IaC Scan
     runs-on: ubuntu-24.04
+    permissions: {}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

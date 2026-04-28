@@ -128,6 +128,7 @@ module "k3s_cluster" {
   availability_domain         = var.availability_domain
   tenancy_ocid                = var.tenancy_ocid
   compartment_ocid            = var.compartment_ocid
+  region                      = var.region
   my_public_ip_cidr           = var.my_public_ip_cidr
   cluster_name                = var.cluster_name
   environment                 = var.environment
@@ -139,6 +140,7 @@ module "k3s_cluster" {
   expose_kubeapi              = var.expose_kubeapi
   enable_bastion              = var.enable_bastion
   public_key                  = var.public_key
+  public_key_path             = var.public_key_path
   kured_reboot_days           = var.kured_reboot_days
   kured_start_time            = var.kured_start_time
   kured_end_time              = var.kured_end_time
