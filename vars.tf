@@ -447,6 +447,55 @@ variable "enable_vault" {
   default     = true
 }
 
+# ── External DNS (Cloudflare) ─────────────────────────────────────────────────
+
+variable "enable_external_dns" {
+  type        = bool
+  description = "Deploy external-dns (kubernetes-sigs) configured for Cloudflare. Automatically creates/updates DNS A records when Services or Ingresses are annotated. Requires cloudflare_api_token and cloudflare_zone_id."
+  default     = false
+}
+
+variable "cloudflare_api_token" {
+  type        = string
+  sensitive   = true
+  description = "Cloudflare API token. Required when enable_external_dns = true or enable_dns01_challenge = true. Create a scoped token at https://dash.cloudflare.com/profile/api-tokens with Zone:DNS:Edit permissions."
+  default     = null
+}
+
+variable "cloudflare_zone_id" {
+  type        = string
+  description = "Cloudflare Zone ID for the managed domain. Required when enable_external_dns = true."
+  default     = null
+}
+
+variable "external_dns_domain_filter" {
+  type        = string
+  description = "Domain filter for external-dns — only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable_external_dns = true."
+  default     = null
+}
+
+# ── External Secrets Operator ─────────────────────────────────────────────────
+
+variable "enable_external_secrets" {
+  type        = bool
+  description = "Deploy the External Secrets Operator and create a ClusterSecretStore backed by OCI Vault (instance_principal auth). Requires enable_vault = true. Workloads can then create ExternalSecret resources to sync any OCI Vault secret into a Kubernetes Secret without hard-coding values."
+  default     = false
+}
+
+variable "region" {
+  type        = string
+  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable_external_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint."
+  default     = null
+}
+
+# ── DNS-01 ACME challenge via Cloudflare ──────────────────────────────────────
+
+variable "enable_dns01_challenge" {
+  type        = bool
+  description = "Configure cert-manager ClusterIssuers to use DNS-01 ACME challenge via Cloudflare instead of HTTP-01. Enables wildcard certificates (*.example.com) and works even without inbound port 80. Requires cloudflare_api_token."
+  default     = false
+}
+
 # Bootstrap chart versions — must match the targetRevision in the corresponding
 # gitops/apps/*.yaml. Renovate keeps both in sync via a single PR.
 # The bootstrap install uses this version so the cluster never starts with a
@@ -485,4 +534,18 @@ variable "kured_chart_version" {
   description = "kured Helm chart version used for the bootstrap install. Must match gitops/apps/kured.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
   default = "5.11.0"
+}
+
+variable "external_dns_chart_version" {
+  type        = string
+  description = "external-dns Helm chart version used for the bootstrap install. Must match gitops/apps/external-dns.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
+  default = "1.20.0"
+}
+
+variable "external_secrets_chart_version" {
+  type        = string
+  description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
+  # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
+  default = "0.18.2"
 }
