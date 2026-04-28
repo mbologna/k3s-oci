@@ -8,10 +8,10 @@ on:
 
 jobs:
   renovate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: renovatebot/github-action@v41
+      - uses: renovatebot/github-action@8ac70de2fe55752c573155866e30735411e3b61c # v41.0.22
         with:
           configurationFile: renovate.json
           token: ${{ secrets.RENOVATE_TOKEN }}

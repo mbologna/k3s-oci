@@ -11,6 +11,7 @@ on:
       - '.tflint.hcl'
       - '.terraform-docs.yml'
       - 'README.md'
+      - 'renovate.json'
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +22,11 @@ on:
       - '.tflint.hcl'
       - '.terraform-docs.yml'
       - 'README.md'
+      - 'renovate.json'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -103,7 +109,8 @@ jobs:
           output-file: README.md
           output-method: inject
           config-file: .terraform-docs.yml
-          git-push: true
+          git-push: ${{ github.event_name == 'push' }}
+          fail-on-diff: ${{ github.event_name == 'pull_request' }}
           git-commit-message: "docs: auto-update README variables via terraform-docs [skip ci]"
 
 
@@ -137,7 +144,7 @@ jobs:
         run: tofu validate
 
   yamllint:
-    name: YAML Lint (gitops)
+    name: YAML Lint
     runs-on: ubuntu-24.04
 
     steps:
@@ -146,10 +153,20 @@ jobs:
       - name: Install yamllint
         run: pip install yamllint
 
-      - name: yamllint gitops
+      - name: yamllint
         run: |
           yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' \
-            gitops/
+            gitops/ .github/workflows/
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: actionlint
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2.1.2
 
   trivy:
     name: Trivy IaC Scan
