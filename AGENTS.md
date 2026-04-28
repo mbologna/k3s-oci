@@ -18,7 +18,7 @@ do not introduce resources that incur cost.
 | Cloud | Oracle Cloud Infrastructure (OCI) |
 | OS | Ubuntu 24.04 LTS (aarch64) only |
 | Kubernetes | k3s (latest resolved at plan time) |
-| Ingress | Traefik 2 (`traefik2`) |
+| Ingress | Envoy Gateway (Gateway API) |
 | Observability | kube-prometheus-stack (via GitOps) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
@@ -70,8 +70,9 @@ files/k3s-install-server.sh  — cloud-init for control-plane nodes (Ubuntu 24.0
 files/k3s-install-agent.sh   — cloud-init for worker nodes (Ubuntu 24.04)
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn ingress with BasicAuth (Traefik Middleware + Secret)
+gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
+gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 example/         — Example module usage
 .github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
@@ -169,13 +170,13 @@ terraform-docs .
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
 - Do not break the `terraform validate` step — templatefile vars must match what the scripts reference
-- **`ingress_controller` only accepts `"traefik2"`** — do not add nginx or other ingress controllers
+- **Do not add nginx or other ingress controllers** — Envoy Gateway (Gateway API) is the ingress implementation. All HTTP/HTTPS routing uses standard `HTTPRoute`, `Gateway`, and `GatewayClass` resources.
 - **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across all 4 nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and user workloads coexist safely.
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
 - **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the three cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
-- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik NodePorts
+- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
 - **Do not reduce `boot_volume_size_in_gbs` below 50 GB** — OCI requires ≥ 50 GB for boot
@@ -184,12 +185,17 @@ terraform-docs .
 
 ## Special implementation notes
 
-### Traefik ingress
-- Deployed as a **DaemonSet** (one pod per node) so every NLB backend serves ingress locally — no cross-node forwarding hop, no single-pod SPOF.
-- `priorityClassName: system-cluster-critical` ensures Traefik pods preempt user workloads under memory pressure and are never evicted before system daemons.
+### Envoy Gateway (Gateway API)
+
+- Deployed as a **DaemonSet** (one Envoy proxy pod per node) via the `EnvoyProxy` resource — every NLB backend serves ingress locally, no cross-node forwarding, no single-pod SPOF.
+- `priorityClassName: system-cluster-critical` ensures Envoy proxy pods preempt user workloads under memory pressure and are never evicted before system daemons.
 - `resources.requests: 100m CPU / 128Mi RAM` prevents scheduling on nodes that cannot sustain ingress load.
-- `PodDisruptionBudget maxUnavailable: 1` (`traefik-pdb`) is applied immediately after Helm install so kured/drain can only take down one Traefik pod at a time — 3 of 4 nodes always serve ingress during rolling maintenance.
-- Do not change `deployment.kind` back to `Deployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
+- `PodDisruptionBudget maxUnavailable: 1` (`envoy-gateway-pdb`) is applied so kured/drain can only take down one proxy pod at a time — 3 of 4 nodes always serve ingress during rolling maintenance.
+- All HTTP/HTTPS routing uses standard `HTTPRoute` resources (Gateway API v1). Proprietary `IngressRoute` CRDs are not used.
+- HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with `--feature-gates=ExperimentalGatewayAPISupport=true`.
+- TLS certificates live in the `envoy-gateway-system` namespace (same as the Gateway) so no `ReferenceGrant` is needed.
+- BasicAuth for Longhorn UI uses Envoy Gateway `SecurityPolicy` with `.htpasswd` Secret — same security, standard API.
+- Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
 
 ### Longhorn storage
 - Replica count is **explicitly pinned to 3** via `--set defaultSettings.defaultReplicaCount=3` and `--set persistence.defaultClassReplicaCount=3` in the Helm install. Do not rely on the upstream chart default.
@@ -200,9 +206,9 @@ terraform-docs .
 - Password is generated by `random_password.longhorn_ui_password` in `data.tf` and passed to
   cloud-init as `longhorn_ui_password`.
 - The cloud-init script generates an APR1 hash: `openssl passwd -apr1 "$LONGHORN_PASSWORD"`
-- A `Secret` (`longhorn-basic-auth`) and Traefik `Middleware` (`longhorn-basicauth`) are created
-  in the `longhorn-system` namespace.
-- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `IngressRoute`.
+- A `Secret` (`longhorn-basic-auth-secret`) and Envoy Gateway `SecurityPolicy` (`longhorn-basic-auth`) are created
+  in the `longhorn-system` namespace. The `.htpasswd` key format is used.
+- `gitops/longhorn/ingress.yaml` references these for the Longhorn UI `HTTPRoute`.
 - Credentials are available via the `longhorn_ui_credentials` sensitive output.
 - In heredocs where Terraform interpolation is needed (`<< LHEOF` not `<< 'LHEOF'`), Terraform
   vars use `${var}` and bash vars must use `$${VAR}`.

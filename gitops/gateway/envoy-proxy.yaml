@@ -1,0 +1,59 @@
+---
+# EnvoyProxy configures the Envoy proxy fleet that backs the Gateway.
+# DaemonSet mode: one Envoy proxy pod per node so every NLB backend serves
+# ingress locally — no cross-node forwarding hop, no single-pod SPOF.
+# NodePort 30080/30443 must match ingress_controller_{http,https}_nodeport in
+# vars.tf (defaults 30080/30443) and the OCI NLB backend port.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: proxy-config
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDaemonSet:
+        patch:
+          type: StrategicMergePatch
+          value:
+            spec:
+              updateStrategy:
+                type: RollingUpdate
+                rollingUpdate:
+                  maxUnavailable: 1
+              template:
+                spec:
+                  priorityClassName: system-cluster-critical
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+      envoyService:
+        type: NodePort
+        patch:
+          type: MergePatch
+          value:
+            spec:
+              ports:
+                - name: http
+                  port: 80
+                  protocol: TCP
+                  nodePort: 30080
+                - name: https
+                  port: 443
+                  protocol: TCP
+                  nodePort: 30443
+---
+# PodDisruptionBudget: kured/drain can only take down one proxy pod at a time
+# so 3 of 4 nodes always serve ingress during rolling maintenance.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: envoy-gateway-pdb
+  namespace: envoy-gateway-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      gateway.envoyproxy.io/owning-gateway-name: eg
