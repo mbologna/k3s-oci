@@ -507,7 +507,7 @@ variable "envoy_gateway_chart_version" {
   type        = string
   description = "Envoy Gateway Helm chart version used for the bootstrap install. Must match gitops/apps/envoy-gateway.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=github-releases depName=envoyproxy/gateway
-  default = "v1.3.0"
+  default = "v1.7.2"
 }
 
 variable "certmanager_chart_version" {
