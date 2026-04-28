@@ -11,7 +11,7 @@ spec:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
     # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
-    targetRevision: "69.3.3"
+    targetRevision: "84.3.0"
     helm:
       valuesObject:
         # Minimal footprint for 4-node A1.Flex cluster (ARM64, 6 GB RAM per node)
