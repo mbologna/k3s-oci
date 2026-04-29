@@ -4,12 +4,6 @@
     "config:recommended",
     "github>mbologna/renovate-config"
   ],
-  "terraform": {
-    "enabled": true
-  },
-  "github-actions": {
-    "enabled": true
-  },
   "packageRules": [
     {
       "description": "Group all Terraform provider updates into one PR; require manual review",
@@ -20,13 +14,6 @@
         "provider"
       ],
       "groupName": "terraform providers",
-      "automerge": false
-    },
-    {
-      "description": "GitHub Actions: no auto-merge (pinDigests already set globally)",
-      "matchManagers": [
-        "github-actions"
-      ],
       "automerge": false
     },
     {
@@ -78,3 +65,4 @@
     }
   ]
 }
+
