@@ -4,6 +4,24 @@
 
 A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Free tier](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
 
+## Features
+
+- **HA control plane** — 3 control-plane nodes with embedded etcd; survives 1 node failure
+- **Full stack always deployed** — cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
+- **Separate public/private subnets** — k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
+- **Envoy Gateway ingress (Gateway API)** — DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
+- **Automatic security updates** — `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention
+- **k3s version pinned at plan time** — resolved from the GitHub API during `terraform plan`, not at boot time
+- **Cluster-scoped IAM** — dynamic group and policy scoped to nodes tagged with the cluster name, not every instance in the compartment
+- **Idempotent cloud-init** — all `kubectl` operations use `apply`; re-provisioning is safe
+- **OCI Vault** (`enable_vault = true`) — cluster secrets in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
+- **Boot volume backups** (`enable_backup = true`) — weekly full backups, 1-week retention, within the 5-backup Always Free limit
+- **Object Storage state bucket** (`enable_object_storage_state = true`) — versioned OCI Object Storage for Terraform state; S3-compatible endpoint in `terraform_state_backend` output
+- **OCI Notifications + Alertmanager** (`enable_notifications = false`) — opt-in OCI Notifications topic wired to Alertmanager as a webhook receiver
+- **MySQL HeatWave** (`enable_mysql = false`) — opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
+- **External DNS** (`enable_external_dns = false`) — automatic Cloudflare DNS record management from HTTPRoute hostnames
+- **External Secrets** (`enable_external_secrets = false`) — sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate
+
 ## Architecture
 
 ```mermaid
@@ -38,19 +56,71 @@ graph TD
     Bastion -. "SSH tunnel\nenable_bastion=true" .-> private
 ```
 
-All four Always Free A1.Flex instances live in a **private subnet** with no public IPs, reducing the attack surface to near-zero. Internet traffic enters exclusively through two Always Free load balancers:
+All four A1.Flex instances live in a **private subnet** with no public IPs. Internet traffic enters exclusively through two Always Free load balancers.
 
-> **k3s naming note:** k3s calls control-plane nodes "servers" (`k3s server` command) and workers "agents" (`k3s agent`). Throughout this repo, Terraform resources and variable names use `server`/`worker` following k3s conventions. In standard Kubernetes terminology these map to control-plane and worker nodes respectively.
+> **k3s naming note:** k3s calls control-plane nodes "servers" (`k3s server`) and workers "agents" (`k3s agent`). Terraform resources follow k3s conventions (`server`/`worker`); in standard Kubernetes terminology these map to control-plane and worker nodes.
 
-**Public Network Load Balancer (NLB)** handles HTTP/HTTPS from the internet and forwards it directly to Envoy Gateway NodePorts on all nodes (both control-plane and worker). The Envoy Gateway proxy runs as a **DaemonSet** (one pod per node) with `priorityClassName: system-cluster-critical` and `PodDisruptionBudget maxUnavailable: 1` so that at most one node is unavailable for ingress at any time — whether due to failure or rolling maintenance. `is_preserve_source = true` preserves real client IPs at the hypervisor level with no extra OS-level proxy. The NLB also optionally exposes the Kubernetes API on port 6443, restricted to your IP. It is the only Always Free-eligible TCP/UDP load balancer on OCI that provides health checks, source IP preservation, and a static public IP simultaneously.
+**Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on all four nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
 
-**Internal Flexible Load Balancer** provides a stable private VIP for the k3s API across all three control-plane nodes. The worker and any future agents always join via this VIP, so the cluster survives the loss of any single control-plane. The Flexible LB (10 Mbps Always Free tier) is the right tool here: it handles HTTP-based health checks against the k3s API port, which the NLB cannot do internally on a private subnet without additional cost.
+**Internal Flex LB** provides a stable private VIP across all three control-plane nodes. Workers join via this VIP so the cluster survives any single control-plane loss.
 
-**Longhorn** runs on **all four nodes** with `defaultReplicaCount=3` — each PVC is replicated across three different nodes, so storage remains available after any single node failure. The control-plane `NoSchedule` taints (added automatically by k3s ≥ 1.24) are removed immediately after cluster init so that **user workloads schedule across all four nodes**. With only one worker, keeping those taints would make it a single point of failure for all workloads. All A1.Flex nodes are identically sized (1 OCPU / 6 GB), so co-locating etcd with user workloads is safe at this scale.
+**Longhorn** runs on all four nodes with `defaultReplicaCount=3` — each PVC is replicated across three nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
 
-> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** maximum — the hard limit for a 4-node Always Free topology.
+> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** — the hard limit of a 4-node Always Free topology.
 
-### Failure tolerance
+## Always Free budget
+
+| Resource | Free allowance | This module |
+|---|---|---|
+| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker = **4 OCPUs / 24 GB** |
+| Block storage | 200 GB | 4 × 50 GB = **200 GB** |
+| Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
+| Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
+| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service — managed, no VM) |
+| NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
+| Object Storage | 20 GB | **2 versioned buckets** — Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
+| Vault (shared) | Software keys + 150 secrets | **3 secrets** — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
+| Volume backups | 5 total | **4** — one per node, weekly, 1-week retention (`enable_backup = true`) |
+| Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
+| MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
+
+> ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
+
+## Why this topology
+
+With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The result is a 3-server HA cluster plus 1 standalone worker that saturates every Always Free resource class with nothing left unused and nothing that costs money.
+
+### Topology comparison
+
+| Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
+|---|:---:|:---:|:---:|---|
+| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal** — HA etcd, all 4 nodes contribute to workloads |
+| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
+| 2 CP + 2 workers | ❌ Invalid | — | — | 2-node etcd cannot form quorum; worse than 1 node |
+| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
+
+†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
+
+**4 × 1 OCPU even split** prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
+
+### Why not use the 2 free E2.1.Micro instances as extra workers?
+
+Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
+
+1. **Storage budget exhausted** — 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
+2. **1 GB RAM** — k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+3. **1/8 OCPU** — negligible compute; adds operational complexity for near-zero workload benefit
+
+### Previously rejected alternatives
+
+| Alternative | Why it was rejected |
+|---|---|
+| nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
+| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
+| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance |
+| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
+
+## Failure tolerance
 
 | Component | Tolerance | What happens on failure |
 |---|---|---|
@@ -61,13 +131,13 @@ All four Always Free A1.Flex instances live in a **private subnet** with no publ
 | **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
 | **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
 | **PVC data (Longhorn)** | ✅ 1 node | 3 replicas across 4 nodes; 1 replica lost, 2 remain serving |
-| **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS **serving** unaffected (certs live in Secrets); only new issuance/renewal is paused |
+| **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
 | **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
-| **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; OCI provides snapshots but no HA failover |
+| **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
 
-### Node roles and workload placement
+## Node roles and workload placement
 
-Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available.
+Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available for workloads.
 
 | What | control-plane-0/1/2 | worker-0 | Scheduling mechanism |
 |---|:---:|:---:|---|
@@ -81,83 +151,9 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **kured** | ✅ | ✅ | DaemonSet — 1 pod per node |
 | **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
 
-> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available for scheduling. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
+> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
 >
-> **Recommendation for user workloads:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) so pods spread across nodes and survive any single-node failure.
-
-## Always Free budget
-
-| Resource | Free allowance | This module |
-|---|---|---|
-| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker = **4 OCPUs / 24 GB** |
-| Block storage | 200 GB | 4 × 50 GB = **200 GB** |
-| Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
-| Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
-| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service — managed, no VM) |
-| NAT Gateway | 1 per VCN (Always Free) | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB | **2 versioned buckets** — Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **3 secrets** — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
-| Volume backups | 5 boot + block backups | **4** — one per node, weekly, 1-week retention (`enable_backup = true`) |
-| Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
-| MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
-
-> ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
-
-## Why this topology
-
-The result is a 3-server HA etcd cluster plus 1 standalone worker that saturates every Always Free resource class — compute, storage, NLB, Flexible LB, NAT Gateway — with nothing left unused and nothing that costs money.
-
-### Topology comparison
-
-With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The table below shows every meaningful distribution of the 4 instances:
-
-| Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
-|---|:---:|:---:|:---:|---|
-| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal** — HA etcd, all 4 nodes contribute to workloads |
-| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
-| 2 CP + 2 workers | ❌ Invalid | — | — | 2-node etcd cannot form quorum; worse than 1 node |
-| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
-
-†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
-
-**4 × 1 OCPU even split** (vs asymmetric, e.g. 1 × 2 OCPU + others) is also optimal: even OCPU allocation prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
-
-### Why not use the 2 free E2.1.Micro instances as extra workers?
-
-Always Free also includes 2 AMD E2.1.Micro instances. They are **not viable k3s workers** in this cluster for three reasons:
-
-1. **1 GB RAM** — k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
-2. **Architecture mismatch** — E2.1.Micro is x86\_64; cluster nodes are aarch64 (ARM). Mixed-arch requires multi-arch container images and per-node taints/tolerations, which breaks many Helm charts and complicates every workload deployment
-3. **1/8 OCPU** — negligible compute; adds operational complexity for near-zero workload benefit
-
-### Previously rejected alternatives
-
-| Alternative | Why it was rejected |
-|---|---|
-| nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
-| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
-| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance with no waste |
-| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
-
-## Features
-
-- **HA control plane** — 3 control-plane nodes with embedded etcd; survives 1 node failure
-- **Full stack always deployed** — cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
-- **Separate public/private subnets** — k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
-- **Automatic security updates** — `unattended-upgrades` configured on every Ubuntu node; kured handles reboots
-- **Graceful node reboots** — [kured](https://github.com/kubereboot/kured) drains and reboots nodes one at a time when a kernel update requires it
-- **Ubuntu 24.04 LTS only** — a single, well-supported OS on aarch64; no multi-distro complexity
-- **Envoy Gateway ingress (Gateway API)** — Helm-managed Envoy Gateway as a **DaemonSet** (one proxy pod per node), `system-cluster-critical` priority, `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources (no proprietary CRDs); real client IP preservation via NLB transparent mode
-- **k3s version pinned at plan time** — resolved from the GitHub API during `terraform plan`, not at boot time
-- **Cluster-scoped IAM** — the OCI dynamic group and policy are scoped to nodes tagged with the cluster name, not every instance in the compartment
-- **Idempotent cloud-init** — all `kubectl` operations use `apply`; re-provisioning is safe
-- **CI / GitOps ready** — GitHub Actions for `fmt`/`validate`/ShellCheck; ArgoCD App of Apps under `gitops/`
-- **Renovate** — `renovate.json` tracks Terraform provider updates and all inline-versioned dependencies via regex manager
-- **OCI Vault** (`enable_vault = true`) — cluster secrets stored in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
-- **Boot volume backups** (`enable_backup = true`) — weekly full backups with 1-week retention on all node boot volumes; within the 5-backup Always Free limit
-- **Object Storage state bucket** (`enable_object_storage_state = true`) — versioned OCI Object Storage bucket for Terraform state; S3-compatible endpoint in `terraform_state_backend` output
-- **OCI Notifications + Alertmanager** (`enable_notifications = false`) — opt-in OCI Notifications topic wired to Alertmanager as a webhook receiver; supports email subscription
-- **MySQL HeatWave** (`enable_mysql = false`) — opt-in Always Free MySQL HeatWave DB system in the private subnet; credentials pre-created as a Kubernetes Secret
+> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes and survive any single-node failure.
 
 ## Quickstart
 
@@ -205,19 +201,6 @@ kubectl get nodes
 
 This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
 
-## Dependency updates (Renovate)
-
-`renovate.json` is included and tracks:
-
-| Source | What is updated |
-|---|---|
-| Terraform `required_providers` | OCI provider, hashicorp/http, hashicorp/cloudinit, hashicorp/random |
-| `# renovate:` inline comments in `vars.tf` | k3s, cert-manager, Longhorn, ArgoCD, kured, Envoy Gateway, Gateway API CRDs, External DNS, External Secrets |
-| `# renovate:` inline comments in `gitops/apps/*.yaml` | ArgoCD Image Updater, kube-prometheus-stack, and all other GitOps Helm chart `targetRevision` values |
-| `# SUC_VERSION` comment in `gitops/system-upgrade/kustomization.yaml` | system-upgrade-controller (rancher/system-upgrade-controller GitHub releases) |
-
-To enable: install the [Renovate GitHub App](https://github.com/apps/renovate) **or** use the self-hosted workflow at `.github/workflows/renovate.yml` (add a `RENOVATE_TOKEN` repo secret with a personal access token with `repo` scope). Renovate will open PRs for any new releases automatically.
-
 ## GitOps — App of Apps
 
 The `gitops/` directory contains ArgoCD `Application` manifests managed with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern).
@@ -232,7 +215,7 @@ ArgoCD will then continuously reconcile every manifest under `gitops/apps/`.
 
 ### Adding your own applications
 
-This repo is designed to be forked. The `gitops/apps/` directory ships manifests for the built-in stack (monitoring, gateway config, network policies, etc.). To add your own apps **on top** of the built-in ones:
+This repo is designed to be forked. To add your own apps on top of the built-in stack:
 
 1. **Fork this repo** on GitHub.
 
@@ -243,18 +226,22 @@ This repo is designed to be forked. The `gitops/apps/` directory ships manifests
    git push
    ```
 
-3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` in your fork — ArgoCD syncs them automatically. You can point each app at any Helm chart registry or any Git repository; only the `app-of-apps.yaml` and the built-in manifests need to live in your fork.
+3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` — ArgoCD syncs them automatically. Each app can point at any Helm chart registry or any Git repository.
 
-> **Deploying for the first time?** Also set `gitops_repo_url` in your `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL into the ArgoCD App of Apps at cluster bootstrap:
+> **Deploying for the first time?** Also set `gitops_repo_url` in `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL at bootstrap:
 > ```hcl
 > gitops_repo_url = "https://github.com/your-org/your-fork.git"
 > ```
-> **Already have a running cluster?** The `gitops_repo_url` variable has no effect without re-provisioning nodes (cloud-init already ran). Instead, patch the App of Apps directly:
+> **Already have a running cluster?** Patch the App of Apps directly:
 > ```bash
 > argocd app set app-of-apps --repo https://github.com/your-org/your-fork.git
 > ```
 
 > **Private repos**: configure ArgoCD repository credentials (`argocd repo add`) before adding manifests that pull from private repositories.
+
+## Dependency updates (Renovate)
+
+[Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable with the [Renovate GitHub App](https://github.com/apps/renovate) or the self-hosted workflow at `.github/workflows/renovate.yml` (requires a `RENOVATE_TOKEN` secret with `repo` scope).
 
 ## Remote Terraform state (OCI Object Storage)
 
