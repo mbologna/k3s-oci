@@ -43,4 +43,3 @@ jobs:
         files/lib/k3s-agent.sh
       example_dir: example
     secrets: inherit
-
