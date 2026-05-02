@@ -15,7 +15,7 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    force: false
+    disableEviction: true
     skipWaitForDeleteTimeout: 60
   upgrade:
     image: rancher/k3s-upgrade
@@ -34,7 +34,7 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    force: false
+    disableEviction: true
     skipWaitForDeleteTimeout: 60
   prepare:
     image: rancher/k3s-upgrade
