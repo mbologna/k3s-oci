@@ -9,3 +9,19 @@ resources:
   - https://github.com/rancher/system-upgrade-controller/releases/download/v0.19.2/crd.yaml
   - https://github.com/rancher/system-upgrade-controller/releases/download/v0.19.2/system-upgrade-controller.yaml
   - plans.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: system-upgrade-controller
+        namespace: system-upgrade
+      spec:
+        template:
+          spec:
+            containers:
+              - name: system-upgrade-controller
+                env:
+                  - name: SYSTEM_UPGRADE_JOB_ACTIVE_DEADLINE_SECONDS
+                    value: "1800"
