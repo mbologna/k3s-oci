@@ -1,0 +1,49 @@
+name: CI
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "files/**"
+      - "gitops/**"
+      - ".github/workflows/**"
+      - ".tflint.hcl"
+      - ".terraform-docs.yml"
+      - "README.md"
+      - "renovate.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "files/**"
+      - "gitops/**"
+      - ".github/workflows/**"
+      - ".tflint.hcl"
+      - ".terraform-docs.yml"
+      - "README.md"
+      - "renovate.json"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+  security-events: write
+
+jobs:
+  terraform:
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@main
+    with:
+      terraform_version: "~> 1.9"
+      opentofu_version: "1.9.1"
+      enable_terraform_docs: true
+      enable_shellcheck: true
+      shellcheck_files: >-
+        files/lib/common.sh
+        files/lib/k3s-server.sh
+        files/lib/k3s-bootstrap.sh
+        files/lib/k3s-agent.sh
+      example_dir: example
+    secrets: inherit
