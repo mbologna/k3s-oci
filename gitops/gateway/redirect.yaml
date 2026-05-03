@@ -27,7 +27,7 @@ spec:
   #   - "argocd.example.com"
   #   - "grafana.example.com"
   hostnames:
-    - "redirect.placeholder.invalid"
+    - "hello-web.129.146.26.162.sslip.io"
   rules:
     - filters:
         - type: RequestRedirect
