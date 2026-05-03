@@ -1,8 +1,15 @@
 ---
-# HTTP → HTTPS redirect: all plain HTTP requests get a 301 permanent redirect.
+# HTTP → HTTPS redirect: redirects plain HTTP to HTTPS for the listed hostnames.
 # Attached to the Gateway's `http` (port 80) listener.
-# Priority note: cert-manager HTTP-01 ACME challenges use standard Ingress objects;
-# switch to DNS-01 (enable_dns01_challenge = true) to avoid any HTTP-01 conflict.
+#
+# Add each hostname to the `hostnames` list below as you configure HTTPS listeners
+# in gateway.yaml and cert-manager Certificates. Without a matching hostname in
+# this list, HTTP traffic for that host passes through to its HTTPRoute directly.
+#
+# Priority note: cert-manager HTTP-01 ACME challenges use a separate HTTPRoute
+# with a more specific path match (/.well-known/acme-challenge/…) that takes
+# precedence over this wildcard redirect. Switch to DNS-01
+# (enable_dns01_challenge = true) to avoid any HTTP-01 conflict.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -13,6 +20,9 @@ spec:
     - name: eg
       namespace: envoy-gateway-system
       sectionName: http
+  # List only hostnames that have a corresponding HTTPS listener in gateway.yaml.
+  # An empty list means the redirect never fires.
+  hostnames: []
   rules:
     - filters:
         - type: RequestRedirect
