@@ -21,8 +21,13 @@ spec:
       namespace: envoy-gateway-system
       sectionName: http
   # List only hostnames that have a corresponding HTTPS listener in gateway.yaml.
-  # An empty list means the redirect never fires.
-  hostnames: []
+  # Gateway API treats an absent or empty hostnames list as "match all", so a
+  # placeholder is used to disable the redirect until real hostnames are added.
+  # Replace with actual hostnames, e.g.:
+  #   - "argocd.example.com"
+  #   - "grafana.example.com"
+  hostnames:
+    - "redirect.placeholder.invalid"
   rules:
     - filters:
         - type: RequestRedirect
