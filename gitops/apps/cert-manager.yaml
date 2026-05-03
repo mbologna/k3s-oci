@@ -16,6 +16,8 @@ spec:
       valuesObject:
         crds:
           enabled: true
+        extraArgs:
+          - --feature-gates=ExperimentalGatewayAPISupport=true
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
