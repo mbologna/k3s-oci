@@ -72,10 +72,14 @@ resource "oci_core_network_security_group_security_rule" "workers_allow_http" {
   network_security_group_id = oci_core_network_security_group.workers.id
   direction                 = "INGRESS"
   protocol                  = "6"
-  description               = "HTTP nodeport from public NLB"
-  source                    = oci_core_network_security_group.public_nlb.id
-  source_type               = "NETWORK_SECURITY_GROUP"
-  stateless                 = false
+  # With is_preserve_source = true on the NLB backend sets, packets arrive at
+  # nodes with the client's source IP, not the NLB's IP. Nodes are in a private
+  # subnet with no public IPs so 0.0.0.0/0 is safe: internet traffic can only
+  # enter via the NLB frontend.
+  description = "HTTP nodeport – allow internet IPs preserved by NLB source passthrough"
+  source      = "0.0.0.0/0"
+  source_type = "CIDR_BLOCK"
+  stateless   = false
 
   tcp_options {
     destination_port_range {
@@ -89,9 +93,45 @@ resource "oci_core_network_security_group_security_rule" "workers_allow_https" {
   network_security_group_id = oci_core_network_security_group.workers.id
   direction                 = "INGRESS"
   protocol                  = "6"
-  description               = "HTTPS nodeport from public NLB"
-  source                    = oci_core_network_security_group.public_nlb.id
-  source_type               = "NETWORK_SECURITY_GROUP"
+  description               = "HTTPS nodeport – allow internet IPs preserved by NLB source passthrough"
+  source                    = "0.0.0.0/0"
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = var.ingress_controller_https_nodeport
+      max = var.ingress_controller_https_nodeport
+    }
+  }
+}
+
+# Server nodes are also NLB backends (k3s_http_servers / k3s_https_servers).
+# They run the Envoy DaemonSet and must accept the same source-preserved traffic.
+resource "oci_core_network_security_group_security_rule" "servers_allow_http" {
+  network_security_group_id = oci_core_network_security_group.servers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "HTTP nodeport – allow internet IPs preserved by NLB source passthrough"
+  source                    = "0.0.0.0/0"
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = var.ingress_controller_http_nodeport
+      max = var.ingress_controller_http_nodeport
+    }
+  }
+}
+
+resource "oci_core_network_security_group_security_rule" "servers_allow_https" {
+  network_security_group_id = oci_core_network_security_group.servers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "HTTPS nodeport – allow internet IPs preserved by NLB source passthrough"
+  source                    = "0.0.0.0/0"
+  source_type               = "CIDR_BLOCK"
   stateless                 = false
 
   tcp_options {
