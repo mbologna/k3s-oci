@@ -28,6 +28,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: write
+  security-events: write
+
 jobs:
   terraform:
     uses: mbologna/.github/.github/workflows/terraform-ci.yml@main
