@@ -29,9 +29,20 @@ spec:
           from: All
 
     # ── HTTPS listeners — one per hostname ────────────────────────────────────
-    # Uncomment and fill in your hostnames. cert-manager must provision the
-    # corresponding TLS secrets in the envoy-gateway-system namespace first.
-    #
+    # cert-manager must provision the TLS secret in envoy-gateway-system first.
+
+    - name: https-hello-web
+      port: 443
+      protocol: HTTPS
+      hostname: "hello-web.129.146.26.162.sslip.io"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: hello-web-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+
     # - name: https-argocd
     #   port: 443
     #   protocol: HTTPS
