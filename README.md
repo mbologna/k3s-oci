@@ -239,6 +239,214 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 
 > **Private repos**: configure ArgoCD repository credentials (`argocd repo add`) before adding manifests that pull from private repositories.
 
+## Deploying a web application
+
+### Why TLS is terminated at Envoy Gateway, not at the OCI load balancer
+
+OCI provides two load balancer products with very different capabilities:
+
+| | OCI Network Load Balancer (NLB) | OCI Flexible Load Balancer |
+|---|---|---|
+| OSI layer | **L4 — TCP passthrough** | L7 — HTTP/HTTPS aware |
+| TLS termination | ❌ Not possible | ✅ Yes |
+| Always Free | **1 NLB** | 2 × 10 Mbps |
+| Used here | `nlb.tf` — public internet traffic | `lb.tf` — internal kubeapi HA VIP |
+
+The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"` — it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
+
+The **Flexible LB** *could* terminate TLS, but the one free allocation is already consumed by the kubeapi HA load balancer. Even if it were available, using OCI to manage certificates would break the automatic cert-manager + Let's Encrypt renewal cycle.
+
+The current flow is: Internet → NLB (TCP passthrough, preserves client IPs) → Envoy Gateway NodePort → TLS terminate → route to app pod.
+
+### Minimal example: HTTP-only
+
+No domain needed. Requests to the NLB IP are served directly.
+
+```yaml
+# hello-web.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-web
+  namespace: hello-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-web
+  template:
+    metadata:
+      labels:
+        app: hello-web
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: hello-web
+      containers:
+        - name: hello-web
+          image: httpd:alpine
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-web
+  namespace: hello-web
+spec:
+  selector:
+    app: hello-web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# HTTPRoute — no hostname filter = matches all requests on the http listener
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hello-web
+  namespace: hello-web
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: http
+  rules:
+    - backendRefs:
+        - name: hello-web
+          port: 80
+```
+
+```bash
+kubectl create namespace hello-web
+kubectl apply -f hello-web.yaml
+NLB_IP=$(cd example && tofu output -raw nlb_ip)
+curl http://$NLB_IP/
+```
+
+### Minimal example: HTTPS with sslip.io (no domain purchase required)
+
+[sslip.io](https://sslip.io) is a public DNS service that resolves `<anything>.<ip>.sslip.io` directly to `<ip>`. Combined with cert-manager + Let's Encrypt HTTP-01, this gives a trusted TLS certificate with zero infrastructure cost.
+
+Replace `<NLB_IP>` with the value of `tofu output -raw nlb_ip`.
+
+```yaml
+# hello-web-tls.yaml
+---
+# 1. Certificate — cert-manager issues this via HTTP-01 challenge through Envoy Gateway
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hello-web-tls
+  namespace: envoy-gateway-system   # must be in the same namespace as the Gateway
+spec:
+  secretName: hello-web-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - hello-web.<NLB_IP>.sslip.io
+---
+# 2. HTTPS listener on the Gateway (add this to gitops/gateway/gateway.yaml for GitOps management)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-hello-web
+      port: 443
+      protocol: HTTPS
+      hostname: hello-web.<NLB_IP>.sslip.io
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: hello-web-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# 3. HTTP→HTTPS redirect (add hostname to gitops/gateway/redirect.yaml)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https-redirect
+  namespace: envoy-gateway-system
+spec:
+  parentRefs:
+    - name: eg
+      sectionName: http
+  hostnames:
+    - hello-web.<NLB_IP>.sslip.io
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+# 4. HTTPRoute for the app — attaches to both listeners
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hello-web
+  namespace: hello-web
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: https-hello-web
+  hostnames:
+    - hello-web.<NLB_IP>.sslip.io
+  rules:
+    - backendRefs:
+        - name: hello-web
+          port: 80
+```
+
+```bash
+# Wait for certificate issuance (typically 1–2 minutes)
+kubectl wait --for=condition=Ready certificate/hello-web-tls -n envoy-gateway-system --timeout=5m
+curl https://hello-web.<NLB_IP>.sslip.io/
+```
+
+> **With a real domain**: set `enable_external_dns = true` and annotate the HTTPRoute with
+> `external-dns.alpha.kubernetes.io/hostname: myapp.example.com`. External DNS will create
+> the A record automatically, then cert-manager issues the certificate. Alternatively,
+> set `enable_dns01_challenge = true` to use DNS-01 (supports wildcard certs and does not
+> require inbound port 80).
+
+### Resilience: spread replicas across nodes
+
+Use `topologySpreadConstraints` to ensure pod replicas land on different nodes:
+
+```yaml
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: <your-app>
+```
+
+With 4 identically-sized nodes, 2 replicas survive any single node failure. Envoy Gateway runs as a DaemonSet with `maxUnavailable: 1`, so ingress remains up on the other 3 nodes throughout any single-node drain or failure.
+
 ## Dependency updates (Renovate)
 
 [Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable with the [Renovate GitHub App](https://github.com/apps/renovate) or the self-hosted workflow at `.github/workflows/renovate.yml` (requires a `RENOVATE_TOKEN` secret with `repo` scope).
@@ -280,7 +488,7 @@ MIT. See [LICENSE](LICENSE).
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_alertmanager_email"></a> [alertmanager\_email](#input\_alertmanager\_email) | Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email. | `string` | `null` | no |
 | <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.9"` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
@@ -352,7 +560,7 @@ MIT. See [LICENSE](LICENSE).
 ## Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
 | <a name="output_bastion_ocid"></a> [bastion\_ocid](#output\_bastion\_ocid) | OCID of the OCI Bastion Service resource (null if enable\_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh. |
 | <a name="output_grafana_admin_credentials"></a> [grafana\_admin\_credentials](#output\_grafana\_admin\_credentials) | Grafana admin credentials (only available after cluster bootstrap) |
