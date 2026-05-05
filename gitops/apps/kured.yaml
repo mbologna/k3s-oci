@@ -16,11 +16,12 @@ spec:
       valuesObject:
         configuration:
           rebootSentinelFile: /var/run/reboot-required
-          # Maintenance window: 22:00–06:00 UTC (midnight–08:00 CET / 01:00–09:00 CEST)
+          # Maintenance window: 04:00–06:00 Europe/Rome (DST-safe; always local CET/CEST)
+          # Starts after apt finishes (02:00+jitter) so kured reboots a fully-upgraded node.
           # Edit here to change the window; must match NLB maintenance expectations.
-          startTime: "22:00"
+          startTime: "04:00"
           endTime: "06:00"
-          timeZone: UTC
+          timeZone: Europe/Rome
           rebootDays:
             - mon
             - tue
