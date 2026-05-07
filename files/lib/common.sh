@@ -114,16 +114,53 @@ $nrconf{restart} = 'a';
 $nrconf{blacklist_rc} = [qr(^k3s)];
 NREOF
 
-  # Do NOT pin apt-daily-upgrade to the kured maintenance window.
-  # Patches must install on Ubuntu's default daily schedule so CVE fixes are
-  # applied ASAP. Only the reboot is deferred to kured.
-  # RandomizedDelaySec staggers nodes to avoid simultaneous dpkg locks.
-  mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
-  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/stagger.conf << 'TIMEREOF'
+  # Security-only origins — used by apt-security-upgrade.timer (daily).
+  # Non-security origins are handled by apt-daily-upgrade (Tue/Wed/Thu).
+  cat > /etc/apt/apt.conf.d/52security-only.conf << 'SECEOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+SECEOF
+
+  # Daily security-only upgrade service + timer at 00:30 UTC (±30 min jitter).
+  cat > /etc/systemd/system/apt-security-upgrade.service << 'SVCEOF'
+[Unit]
+Description=Daily security-only unattended upgrades
+Documentation=man:unattended-upgrade(8)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/unattended-upgrade --apt-conf /etc/apt/apt.conf.d/52security-only.conf
+SVCEOF
+
+  cat > /etc/systemd/system/apt-security-upgrade.timer << 'TMREOF'
+[Unit]
+Description=Run security-only unattended upgrades daily
+
 [Timer]
-RandomizedDelaySec=60min
+OnCalendar=*-*-* 00:30:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TMREOF
+
+  # Non-security upgrades: Tue/Wed/Thu at 01:00 UTC (±10 min jitter).
+  mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
+  cat > /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf << 'TIMEREOF'
+[Timer]
+OnCalendar=
+OnCalendar=Tue,Wed,Thu *-*-* 01:00:00 UTC
+RandomizedDelaySec=600
+Persistent=true
 TIMEREOF
+
   systemctl daemon-reload
+  systemctl enable --now apt-security-upgrade.timer
   systemctl restart apt-daily-upgrade.timer
 
   systemctl enable --now unattended-upgrades
