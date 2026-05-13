@@ -97,7 +97,11 @@ done
 
 LOCAL_PORT=22223
 
-BASTION_OCID=$(tofu output -raw bastion_ocid)
+BASTION_OCID=$(tofu output -raw bastion_ocid 2>/dev/null || true)
+if [ -z "$BASTION_OCID" ]; then
+  echo "❌ bastion_ocid is not set — set enable_bastion = true in terraform.tfvars and re-run tofu apply."
+  exit 1
+fi
 
 # Resolve target IP
 TARGET="${1:-server1}"
