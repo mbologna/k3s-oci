@@ -67,7 +67,6 @@ k3s_standalone_worker = true
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 
 # ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
-# argocd_hostname   = "argocd.example.com"
 # longhorn_hostname = "longhorn.example.com"
 # grafana_hostname  = "grafana.example.com"
 
@@ -84,9 +83,8 @@ k3s_standalone_worker = true
 
 # ── External Secrets Operator (OCI Vault) ─────────────────────────────────────
 # Sync OCI Vault secrets into Kubernetes Secrets via ExternalSecret CRs.
-# Requires enable_vault = true. region must match your OCI tenancy home region.
+# Requires enable_vault = true.
 # enable_external_secrets = false
-# region                  = "eu-frankfurt-1"   # required when enable_external_secrets = true
 
 # ── DNS-01 ACME challenge (Cloudflare) ────────────────────────────────────────
 # Use Cloudflare DNS-01 solver instead of HTTP-01 for cert-manager.
