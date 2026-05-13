@@ -43,7 +43,7 @@ variable "expose_kubeapi" {
 }
 variable "enable_bastion" {
   type    = bool
-  default = false
+  default = true
 }
 variable "environment" {
   type    = string
