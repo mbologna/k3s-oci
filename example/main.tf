@@ -164,6 +164,174 @@ variable "enable_dns01_challenge" {
   default = false
 }
 
+# ── Compute & sizing ──────────────────────────────────────────────────────────
+
+variable "compute_shape" {
+  type    = string
+  default = "VM.Standard.A1.Flex"
+}
+
+variable "server_ocpus" {
+  type    = number
+  default = 1
+}
+
+variable "server_memory_in_gbs" {
+  type    = number
+  default = 6
+}
+
+variable "worker_ocpus" {
+  type    = number
+  default = 1
+}
+
+variable "worker_memory_in_gbs" {
+  type    = number
+  default = 6
+}
+
+variable "boot_volume_size_in_gbs" {
+  type    = number
+  default = 50
+}
+
+variable "fault_domains" {
+  type    = list(string)
+  default = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+}
+
+# ── Networking ────────────────────────────────────────────────────────────────
+
+variable "oci_core_vcn_cidr" {
+  type    = string
+  default = "10.0.0.0/16"
+}
+
+variable "public_subnet_cidr" {
+  type    = string
+  default = "10.0.0.0/24"
+}
+
+variable "private_subnet_cidr" {
+  type    = string
+  default = "10.0.1.0/24"
+}
+
+variable "oci_core_vcn_dns_label" {
+  type    = string
+  default = "k3svcn"
+}
+
+variable "public_subnet_dns_label" {
+  type    = string
+  default = "k3spublic"
+}
+
+variable "private_subnet_dns_label" {
+  type    = string
+  default = "k3sprivate"
+}
+
+variable "kube_api_port" {
+  type    = number
+  default = 6443
+}
+
+variable "http_lb_port" {
+  type    = number
+  default = 80
+}
+
+variable "https_lb_port" {
+  type    = number
+  default = 443
+}
+
+variable "ingress_controller_http_nodeport" {
+  type    = number
+  default = 30080
+}
+
+variable "ingress_controller_https_nodeport" {
+  type    = number
+  default = 30443
+}
+
+variable "k3s_subnet" {
+  type    = string
+  default = "default_route_table"
+}
+
+# ── k3s ───────────────────────────────────────────────────────────────────────
+
+variable "k3s_version" {
+  type    = string
+  default = "latest"
+}
+
+# ── IAM ───────────────────────────────────────────────────────────────────────
+
+variable "unique_tag_key" {
+  type    = string
+  default = "k3s-provisioner"
+}
+
+variable "unique_tag_value" {
+  type    = string
+  default = "https://github.com/mbologna/k3s-oci"
+}
+
+variable "oci_identity_dynamic_group_name" {
+  type    = string
+  default = "k3s-cluster-dynamic-group"
+}
+
+variable "oci_identity_policy_name" {
+  type    = string
+  default = "k3s-cluster-policy"
+}
+
+# ── App config ────────────────────────────────────────────────────────────────
+
+variable "longhorn_ui_username" {
+  type    = string
+  default = "admin"
+}
+
+variable "dockerhub_username" {
+  type    = string
+  default = ""
+}
+
+variable "dockerhub_password" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+# ── Chart versions ────────────────────────────────────────────────────────────
+
+variable "gateway_api_version" {
+  type    = string
+  default = "v1.5.1"
+}
+
+variable "certmanager_chart_version" {
+  type    = string
+  default = "v1.20.2"
+}
+
+variable "argocd_chart_version" {
+  type    = string
+  default = "9.5.9"
+}
+
+variable "external_secrets_chart_version" {
+  type    = string
+  default = "2.4.1"
+}
+
 module "k3s_cluster" {
   source = "../"
 
@@ -200,8 +368,39 @@ module "k3s_cluster" {
   cloudflare_api_token        = var.cloudflare_api_token
   cloudflare_zone_id          = var.cloudflare_zone_id
   external_dns_domain_filter  = var.external_dns_domain_filter
-  enable_external_secrets     = var.enable_external_secrets
-  enable_dns01_challenge      = var.enable_dns01_challenge
+  enable_external_secrets            = var.enable_external_secrets
+  enable_dns01_challenge             = var.enable_dns01_challenge
+  compute_shape                      = var.compute_shape
+  server_ocpus                       = var.server_ocpus
+  server_memory_in_gbs               = var.server_memory_in_gbs
+  worker_ocpus                       = var.worker_ocpus
+  worker_memory_in_gbs               = var.worker_memory_in_gbs
+  boot_volume_size_in_gbs            = var.boot_volume_size_in_gbs
+  fault_domains                      = var.fault_domains
+  oci_core_vcn_cidr                  = var.oci_core_vcn_cidr
+  public_subnet_cidr                 = var.public_subnet_cidr
+  private_subnet_cidr                = var.private_subnet_cidr
+  oci_core_vcn_dns_label             = var.oci_core_vcn_dns_label
+  public_subnet_dns_label            = var.public_subnet_dns_label
+  private_subnet_dns_label           = var.private_subnet_dns_label
+  kube_api_port                      = var.kube_api_port
+  http_lb_port                       = var.http_lb_port
+  https_lb_port                      = var.https_lb_port
+  ingress_controller_http_nodeport   = var.ingress_controller_http_nodeport
+  ingress_controller_https_nodeport  = var.ingress_controller_https_nodeport
+  k3s_subnet                         = var.k3s_subnet
+  k3s_version                        = var.k3s_version
+  unique_tag_key                     = var.unique_tag_key
+  unique_tag_value                   = var.unique_tag_value
+  oci_identity_dynamic_group_name    = var.oci_identity_dynamic_group_name
+  oci_identity_policy_name           = var.oci_identity_policy_name
+  longhorn_ui_username               = var.longhorn_ui_username
+  dockerhub_username                 = var.dockerhub_username
+  dockerhub_password                 = var.dockerhub_password
+  gateway_api_version                = var.gateway_api_version
+  certmanager_chart_version          = var.certmanager_chart_version
+  argocd_chart_version               = var.argocd_chart_version
+  external_secrets_chart_version     = var.external_secrets_chart_version
 }
 
 output "k3s_servers_private_ips" { value = module.k3s_cluster.k3s_servers_private_ips }
