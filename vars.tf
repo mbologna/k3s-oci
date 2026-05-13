@@ -193,7 +193,7 @@ variable "enable_bastion" {
     Use example/get-kubeconfig.sh to retrieve kubeconfig via a Bastion session.
     Strongly recommended; without it, nodes are reachable only via serial console.
   EOT
-  default     = false
+  default     = true
 }
 
 # ── k3s ───────────────────────────────────────────────────────────────────────

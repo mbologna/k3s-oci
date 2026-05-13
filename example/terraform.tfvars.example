@@ -51,7 +51,7 @@ k3s_worker_pool_size  = 0   # Keep at 0; pool is reserved for future non-free sc
 k3s_standalone_worker = true
 
 # ── Optional features ─────────────────────────────────────────────────────────
-# enable_bastion = true             # OCI Bastion Service (managed, Always Free, no storage cost)
+# enable_bastion = true              # OCI Bastion Service (managed, Always Free, no storage cost)
 # expose_kubeapi = false            # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────

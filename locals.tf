@@ -86,7 +86,7 @@ locals {
     # Options B & C — both require a tofu apply:
     #
     # Option B — Enable OCI Bastion Service (managed, Always Free, no storage):
-    #   Add  enable_bastion = true  to terraform.tfvars, then run tofu apply.
+    #   enable_bastion = true by default. If disabled, add it back to terraform.tfvars, then run tofu apply.
     #   Then re-run: tofu output kubeconfig_hint
     #
     # Option C — Expose kubeapi via public NLB (restricted to ${var.my_public_ip_cidr}):
