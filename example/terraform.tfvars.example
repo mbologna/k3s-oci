@@ -50,6 +50,16 @@ k3s_server_pool_size  = 3
 k3s_worker_pool_size  = 0   # Keep at 0; pool is reserved for future non-free scaling
 k3s_standalone_worker = true
 
+# compute_shape        = "VM.Standard.A1.Flex"  # Do not change — only A1.Flex is Always Free
+# server_ocpus         = 1                       # OCPUs per server node  (total: server_ocpus × pool_size + worker_ocpus ≤ 4)
+# server_memory_in_gbs = 6                       # RAM per server node    (total: must be ≤ 24 GB)
+# worker_ocpus         = 1                       # OCPUs for standalone worker
+# worker_memory_in_gbs = 6                       # RAM for standalone worker
+# boot_volume_size_in_gbs = 50                   # Must be exactly 50 — 4×50 GB = 200 GB Always Free limit
+
+# ── k3s ───────────────────────────────────────────────────────────────────────
+# k3s_version = "latest"   # Pin to a specific release, e.g. "v1.32.4+k3s1"
+
 # ── Optional features ─────────────────────────────────────────────────────────
 # expose_kubeapi = false             # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 
@@ -65,10 +75,12 @@ k3s_standalone_worker = true
 # alertmanager_email   = "you@example.com"  # Optional email subscription for the Notifications topic
 # enable_mysql         = false          # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
+# mysql_shape          = "MySQL.Free"   # Do not change — MySQL.Free is the Always Free shape
 
 # ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
-# longhorn_hostname = "longhorn.example.com"
-# grafana_hostname  = "grafana.example.com"
+# longhorn_hostname    = "longhorn.example.com"
+# longhorn_ui_username = "admin"          # BasicAuth username for the Longhorn UI
+# grafana_hostname     = "grafana.example.com"
 
 # ── GitOps ────────────────────────────────────────────────────────────────────
 # Set to your fork URL so ArgoCD pulls from the right repository:
@@ -94,3 +106,34 @@ k3s_standalone_worker = true
 # ── kured maintenance window ──────────────────────────────────────────────────
 # kured is managed by ArgoCD. Edit gitops/apps/kured.yaml to change the
 # maintenance window (startTime, endTime, rebootDays) or chart version.
+
+# ── DockerHub credentials (avoids anonymous pull rate limits) ─────────────────
+# dockerhub_username = "your-dockerhub-username"
+# dockerhub_password = "your-dockerhub-pat"   # Personal Access Token (read-only is sufficient)
+
+# ── Chart versions (managed by Renovate — only override to pin) ───────────────
+# gateway_api_version            = "v1.5.1"
+# certmanager_chart_version      = "v1.20.2"
+# argocd_chart_version           = "9.5.9"
+# external_secrets_chart_version = "2.4.1"
+
+# ── Advanced networking (change only if defaults conflict with your VCN) ───────
+# oci_core_vcn_cidr                 = "10.0.0.0/16"
+# public_subnet_cidr                = "10.0.0.0/24"
+# private_subnet_cidr               = "10.0.1.0/24"
+# oci_core_vcn_dns_label            = "k3svcn"
+# public_subnet_dns_label           = "k3spublic"
+# private_subnet_dns_label          = "k3sprivate"
+# kube_api_port                     = 6443
+# http_lb_port                      = 80
+# https_lb_port                     = 443
+# ingress_controller_http_nodeport  = 30080
+# ingress_controller_https_nodeport = 30443
+# k3s_subnet                        = "default_route_table"
+# fault_domains                     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+
+# ── Advanced IAM (change only if names conflict with existing OCI resources) ───
+# oci_identity_dynamic_group_name = "k3s-cluster-dynamic-group"
+# oci_identity_policy_name        = "k3s-cluster-policy"
+# unique_tag_key                  = "k3s-provisioner"
+# unique_tag_value                = "https://github.com/mbologna/k3s-oci"
