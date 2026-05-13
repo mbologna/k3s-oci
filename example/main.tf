@@ -107,6 +107,63 @@ variable "mysql_shape" {
   default = "MySQL.Free"
 }
 
+variable "github_ssh_keys_username" {
+  type    = string
+  default = ""
+}
+
+variable "longhorn_hostname" {
+  type    = string
+  default = null
+}
+
+variable "grafana_hostname" {
+  type    = string
+  default = null
+}
+
+variable "gitops_repo_url" {
+  type    = string
+  default = "https://github.com/mbologna/k3s-oci.git"
+}
+
+# ── External DNS (Cloudflare) ─────────────────────────────────────────────────
+
+variable "enable_external_dns" {
+  type    = bool
+  default = false
+}
+
+variable "cloudflare_api_token" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
+variable "cloudflare_zone_id" {
+  type    = string
+  default = null
+}
+
+variable "external_dns_domain_filter" {
+  type    = string
+  default = null
+}
+
+# ── External Secrets Operator (OCI Vault) ─────────────────────────────────────
+
+variable "enable_external_secrets" {
+  type    = bool
+  default = false
+}
+
+# ── DNS-01 ACME challenge (Cloudflare) ────────────────────────────────────────
+
+variable "enable_dns01_challenge" {
+  type    = bool
+  default = false
+}
+
 module "k3s_cluster" {
   source = "../"
 
@@ -135,6 +192,16 @@ module "k3s_cluster" {
   enable_mysql                = var.enable_mysql
   mysql_admin_username        = var.mysql_admin_username
   mysql_shape                 = var.mysql_shape
+  github_ssh_keys_username    = var.github_ssh_keys_username
+  longhorn_hostname           = var.longhorn_hostname
+  grafana_hostname            = var.grafana_hostname
+  gitops_repo_url             = var.gitops_repo_url
+  enable_external_dns         = var.enable_external_dns
+  cloudflare_api_token        = var.cloudflare_api_token
+  cloudflare_zone_id          = var.cloudflare_zone_id
+  external_dns_domain_filter  = var.external_dns_domain_filter
+  enable_external_secrets     = var.enable_external_secrets
+  enable_dns01_challenge      = var.enable_dns01_challenge
 }
 
 output "k3s_servers_private_ips" { value = module.k3s_cluster.k3s_servers_private_ips }
