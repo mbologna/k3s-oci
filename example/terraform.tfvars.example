@@ -51,10 +51,10 @@ k3s_worker_pool_size  = 0   # Keep at 0; pool is reserved for future non-free sc
 k3s_standalone_worker = true
 
 # ── Optional features ─────────────────────────────────────────────────────────
-# enable_bastion = true              # OCI Bastion Service (managed, Always Free, no storage cost)
-# expose_kubeapi = false            # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
+# expose_kubeapi = false             # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
+# enable_bastion              = true   # OCI Bastion Service (managed SSH proxy, no VM/storage cost)
 # enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
 # enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
 # enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
