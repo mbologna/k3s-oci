@@ -41,6 +41,10 @@ variable "expose_kubeapi" {
   type    = bool
   default = false
 }
+variable "expose_ssh" {
+  type    = bool
+  default = false
+}
 variable "enable_bastion" {
   type    = bool
   default = true
@@ -348,6 +352,7 @@ module "k3s_cluster" {
   k3s_worker_pool_size              = var.k3s_worker_pool_size
   k3s_standalone_worker             = var.k3s_standalone_worker
   expose_kubeapi                    = var.expose_kubeapi
+  expose_ssh                        = var.expose_ssh
   enable_bastion                    = var.enable_bastion
   public_key                        = var.public_key
   public_key_path                   = var.public_key_path
