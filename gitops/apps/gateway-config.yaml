@@ -41,10 +41,3 @@ spec:
       kind: Gateway
       jsonPointers:
         - /spec/listeners
-    # cloud-init patches hostnames on the redirect HTTPRoute; ignore the field.
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: http-to-https-redirect
-      namespace: envoy-gateway-system
-      jsonPointers:
-        - /spec/hostnames

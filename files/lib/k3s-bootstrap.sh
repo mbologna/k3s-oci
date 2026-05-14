@@ -538,7 +538,10 @@ spec:
 EOF
 
   # Create (or update) the Grafana HTTPRoute in the monitoring namespace.
-  kubectl apply -f - <<EOF
+  # Use Server-Side Apply with a custom field manager so cloud-init "owns" the
+  # hostnames field. ArgoCD's SSA (field-manager=argocd-controller) applies
+  # grafana-ingress.yaml without spec.hostnames → it won't own or clear this field.
+  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -557,26 +560,10 @@ spec:
           port: 80
 EOF
 
-  # Patch the HTTP->HTTPS redirect HTTPRoute to include this hostname.
-  # Wait for the HTTPRoute to exist first.
-  local rt_attempts=0
-  until kubectl get httproute http-to-https-redirect -n envoy-gateway-system &>/dev/null; do
-    rt_attempts=$((rt_attempts + 1))
-    [[ ${rt_attempts} -ge 30 ]] && echo "Timeout waiting for http-to-https-redirect HTTPRoute" && return 1
-    sleep 10
-  done
-
-  # Add hostname to redirect route if not already present (idempotent).
-  kubectl get httproute http-to-https-redirect -n envoy-gateway-system -o json \
-    | python3 -c "
-import sys, json
-rt = json.load(sys.stdin)
-hostnames = rt['spec'].get('hostnames', [])
-if '${GRAFANA_HOSTNAME}' not in hostnames:
-    hostnames.append('${GRAFANA_HOSTNAME}')
-rt['spec']['hostnames'] = hostnames
-print(json.dumps(rt))
-" | kubectl apply -f -
+  # The HTTP->HTTPS redirect HTTPRoute (gitops/gateway/redirect.yaml) intentionally
+  # has no hostnames and matches ALL HTTP traffic. The ACME challenge HTTPRoute
+  # (created by cert-manager) has a more specific hostname+path match and takes
+  # precedence. No patching of the redirect route is needed.
 
   echo "Grafana ingress configured: https://${GRAFANA_HOSTNAME}"
 }
