@@ -37,6 +37,13 @@ locals {
     addr.ip_address if addr.is_public == true
   ]
 
+  # Grafana hostname: user-supplied or derived from NLB IP via sslip.io.
+  # Cloud-init uses this to create the Gateway listener, Certificate, and HTTPRoute
+  # so that gitops/ manifests remain IP-independent across redeployments.
+  grafana_hostname = var.grafana_hostname != null ? var.grafana_hostname : (
+    length(local.public_lb_ip) > 0 ? "grafana.${local.public_lb_ip[0]}.sslip.io" : ""
+  )
+
   # Shared cloud-init vars passed to both server and agent template files.
   # Server-specific vars are merged on top in data.tf.
   k3s_common_cloud_init_vars = {

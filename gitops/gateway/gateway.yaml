@@ -29,36 +29,17 @@ spec:
           from: All
 
     # ── HTTPS listeners — one per hostname ────────────────────────────────────
-    # cert-manager must provision the TLS secret in envoy-gateway-system first.
-
-    - name: https-grafana
-      port: 443
-      protocol: HTTPS
-      hostname: "grafana.129.146.7.252.sslip.io"
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: grafana-tls
-      allowedRoutes:
-        namespaces:
-          from: All
-
-    # - name: https-argocd
-    #   port: 443
-    #   protocol: HTTPS
-    #   hostname: "argocd.example.com"
-    #   tls:
-    #     mode: Terminate
-    #     certificateRefs:
-    #       - name: argocd-server-tls
-    #   allowedRoutes:
-    #     namespaces:
-    #       from: All
+    # Hostname-specific HTTPS listeners are added by cloud-init at bootstrap time
+    # using the GRAFANA_HOSTNAME variable (NLB-IP-derived sslip.io or custom domain).
+    # ArgoCD gateway-config ignores differences in spec.listeners so these survive
+    # GitOps reconciliation. Do NOT add hardcoded hostname entries here.
+    #
+    # Example listeners (managed by cloud-init, shown for reference only):
     #
     # - name: https-grafana
     #   port: 443
     #   protocol: HTTPS
-    #   hostname: "grafana.example.com"
+    #   hostname: "grafana.<nlb-ip>.sslip.io"   # set by cloud-init
     #   tls:
     #     mode: Terminate
     #     certificateRefs:
@@ -67,14 +48,14 @@ spec:
     #     namespaces:
     #       from: All
     #
-    # - name: https-longhorn
+    # - name: https-argocd
     #   port: 443
     #   protocol: HTTPS
-    #   hostname: "longhorn.example.com"
+    #   hostname: "argocd.example.com"
     #   tls:
     #     mode: Terminate
     #     certificateRefs:
-    #       - name: longhorn-frontend-tls
+    #       - name: argocd-server-tls
     #   allowedRoutes:
     #     namespaces:
     #       from: All

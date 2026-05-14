@@ -93,6 +93,7 @@ data "cloudinit_config" "k3s_server" {
         mysql_admin_password              = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
         dockerhub_username                = var.dockerhub_username
         dockerhub_password                = var.dockerhub_password
+        grafana_hostname                  = local.grafana_hostname
       })),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-bootstrap.sh"),

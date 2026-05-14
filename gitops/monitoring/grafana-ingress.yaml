@@ -1,6 +1,13 @@
 ---
 # Grafana HTTPRoute via Envoy Gateway
 #
+# The hostname and the TLS Certificate are created by cloud-init using the
+# GRAFANA_HOSTNAME variable (derived from the NLB IP or var.grafana_hostname).
+# This file intentionally omits the hostname so it is IP-independent.
+# cloud-init applies the correct hostname-specific HTTPRoute and Certificate
+# after ArgoCD has deployed the Gateway. ArgoCD monitoring-extras ignores
+# differences in the hostnames field so GitOps reconciliation is stable.
+#
 # Grafana admin credentials: terraform output -raw grafana_admin_credentials
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -12,23 +19,8 @@ spec:
     - name: eg
       namespace: envoy-gateway-system
       sectionName: https-grafana
-  hostnames:
-    - "grafana.129.146.7.252.sslip.io"
+  # hostname set by cloud-init configure_grafana_ingress() -- not committed here
   rules:
     - backendRefs:
         - name: kube-prometheus-stack-grafana
           port: 80
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: grafana-tls
-  # TLS secret lives in the Gateway namespace so no ReferenceGrant is needed.
-  namespace: envoy-gateway-system
-spec:
-  secretName: grafana-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - "grafana.129.146.7.252.sslip.io"

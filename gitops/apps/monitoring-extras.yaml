@@ -33,3 +33,11 @@ spec:
         - .spec.rules[].backendRefs[].kind
         - .spec.rules[].backendRefs[].weight
         - .spec.rules[].matches
+    # cloud-init patches the hostnames field on the Grafana HTTPRoute (NLB-IP-specific).
+    # Ignore it so ArgoCD does not revert to the hostname-less gitops version.
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: grafana
+      namespace: monitoring
+      jsonPointers:
+        - /spec/hostnames

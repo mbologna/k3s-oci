@@ -482,6 +482,105 @@ EOF
     echo "optional-external-secrets ArgoCD Application created."
   fi
 }
+# -- Grafana ingress (hostname-specific, created outside gitops/) ---------------
+# The Gateway listener, TLS Certificate, and Grafana HTTPRoute are IP-specific
+# (hostname includes the NLB IP). They are created here so that gitops/ files
+# remain IP-independent across redeployments. ArgoCD gateway-config is configured
+# to ignore differences in Gateway spec.listeners so these survive reconciliation.
+
+configure_grafana_ingress() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  [[ -z "${GRAFANA_HOSTNAME}" ]] && return 0
+
+  echo "Configuring Grafana ingress for ${GRAFANA_HOSTNAME}..."
+
+  # Wait for the Gateway to exist (ArgoCD syncs gateway-config after install_argocd).
+  local attempts=0
+  until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
+    attempts=$((attempts + 1))
+    [[ ${attempts} -ge 60 ]] && echo "Timeout waiting for Gateway eg" && return 1
+    echo "  waiting for Gateway eg... (${attempts}/60)"
+    sleep 10
+  done
+
+  # Patch Gateway: add the https-grafana listener (idempotent -- remove first if present).
+  kubectl get gateway eg -n envoy-gateway-system -o json \
+    | python3 -c "
+import sys, json
+gw = json.load(sys.stdin)
+listeners = [l for l in gw['spec'].get('listeners', []) if l.get('name') != 'https-grafana']
+listeners.append({
+  'name': 'https-grafana',
+  'port': 443,
+  'protocol': 'HTTPS',
+  'hostname': '${GRAFANA_HOSTNAME}',
+  'tls': {'mode': 'Terminate', 'certificateRefs': [{'name': 'grafana-tls'}]},
+  'allowedRoutes': {'namespaces': {'from': 'All'}}
+})
+gw['spec']['listeners'] = listeners
+print(json.dumps(gw))
+" | kubectl apply -f -
+
+  # Create (or update) the TLS Certificate.
+  kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: grafana-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "${GRAFANA_HOSTNAME}"
+EOF
+
+  # Create (or update) the Grafana HTTPRoute in the monitoring namespace.
+  kubectl apply -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: https-grafana
+  hostnames:
+    - "${GRAFANA_HOSTNAME}"
+  rules:
+    - backendRefs:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+EOF
+
+  # Patch the HTTP->HTTPS redirect HTTPRoute to include this hostname.
+  # Wait for the HTTPRoute to exist first.
+  local rt_attempts=0
+  until kubectl get httproute http-to-https-redirect -n envoy-gateway-system &>/dev/null; do
+    rt_attempts=$((rt_attempts + 1))
+    [[ ${rt_attempts} -ge 30 ]] && echo "Timeout waiting for http-to-https-redirect HTTPRoute" && return 1
+    sleep 10
+  done
+
+  # Add hostname to redirect route if not already present (idempotent).
+  kubectl get httproute http-to-https-redirect -n envoy-gateway-system -o json \
+    | python3 -c "
+import sys, json
+rt = json.load(sys.stdin)
+hostnames = rt['spec'].get('hostnames', [])
+if '${GRAFANA_HOSTNAME}' not in hostnames:
+    hostnames.append('${GRAFANA_HOSTNAME}')
+rt['spec']['hostnames'] = hostnames
+print(json.dumps(rt))
+" | kubectl apply -f -
+
+  echo "Grafana ingress configured: https://${GRAFANA_HOSTNAME}"
+}
+
 # Called by k3s-server.sh after cluster is Ready and taints are removed.
 
 run_bootstrap() {
@@ -492,5 +591,6 @@ run_bootstrap() {
   install_argocd
   create_dockerhub_secret
   create_optional_apps
+  configure_grafana_ingress
   echo "==> Bootstrap complete. ArgoCD will reconcile remaining stack via gitops/."
 }

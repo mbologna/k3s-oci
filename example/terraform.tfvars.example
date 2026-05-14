@@ -65,7 +65,7 @@ k3s_standalone_worker = true
 # expose_ssh     = false             # Expose SSH via public NLB (restricted to my_public_ip_cidr); see ssh_command output
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
-# enable_bastion              = true   # OCI Bastion Service (managed SSH proxy, no VM/storage cost)
+# enable_bastion              = false  # OCI Bastion Service — redundant when expose_ssh=true (NLB SSH is simpler)
 # enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
 # enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
 # enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
