@@ -197,6 +197,7 @@ terraform-docs .
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
   the security boundary at the hypervisor level, independent of the OS firewall.
 - **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the three cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
+- **Vault and key have `prevent_destroy = true`** — OCI DEFAULT vaults have a low per-tenancy limit and take a minimum of 7 days to fully delete (the `PENDING_DELETION` state counts against quota). `prevent_destroy` keeps the vault alive across `tofu destroy`/`tofu apply` cycles. If you genuinely need to delete the vault, remove the `lifecycle` block or run `tofu state rm` first.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
