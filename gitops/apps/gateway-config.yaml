@@ -20,6 +20,9 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+      # Prevent ArgoCD from overwriting fields listed in ignoreDifferences during sync.
+      # Requires ArgoCD 2.10+ (installed via bootstrap, Renovate-managed version).
+      - RespectIgnoreDifferences=true
   ignoreDifferences:
     # Gateway API defaults group/kind on parentRefs/backendRefs at server side.
     - group: gateway.networking.k8s.io
