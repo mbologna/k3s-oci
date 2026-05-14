@@ -31,3 +31,17 @@ spec:
         - .spec.rules[].backendRefs[].kind
         - .spec.rules[].backendRefs[].weight
         - .spec.rules[].matches
+    # cloud-init adds hostname-specific HTTPS listeners (e.g. https-grafana) to
+    # the Gateway after ArgoCD deploys it. Ignore spec.listeners so ArgoCD does
+    # not remove them on reconciliation.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      jsonPointers:
+        - /spec/listeners
+    # cloud-init patches hostnames on the redirect HTTPRoute; ignore the field.
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: http-to-https-redirect
+      namespace: envoy-gateway-system
+      jsonPointers:
+        - /spec/hostnames

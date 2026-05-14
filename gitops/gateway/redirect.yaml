@@ -20,14 +20,13 @@ spec:
     - name: eg
       namespace: envoy-gateway-system
       sectionName: http
-  # List only hostnames that have a corresponding HTTPS listener in gateway.yaml.
-  # Gateway API treats an absent or empty hostnames list as "match all", so a
-  # placeholder is used to disable the redirect until real hostnames are added.
-  # Replace with actual hostnames, e.g.:
-  #   - "argocd.example.com"
-  #   - "grafana.example.com"
-  hostnames:
-    - "grafana.129.146.7.252.sslip.io"
+  # Hostnames are added by cloud-init at bootstrap time for each configured HTTPS
+  # service (e.g. grafana.<nlb-ip>.sslip.io). An empty list would match ALL
+  # hostnames; a placeholder prevents redirecting unknown hosts until a listener
+  # is explicitly configured.
+  # cloud-init patches this list via kubectl after ArgoCD deploys it.
+  # ArgoCD monitoring-extras ignoreDifferences covers the hostnames field.
+  hostnames: []
   rules:
     - filters:
         - type: RequestRedirect

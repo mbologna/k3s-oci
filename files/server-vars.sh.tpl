@@ -43,6 +43,11 @@ export CERTMANAGER_EMAIL="${certmanager_email_address}"
 export ARGOCD_CHART_VERSION="${argocd_chart_version}"
 export EXTERNAL_SECRETS_CHART_VERSION="${external_secrets_chart_version}"
 
+# -- Cluster services -----------------------------------------------------------
+# Grafana ingress: cloud-init creates the Gateway listener, TLS cert, and HTTPRoute
+# so that gitops/ files are IP-independent. Empty = skip Grafana HTTPS setup.
+export GRAFANA_HOSTNAME="${grafana_hostname}"
+
 # -- Optional integrations -----------------------------------------------------
 export LONGHORN_UI_USERNAME="${longhorn_ui_username}"
 export NOTIFICATION_TOPIC_ENDPOINT="${notification_topic_endpoint}"
