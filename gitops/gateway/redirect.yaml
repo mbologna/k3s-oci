@@ -27,7 +27,7 @@ spec:
   #   - "argocd.example.com"
   #   - "grafana.example.com"
   hostnames:
-    - "grafana.129.146.2.130.sslip.io"
+    - "grafana.129.146.7.252.sslip.io"
   rules:
     - filters:
         - type: RequestRedirect
