@@ -27,7 +27,6 @@ spec:
   #   - "argocd.example.com"
   #   - "grafana.example.com"
   hostnames:
-    - "hello-web.129.146.2.130.sslip.io"
     - "grafana.129.146.2.130.sslip.io"
   rules:
     - filters:

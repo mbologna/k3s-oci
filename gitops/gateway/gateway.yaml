@@ -31,18 +31,6 @@ spec:
     # ── HTTPS listeners — one per hostname ────────────────────────────────────
     # cert-manager must provision the TLS secret in envoy-gateway-system first.
 
-    - name: https-hello-web
-      port: 443
-      protocol: HTTPS
-      hostname: "hello-web.129.146.2.130.sslip.io"
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: hello-web-tls
-      allowedRoutes:
-        namespaces:
-          from: All
-
     - name: https-grafana
       port: 443
       protocol: HTTPS
