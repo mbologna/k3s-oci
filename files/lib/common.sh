@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# lib/common.sh — shared OS bootstrap functions for k3s server and agent nodes.
-# Pure bash — no Terraform interpolation. Sourced by prepending to cloud-init scripts.
+# lib/common.sh -- shared OS bootstrap functions for k3s server and agent nodes.
+# Pure bash -- no Terraform interpolation. Sourced by prepending to cloud-init scripts.
 # Variables (K3S_VERSION, VAULT_SECRET_ID_K3S_TOKEN, etc.) are exported by
 # the Terraform-rendered vars header (server-vars.sh.tpl / agent-vars.sh.tpl).
 # shellcheck disable=SC2154
 
-# ── OS bootstrap ──────────────────────────────────────────────────────────────
+# -- OS bootstrap --------------------------------------------------------------
 
 # Wait for apt/dpkg locks so our apt calls never race with apt-daily or
 # unattended-upgrades that Ubuntu starts automatically on first boot.
@@ -24,7 +24,7 @@ wait_apt_lock() {
     sleep 5
     (( waited += 5 ))
     if (( waited >= 300 )); then
-      echo "Apt lock held for 5 minutes — killing apt-daily and continuing."
+      echo "Apt lock held for 5 minutes -- killing apt-daily and continuing."
       systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
       sleep 3
       break
@@ -71,7 +71,7 @@ bootstrap() {
   systemctl restart systemd-journald
 }
 
-# ── Unattended upgrades ───────────────────────────────────────────────────────
+# -- Unattended upgrades -------------------------------------------------------
 
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
@@ -93,7 +93,7 @@ Unattended-Upgrade::DevRelease "false";
 Unattended-Upgrade::AutoFixInterruptedDpkg "true";
 Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
-// kured handles reboots — never auto-reboot here
+// kured handles reboots -- never auto-reboot here
 Unattended-Upgrade::Automatic-Reboot "false";
 UUEOF
 
@@ -107,14 +107,14 @@ UUEOF
   # needrestart: automatically restart affected userspace services after package
   # updates (mode 'a' = automatic). CVE patches take effect immediately for
   # running daemons without waiting for the kured reboot window.
-  # k3s is excluded — its lifecycle is managed by the cluster upgrade controller.
+  # k3s is excluded -- its lifecycle is managed by the cluster upgrade controller.
   mkdir -p /etc/needrestart/conf.d
   cat > /etc/needrestart/conf.d/99-k3s.conf << 'NREOF'
 $nrconf{restart} = 'a';
 $nrconf{blacklist_rc} = [qr(^k3s)];
 NREOF
 
-  # Security-only origins — used by apt-security-upgrade.timer (daily).
+  # Security-only origins -- used by apt-security-upgrade.timer (daily).
   # Non-security origins are handled by apt-daily-upgrade (Tue/Wed/Thu).
   cat > /etc/apt/apt.conf.d/52security-only.conf << 'SECEOF'
 Unattended-Upgrade::Allowed-Origins {
@@ -124,7 +124,7 @@ Unattended-Upgrade::Allowed-Origins {
 };
 SECEOF
 
-  # Daily security-only upgrade service + timer at 00:30 UTC (±30 min jitter).
+  # Daily security-only upgrade service + timer at 00:30 UTC (+/-30 min jitter).
   cat > /etc/systemd/system/apt-security-upgrade.service << 'SVCEOF'
 [Unit]
 Description=Daily security-only unattended upgrades
@@ -149,7 +149,7 @@ Persistent=true
 WantedBy=timers.target
 TMREOF
 
-  # Non-security upgrades: Tue/Wed/Thu at 01:00 UTC (±10 min jitter).
+  # Non-security upgrades: Tue/Wed/Thu at 01:00 UTC (+/-10 min jitter).
   mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
   cat > /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf << 'TIMEREOF'
 [Timer]
@@ -166,14 +166,14 @@ TIMEREOF
   systemctl enable --now unattended-upgrades
 }
 
-# ── Longhorn prerequisites ────────────────────────────────────────────────────
+# -- Longhorn prerequisites ----------------------------------------------------
 
 configure_longhorn_prereqs() {
   systemctl enable --now iscsid.service
   modprobe nfs || true
 }
 
-# ── OCI CLI ───────────────────────────────────────────────────────────────────
+# -- OCI CLI -------------------------------------------------------------------
 # Always installed on server nodes (required for first-server election via
 # instance_principal auth). Installed on agent nodes only when Vault is enabled.
 
@@ -201,14 +201,14 @@ with open(rc, 'w') as f:
 RCEOF
 }
 
-# ── Helm ──────────────────────────────────────────────────────────────────────
+# -- Helm ----------------------------------------------------------------------
 
 install_helm() {
   command -v helm &>/dev/null && return 0
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 }
 
-# ── Network helpers ───────────────────────────────────────────────────────────
+# -- Network helpers -----------------------------------------------------------
 # Resolve node IP and flannel interface from K3S_SUBNET when a specific subnet
 # CIDR is provided. Sets LOCAL_IP and FLANNEL_IFACE in the caller's scope.
 # Used by both server and agent install functions.

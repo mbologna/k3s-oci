@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# lib/k3s-server.sh — k3s control-plane install, first-server election, and main
-# entry point for server nodes. Pure bash — no Terraform interpolation.
+# lib/k3s-server.sh -- k3s control-plane install, first-server election, and main
+# entry point for server nodes. Pure bash -- no Terraform interpolation.
 # Variables are exported by server-vars.sh.tpl (prepended by data.tf).
 # shellcheck disable=SC2154
 
-# ── Wait for kubeapi ──────────────────────────────────────────────────────────
+# -- Wait for kubeapi ----------------------------------------------------------
 
 wait_for_kubeapi() {
   local max_attempts=180 attempt=0
@@ -15,13 +15,13 @@ wait_for_kubeapi() {
       echo "ERROR: kubeapi not reachable after ${max_attempts} attempts."
       exit 1
     fi
-    echo "  attempt ${attempt}/${max_attempts} — sleeping 10s"
+    echo "  attempt ${attempt}/${max_attempts} -- sleeping 10s"
     sleep 10
   done
   echo "kubeapi is reachable."
 }
 
-# ── First-server election ─────────────────────────────────────────────────────
+# -- First-server election -----------------------------------------------------
 # Identifies the oldest running server in the cluster's instance pool via OCI
 # CLI + IMDSv2. The oldest node bootstraps etcd (--cluster-init); all others join.
 #
@@ -39,7 +39,7 @@ detect_first_server() {
     -H "Authorization: Bearer Oracle" \
     http://169.254.169.254/opc/v2/instance | jq -r '.displayName')
 
-  # Find the server pool by cluster tags — pool membership only includes current
+  # Find the server pool by cluster tags -- pool membership only includes current
   # members, so replaced/stale instances from previous applies are excluded.
   pool_id=$(oci compute-management instance-pool list \
     --compartment-id "${COMPARTMENT_OCID}" \
@@ -95,7 +95,7 @@ detect_first_server() {
   echo "Instance: ${instance_display_name}  First: ${IS_FIRST_SERVER}"
 }
 
-# ── k3s server install ────────────────────────────────────────────────────────
+# -- k3s server install --------------------------------------------------------
 
 install_k3s_server() {
   local install_params=("--tls-san" "${K3S_TLS_SAN}")
@@ -139,7 +139,7 @@ install_k3s_server() {
   fi
 }
 
-# ── Wait for cluster ready ────────────────────────────────────────────────────
+# -- Wait for cluster ready ----------------------------------------------------
 
 wait_for_cluster_ready() {
   local max=60 attempt=0
@@ -161,7 +161,7 @@ wait_for_cluster_ready() {
   echo "All nodes are Ready."
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 bootstrap
 configure_unattended_upgrades
@@ -186,7 +186,7 @@ install_k3s_server
 if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
   wait_for_cluster_ready
 
-  # Remove the control-plane and etcd NoSchedule taints that k3s ≥ 1.24 adds
+  # Remove the control-plane and etcd NoSchedule taints that k3s >= 1.24 adds
   # automatically to server nodes. With only one worker, keeping these taints
   # makes the worker a single-node SPOF for user workloads. All four A1.Flex
   # nodes are identically sized, so co-locating etcd and user workloads is safe.
@@ -194,7 +194,7 @@ if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     node-role.kubernetes.io/control-plane:NoSchedule- \
     node-role.kubernetes.io/etcd:NoSchedule- \
     2>/dev/null || true
-  echo "Control-plane NoSchedule taints removed — all 4 nodes schedulable."
+  echo "Control-plane NoSchedule taints removed -- all 4 nodes schedulable."
 
   # Source bootstrap functions (defined in k3s-bootstrap.sh, prepended by data.tf)
   export PATH="/root/bin:${PATH}"
