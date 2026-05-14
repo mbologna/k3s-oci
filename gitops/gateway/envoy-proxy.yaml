@@ -45,16 +45,3 @@ spec:
                   port: 443
                   protocol: TCP
                   nodePort: 30443
----
-# PodDisruptionBudget: kured/drain can only take down one proxy pod at a time
-# so 3 of 4 nodes always serve ingress during rolling maintenance.
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: envoy-gateway-pdb
-  namespace: envoy-gateway-system
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      gateway.envoyproxy.io/owning-gateway-name: eg
