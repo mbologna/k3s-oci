@@ -1,9 +1,6 @@
 ---
 # Grafana HTTPRoute via Envoy Gateway
 #
-# To enable: set grafana_hostname = "grafana.example.com" in terraform.tfvars
-# then update the hostname below to match before committing.
-#
 # Grafana admin credentials: terraform output -raw grafana_admin_credentials
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -14,11 +11,9 @@ spec:
   parentRefs:
     - name: eg
       namespace: envoy-gateway-system
-      # TODO: replace https-grafana with your actual HTTPS listener name
       sectionName: https-grafana
   hostnames:
-    # TODO: replace with your actual Grafana hostname
-    - "grafana.example.com"
+    - "grafana.129.146.26.162.sslip.io"
   rules:
     - backendRefs:
         - name: kube-prometheus-stack-grafana
@@ -36,5 +31,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    # TODO: replace with your actual Grafana hostname
-    - grafana.example.com
+    - "grafana.129.146.26.162.sslip.io"
