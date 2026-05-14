@@ -34,7 +34,7 @@ spec:
     - name: https-grafana
       port: 443
       protocol: HTTPS
-      hostname: "grafana.129.146.2.130.sslip.io"
+      hostname: "grafana.129.146.7.252.sslip.io"
       tls:
         mode: Terminate
         certificateRefs:

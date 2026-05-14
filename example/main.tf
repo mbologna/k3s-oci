@@ -414,6 +414,7 @@ output "k3s_standalone_worker_private_ip" { value = module.k3s_cluster.k3s_stand
 output "internal_lb_ip" { value = module.k3s_cluster.internal_lb_ip }
 output "public_nlb_ip" { value = module.k3s_cluster.public_nlb_ip }
 output "bastion_ocid" { value = module.k3s_cluster.bastion_ocid }
+output "ssh_command" { value = module.k3s_cluster.ssh_command }
 output "kubeconfig_hint" { value = module.k3s_cluster.kubeconfig_hint }
 output "argocd_initial_password_hint" { value = module.k3s_cluster.argocd_initial_password_hint }
 output "terraform_state_backend" { value = module.k3s_cluster.terraform_state_backend }
