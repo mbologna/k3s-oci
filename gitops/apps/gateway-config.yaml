@@ -21,12 +21,11 @@ spec:
     syncOptions:
       - CreateNamespace=false
       # Use Server-Side Apply so ArgoCD manages fields via SSA ownership instead of
-      # the last-applied-configuration annotation. This avoids resourceVersion:0 errors
-      # when RespectIgnoreDifferences=true strips spec.listeners from the apply payload.
+      # the last-applied-configuration annotation. With SSA, ArgoCD owns only the
+      # listeners it explicitly applies (the `http` listener from gateway.yaml).
+      # cloud-init-bootstrap owns the `https-grafana` listener; ArgoCD's SSA apply
+      # never touches it. ignoreDifferences below suppresses OutOfSync warnings.
       - ServerSideApply=true
-      # Prevent ArgoCD from overwriting fields listed in ignoreDifferences during sync.
-      # Requires ArgoCD 2.10+ (installed via bootstrap, Renovate-managed version).
-      - RespectIgnoreDifferences=true
   ignoreDifferences:
     # Gateway API defaults group/kind on parentRefs/backendRefs at server side.
     - group: gateway.networking.k8s.io
