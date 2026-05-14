@@ -14,4 +14,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - "hello-web.129.146.26.162.sslip.io"
+    - "hello-web.129.146.2.130.sslip.io"

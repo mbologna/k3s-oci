@@ -13,7 +13,7 @@ spec:
       namespace: envoy-gateway-system
       sectionName: https-grafana
   hostnames:
-    - "grafana.129.146.26.162.sslip.io"
+    - "grafana.129.146.2.130.sslip.io"
   rules:
     - backendRefs:
         - name: kube-prometheus-stack-grafana
@@ -31,4 +31,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - "grafana.129.146.26.162.sslip.io"
+    - "grafana.129.146.2.130.sslip.io"

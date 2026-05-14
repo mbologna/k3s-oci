@@ -34,7 +34,7 @@ spec:
     - name: https-hello-web
       port: 443
       protocol: HTTPS
-      hostname: "hello-web.129.146.26.162.sslip.io"
+      hostname: "hello-web.129.146.2.130.sslip.io"
       tls:
         mode: Terminate
         certificateRefs:
@@ -46,7 +46,7 @@ spec:
     - name: https-grafana
       port: 443
       protocol: HTTPS
-      hostname: "grafana.129.146.26.162.sslip.io"
+      hostname: "grafana.129.146.2.130.sslip.io"
       tls:
         mode: Terminate
         certificateRefs:
