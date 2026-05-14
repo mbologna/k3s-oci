@@ -185,3 +185,59 @@ resource "oci_network_load_balancer_backend" "k3s_kubeapi_public_servers" {
   port                     = var.kube_api_port
   target_id                = data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id
 }
+
+# ── SSH (optional) ────────────────────────────────────────────────────────────
+
+resource "oci_network_load_balancer_backend_set" "k3s_ssh" {
+  count = var.expose_ssh ? 1 : 0
+
+  name                     = "k3s-ssh-backend"
+  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
+  policy                   = "FIVE_TUPLE"
+  is_preserve_source       = true
+
+  health_checker {
+    protocol = "TCP"
+    port     = 22
+  }
+}
+
+resource "oci_network_load_balancer_listener" "k3s_ssh" {
+  count = var.expose_ssh ? 1 : 0
+
+  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
+  default_backend_set_name = oci_network_load_balancer_backend_set.k3s_ssh[0].name
+  name                     = "k3s-ssh-listener"
+  port                     = 22
+  protocol                 = "TCP"
+}
+
+resource "oci_network_load_balancer_backend" "k3s_ssh_standalone_worker" {
+  depends_on = [
+    oci_network_load_balancer_backend.k3s_kubeapi_public_servers,
+  ]
+
+  count = var.expose_ssh && var.k3s_standalone_worker ? 1 : 0
+
+  backend_set_name         = oci_network_load_balancer_backend_set.k3s_ssh[0].name
+  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
+  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, 22)
+  port                     = 22
+  target_id                = oci_core_instance.k3s_standalone_worker[0].id
+}
+
+resource "oci_network_load_balancer_backend" "k3s_ssh_servers" {
+  depends_on = [
+    oci_core_instance_pool.k3s_servers,
+    oci_network_load_balancer_backend.k3s_ssh_standalone_worker,
+    oci_network_load_balancer_backend.k3s_kubeapi_public_servers,
+  ]
+
+  count = var.expose_ssh ? var.k3s_server_pool_size : 0
+
+  backend_set_name         = oci_network_load_balancer_backend_set.k3s_ssh[0].name
+  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
+  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id, 22)
+  port                     = 22
+  target_id                = data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id
+}

@@ -67,6 +67,9 @@ locals {
     #   # Fetch kubeconfig through tunnel:
     #   ssh -p 22222 ubuntu@localhost "sudo cat /etc/rancher/k3s/k3s.yaml" \
     #     | sed 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|'
+    #
+    # Tip: add  expose_ssh = true  to terraform.tfvars for direct SSH without Bastion sessions.
+    # See the ssh_command output after tofu apply.
   EOT
 
   _kubeconfig_hint_no_bastion = <<-EOT

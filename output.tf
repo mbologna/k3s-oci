@@ -53,6 +53,11 @@ output "bastion_ocid" {
   value       = var.enable_bastion ? oci_bastion_bastion.k3s[0].id : null
 }
 
+output "ssh_command" {
+  description = "SSH command to connect to a cluster node via the public NLB (null if expose_ssh = false). Routes to any available server."
+  value       = var.expose_ssh ? "ssh -i ~/.ssh/id_rsa ubuntu@${try(local.public_lb_ip[0], "<public-nlb-ip>")}" : null
+}
+
 output "k3s_token" {
   description = "k3s cluster join token (sensitive)"
   value       = random_password.k3s_token.result

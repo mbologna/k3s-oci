@@ -28,8 +28,8 @@ environment   = "staging"
 # Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
 # os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
 
-# Your workstation IP — restricts OCI Bastion Service session creation (enable_bastion=true)
-# and kubeapi access (expose_kubeapi=true). Nodes are private; OCI Bastion is required for SSH.
+# Your workstation IP — restricts OCI Bastion Service session creation (enable_bastion=true),
+# kubeapi access (expose_kubeapi=true), and direct SSH access (expose_ssh=true).
 my_public_ip_cidr = "1.2.3.4/32"
 
 # cert-manager — must be a real email for Let's Encrypt
@@ -62,6 +62,7 @@ k3s_standalone_worker = true
 
 # ── Optional features ─────────────────────────────────────────────────────────
 # expose_kubeapi = false             # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
+# expose_ssh     = false             # Expose SSH via public NLB (restricted to my_public_ip_cidr); see ssh_command output
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
 # enable_bastion              = true   # OCI Bastion Service (managed SSH proxy, no VM/storage cost)
