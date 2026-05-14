@@ -28,6 +28,7 @@ spec:
   #   - "grafana.example.com"
   hostnames:
     - "hello-web.129.146.26.162.sslip.io"
+    - "grafana.129.146.26.162.sslip.io"
   rules:
     - filters:
         - type: RequestRedirect

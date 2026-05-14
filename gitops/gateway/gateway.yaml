@@ -43,6 +43,18 @@ spec:
         namespaces:
           from: All
 
+    - name: https-grafana
+      port: 443
+      protocol: HTTPS
+      hostname: "grafana.129.146.26.162.sslip.io"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: grafana-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+
     # - name: https-argocd
     #   port: 443
     #   protocol: HTTPS
