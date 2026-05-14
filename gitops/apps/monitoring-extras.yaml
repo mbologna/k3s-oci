@@ -21,3 +21,15 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true   # required for PrometheusRule CRDs
+  ignoreDifferences:
+    # Gateway API defaults group/kind on parentRefs at the server side.
+    # These fields are not in the source manifests, causing false OutOfSync.
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      jqPathExpressions:
+        - .spec.parentRefs[].group
+        - .spec.parentRefs[].kind
+        - .spec.rules[].backendRefs[].group
+        - .spec.rules[].backendRefs[].kind
+        - .spec.rules[].backendRefs[].weight
+        - .spec.rules[].matches
