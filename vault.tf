@@ -10,6 +10,13 @@ resource "oci_kms_vault" "k3s" {
   display_name   = "${var.cluster_name}-vault"
   vault_type     = "DEFAULT"
   freeform_tags  = local.common_tags
+
+  # OCI DEFAULT vaults have a low tenancy limit and take 7+ days to fully delete
+  # (PENDING_DELETION state counts against quota). prevent_destroy keeps the vault
+  # alive across tofu destroy/apply cycles so it is never recreated unnecessarily.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "oci_kms_key" "k3s" {
@@ -25,6 +32,10 @@ resource "oci_kms_key" "k3s" {
 
   protection_mode = "SOFTWARE"
   freeform_tags   = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "oci_vault_secret" "k3s_token" {
