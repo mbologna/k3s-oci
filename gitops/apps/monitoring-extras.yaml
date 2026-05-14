@@ -34,8 +34,10 @@ spec:
         - .spec.rules[].backendRefs[].kind
         - .spec.rules[].backendRefs[].weight
         - .spec.rules[].matches
-    # cloud-init patches the hostnames field on the Grafana HTTPRoute (NLB-IP-specific).
-    # Ignore it so ArgoCD does not revert to the hostname-less gitops version.
+    # cloud-init uses SSA with field-manager=cloud-init-bootstrap to set spec.hostnames
+    # on the Grafana HTTPRoute. ArgoCD's SSA (argocd-controller) applies without this
+    # field, so it doesn't own or clear it. The ignoreDifferences below prevents ArgoCD
+    # from showing OutOfSync when it detects the cloud-init-owned hostname field.
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: grafana
