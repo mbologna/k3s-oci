@@ -206,6 +206,13 @@ terraform-docs .
 
 ## Special implementation notes
 
+### expose_ssh and expose_kubeapi (direct NLB access)
+
+- **`expose_ssh = true`** adds TCP:22 listener + backends to the public NLB and NSG rules allowing `my_public_ip_cidr` to SSH directly to nodes via the NLB IP (see `ssh_command` output).
+- **`expose_kubeapi = true`** adds TCP:6443 to the NLB for direct kubeapi access without a bastion.
+- When `expose_ssh = true`, OCI Bastion Service (`enable_bastion`) is redundant. Set `enable_bastion = false` to avoid the lingering-VNIC delay when destroying (OCI Bastion VNICs take 15-30 min to clean up internally after deletion, blocking subnet deletion).
+- NSG rules for NLB SSH/kubeapi traffic MUST use `source_type = "CIDR_BLOCK"` with `source = var.my_public_ip_cidr`, NOT `source_type = "NETWORK_SECURITY_GROUP"`. The NLB uses `is_preserve_source = true` so real client IPs arrive at node VNICs directly — NLB NSG rules only match health-check traffic.
+
 ### Envoy Gateway (Gateway API)
 
 - Deployed as a **DaemonSet** (one Envoy proxy pod per node) via the `EnvoyProxy` resource — every NLB backend serves ingress locally, no cross-node forwarding, no single-pod SPOF.
@@ -254,6 +261,7 @@ terraform-docs .
   - ArgoCD Helm + App of Apps bootstrap
   - External Secrets Operator Helm + ClusterSecretStore (conditional, vault_ocid is runtime)
   - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
+  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_grafana_ingress()` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
 - **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
   system-upgrade-controller, external-dns Helm — all in `gitops/apps/*.yaml`.
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
@@ -360,7 +368,32 @@ The public NLB uses `is_preserve_source = true` on all backend sets. This means 
 
 **HTTPRoute `hostnames: []` matches ALL requests**
 
-An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting the field — it matches every hostname. A catch-all redirect route that applies to ALL HTTP traffic will intercept ACME HTTP-01 challenge requests and break certificate issuance. Scope redirect routes to explicit hostnames. See `gitops/gateway/redirect.yaml`.
+An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting the field — it matches every hostname. An HTTP-to-HTTPS redirect route with no (or empty) `hostnames` redirects ALL HTTP traffic. cert-manager's ACME HTTP-01 challenge HTTPRoute (created automatically by cert-manager) has a more specific hostname+path match and takes precedence — so the match-all redirect is safe. `gitops/gateway/redirect.yaml` intentionally omits `hostnames` for exactly this reason. Do NOT add explicit hostnames to the redirect route — the route would break for any hostname not listed.
+
+**Hostname-specific HTTPS resources are managed by cloud-init, not gitops/**
+
+NLB IP changes on every redeploy. Hardcoding sslip.io addresses in `gitops/` breaks GitOps: every redeploy requires manual file edits. The design:
+- `local.grafana_hostname` in `locals.tf` auto-computes `grafana.<nlb-ip>.sslip.io` (or uses `var.grafana_hostname` if set).
+- `files/server-vars.sh.tpl` exports `GRAFANA_HOSTNAME`.
+- `files/lib/k3s-bootstrap.sh:configure_grafana_ingress()` runs after ArgoCD is installed and creates:
+  - The `https-grafana` Gateway listener (SSA, field-manager=cloud-init-bootstrap)
+  - The `grafana-tls` Certificate in `envoy-gateway-system`
+  - The `grafana` HTTPRoute in `monitoring` (SSA, field-manager=cloud-init-bootstrap)
+- `gitops/gateway/gateway.yaml` has ONLY the `http` listener (ArgoCD owns it via SSA).
+- `gitops/monitoring/grafana-ingress.yaml` has the Grafana HTTPRoute WITHOUT `hostnames` (ArgoCD owns all fields except `spec.hostnames`, which cloud-init-bootstrap owns).
+
+**SSA field-manager ownership prevents ArgoCD from clearing cloud-init patches**
+
+Gateway API's `spec.listeners` is a `x-kubernetes-list-map-keys: [name]` list — SSA treats it as a named map and merges by the `name` key. Each SSA manager owns the entries it applied:
+- `argocd-controller` owns `spec.listeners[name=http]` (applied from gateway.yaml)
+- `cloud-init-bootstrap` owns `spec.listeners[name=https-grafana]` (applied by configure_grafana_ingress)
+When ArgoCD syncs gateway.yaml (without `https-grafana`), it only owns `http` and never touches `https-grafana`. The `ignoreDifferences: /spec/listeners` in gateway-config ArgoCD Application suppresses OutOfSync warnings.
+
+Similarly, `spec.hostnames` in the Grafana HTTPRoute is owned by `cloud-init-bootstrap` (via `kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts`). ArgoCD's SSA apply (without `hostnames` in the manifest) doesn't claim or clear the field.
+
+**Do NOT use CSA (kubectl apply without --server-side) to patch ArgoCD-managed resources.** CSA sets the `kubectl.kubernetes.io/last-applied-configuration` annotation, which confuses ArgoCD's 3-way merge on the next sync. Always use SSA with a custom field-manager for cloud-init patches to ArgoCD-managed resources.
+
+**gateway-config MUST use ServerSideApply=true** to avoid `resourceVersion: 0` errors. Without SSA, ArgoCD's CSA apply with `RespectIgnoreDifferences` strips `spec.listeners` from the patch payload, causing a malformed UPDATE request to fail validation.
 
 ### DNS-01 ACME challenge (`enable_dns01_challenge`)
 - Controlled by `enable_dns01_challenge` variable (default: `false`). Requires `cloudflare_api_token`.
