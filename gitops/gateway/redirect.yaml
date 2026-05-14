@@ -1,10 +1,11 @@
 ---
-# HTTP → HTTPS redirect: redirects plain HTTP to HTTPS for the listed hostnames.
+# HTTP → HTTPS redirect: redirects plain HTTP to HTTPS for all configured HTTPS hostnames.
 # Attached to the Gateway's `http` (port 80) listener.
 #
-# Add each hostname to the `hostnames` list below as you configure HTTPS listeners
-# in gateway.yaml and cert-manager Certificates. Without a matching hostname in
-# this list, HTTP traffic for that host passes through to its HTTPRoute directly.
+# The `hostnames` field is intentionally omitted here — cloud-init adds the correct
+# hostname (e.g. grafana.<nlb-ip>.sslip.io) via kubectl patch at bootstrap time.
+# ArgoCD gateway-config has RespectIgnoreDifferences=true + ignoreDifferences on
+# http-to-https-redirect /spec/hostnames so the cloud-init patch is preserved.
 #
 # Priority note: cert-manager HTTP-01 ACME challenges use a separate HTTPRoute
 # with a more specific path match (/.well-known/acme-challenge/…) that takes
@@ -20,13 +21,6 @@ spec:
     - name: eg
       namespace: envoy-gateway-system
       sectionName: http
-  # Hostnames are added by cloud-init at bootstrap time for each configured HTTPS
-  # service (e.g. grafana.<nlb-ip>.sslip.io). An empty list would match ALL
-  # hostnames; a placeholder prevents redirecting unknown hosts until a listener
-  # is explicitly configured.
-  # cloud-init patches this list via kubectl after ArgoCD deploys it.
-  # ArgoCD monitoring-extras ignoreDifferences covers the hostnames field.
-  hostnames: []
   rules:
     - filters:
         - type: RequestRedirect
