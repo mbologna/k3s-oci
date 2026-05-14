@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# lib/k3s-bootstrap.sh — first-server stack bootstrap: secrets pre-creation,
+# lib/k3s-bootstrap.sh -- first-server stack bootstrap: secrets pre-creation,
 # Gateway API CRDs, cert-manager + ClusterIssuers, External Secrets, ArgoCD.
 # Called by k3s-server.sh via run_bootstrap() after the cluster is Ready.
-# Pure bash — no Terraform interpolation.
+# Pure bash -- no Terraform interpolation.
 #
 # What is NOT here (managed by ArgoCD via gitops/apps/):
-#   - Envoy Gateway Helm install  → gitops/apps/envoy-gateway.yaml
+#   - Envoy Gateway Helm install  -> gitops/apps/envoy-gateway.yaml
 #   - Gateway resources (EnvoyProxy, GatewayClass, Gateway, redirect, TLS policy)
-#                                 → gitops/gateway/
-#   - Longhorn Helm install       → gitops/apps/longhorn.yaml
-#   - kured Helm install          → gitops/apps/kured.yaml
-#   - system-upgrade-controller   → gitops/apps/system-upgrade-controller.yaml
-#   - external-dns Helm install   → gitops/apps/external-dns.yaml
+#                                 -> gitops/gateway/
+#   - Longhorn Helm install       -> gitops/apps/longhorn.yaml
+#   - kured Helm install          -> gitops/apps/kured.yaml
+#   - system-upgrade-controller   -> gitops/apps/system-upgrade-controller.yaml
+#   - external-dns Helm install   -> gitops/apps/external-dns.yaml
 #
 # shellcheck disable=SC2154
 
-# ── Gateway API CRDs ──────────────────────────────────────────────────────────
+# -- Gateway API CRDs ----------------------------------------------------------
 # Install before ArgoCD syncs envoy-gateway and gateway-config apps.
 # The Envoy Gateway Helm chart does not bundle these upstream CRDs.
 
@@ -28,7 +28,7 @@ install_gateway_api_crds() {
   echo "Gateway API CRDs ${GATEWAY_API_VERSION} (experimental channel) installed."
 }
 
-# ── Pre-create runtime Kubernetes Secrets ─────────────────────────────────────
+# -- Pre-create runtime Kubernetes Secrets -------------------------------------
 # These secrets contain values generated or resolved at Terraform apply time
 # (random passwords, Vault-fetched secrets, runtime endpoints). They must exist
 # before the ArgoCD apps that reference them sync.
@@ -55,7 +55,7 @@ pre_create_secrets() {
     GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_PLAIN}"
   fi
 
-  # Longhorn BasicAuth — htpasswd hash generated here because openssl apr1 hashing
+  # Longhorn BasicAuth -- htpasswd hash generated here because openssl apr1 hashing
   # is not possible inside static gitops YAML. Secret is referenced by
   # gitops/longhorn/ingress.yaml (user-configured HTTPRoute + SecurityPolicy).
   local longhorn_hash
@@ -73,7 +73,7 @@ stringData:
 EOF
   echo "Longhorn BasicAuth secret created."
 
-  # Grafana admin secret — referenced by kube-prometheus-stack ArgoCD app
+  # Grafana admin secret -- referenced by kube-prometheus-stack ArgoCD app
   kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -n monitoring -f - <<EOF
 apiVersion: v1
@@ -88,7 +88,7 @@ stringData:
 EOF
   echo "Grafana admin secret pre-created in monitoring namespace."
 
-  # Alertmanager config — always created so kube-prometheus-stack can reference
+  # Alertmanager config -- always created so kube-prometheus-stack can reference
   # it via alertmanagerSpec.configSecret. Null receiver when OCI Notifications is
   # disabled; OCI webhook receiver when enabled.
   if [[ -n "${NOTIFICATION_TOPIC_ENDPOINT}" ]]; then
@@ -139,7 +139,7 @@ EOF
   fi
   echo "Alertmanager config secret created."
 
-  # MySQL credentials — pre-created so apps can mount this secret on first deploy
+  # MySQL credentials -- pre-created so apps can mount this secret on first deploy
   if [[ -n "${MYSQL_ENDPOINT}" ]]; then
     kubectl apply -n default -f - <<EOF
 apiVersion: v1
@@ -157,7 +157,7 @@ EOF
     echo "MySQL credentials secret created (host: ${MYSQL_ENDPOINT})."
   fi
 
-  # Cloudflare credentials for external-dns — pre-created so the ArgoCD
+  # Cloudflare credentials for external-dns -- pre-created so the ArgoCD
   # external-dns app (gitops/apps/external-dns.yaml) starts reconciling immediately.
   if [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]]; then
     kubectl create namespace external-dns --dry-run=client -o yaml | kubectl apply -f -
@@ -175,7 +175,7 @@ EOF
   fi
 }
 
-# ── cert-manager ──────────────────────────────────────────────────────────────
+# -- cert-manager --------------------------------------------------------------
 # Installed at bootstrap (not via ArgoCD) so ClusterIssuers with the real
 # Let's Encrypt email address exist before ArgoCD syncs cert-manager.
 # ArgoCD adopts the Helm release once the cert-manager app syncs.
@@ -195,7 +195,7 @@ install_certmanager() {
     --atomic --wait --timeout 5m
 
   if [[ "${ENABLE_DNS01_CHALLENGE}" == "true" ]]; then
-    # DNS-01 challenge via Cloudflare — supports wildcard certs, no inbound port 80 required.
+    # DNS-01 challenge via Cloudflare -- supports wildcard certs, no inbound port 80 required.
     kubectl apply -n cert-manager -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -245,7 +245,7 @@ spec:
               key: api-token
 EOF
   else
-    # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) — no Ingress controller needed.
+    # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) -- no Ingress controller needed.
     # Bootstrap ClusterIssuers with the correct email address.
     # Adoptable by ArgoCD via gitops/cert-manager/ (update email in cluster-issuers.yaml first).
     kubectl apply -f - <<EOF
@@ -293,7 +293,7 @@ EOF
   echo "See gitops/cert-manager/ to adopt ClusterIssuers into ArgoCD."
 }
 
-# ── External Secrets Operator ─────────────────────────────────────────────────
+# -- External Secrets Operator -------------------------------------------------
 # Installed at bootstrap so the CRD exists before ArgoCD creates ExternalSecret
 # resources. Bootstrap also creates the ClusterSecretStore pointing to OCI Vault.
 # ArgoCD adopts the Helm release once the external-secrets app syncs.
@@ -330,7 +330,7 @@ EOF
   echo "See gitops/external-secrets/ for ExternalSecret examples."
 }
 
-# ── ArgoCD + App of Apps ──────────────────────────────────────────────────────
+# -- ArgoCD + App of Apps ------------------------------------------------------
 # Installs ArgoCD via Helm then bootstraps the App of Apps so ArgoCD
 # self-manages all of gitops/ going forward.
 
@@ -377,7 +377,7 @@ EOF
   echo "ArgoCD ${ARGOCD_CHART_VERSION} installed. App of Apps bootstrapped from ${GITOPS_REPO_URL}."
 }
 
-# ── DockerHub OCI Helm registry credentials ───────────────────────────────────
+# -- DockerHub OCI Helm registry credentials -----------------------------------
 # Envoy Gateway chart is hosted on registry-1.docker.io. Anonymous Docker Hub
 # pulls are rate-limited; authenticated pulls avoid 401/429 errors in ArgoCD.
 # Only created when DOCKERHUB_USERNAME is non-empty.
@@ -405,12 +405,12 @@ EOF
   echo "DockerHub ArgoCD repo credentials created."
 }
 
-# ── Optional ArgoCD Applications ──────────────────────────────────────────────
+# -- Optional ArgoCD Applications ----------------------------------------------
 # Optional apps live in gitops/optional/ (outside the main app-of-apps scope).
 # Cloud-init creates thin wrapper ArgoCD Applications here so that ArgoCD
 # only deploys an optional component when its feature flag is enabled.
 # Each wrapper points to a single file in gitops/optional/ via directory.include,
-# which ArgoCD then applies — creating the actual ArgoCD Application for the
+# which ArgoCD then applies -- creating the actual ArgoCD Application for the
 # Helm chart. This is the standard app-of-apps pattern, kept conditional.
 
 create_optional_apps() {

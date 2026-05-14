@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# lib/k3s-agent.sh — k3s worker node install. Pure bash — no Terraform interpolation.
+# lib/k3s-agent.sh -- k3s worker node install. Pure bash -- no Terraform interpolation.
 # Variables are exported by agent-vars.sh.tpl (prepended by data.tf).
 # shellcheck disable=SC2154
 
-# ── k3s agent install ─────────────────────────────────────────────────────────
+# -- k3s agent install ---------------------------------------------------------
 
 install_k3s_agent() {
   local install_params=()
@@ -34,7 +34,7 @@ install_k3s_agent() {
   done
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 bootstrap
 configure_unattended_upgrades

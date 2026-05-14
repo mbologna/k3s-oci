@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# agent-vars.sh.tpl — Terraform-rendered header for k3s agent cloud-init.
-# This is the ONLY file in files/ with Terraform interpolation — all other
+# agent-vars.sh.tpl -- Terraform-rendered header for k3s agent cloud-init.
+# This is the ONLY file in files/ with Terraform interpolation -- all other
 # files/lib/*.sh are pure bash with no escaping needed.
 # Concatenated by data.tf: join("\n", [templatefile(this), file(lib/common.sh), ...])
 
