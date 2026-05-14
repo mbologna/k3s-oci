@@ -310,10 +310,17 @@ install_external_secrets() {
     --version "${EXTERNAL_SECRETS_CHART_VERSION}" \
     --atomic --wait --timeout 5m
 
+  # Wait for the ClusterSecretStore CRD to be established before applying.
+  # The CRD is created by the Helm chart but may not be registered in the API
+  # server immediately after helm reports success.
+  kubectl wait --for condition=established \
+    --timeout=120s crd/clustersecretstores.external-secrets.io
+
   # ClusterSecretStore pointing to OCI Vault via instance_principal.
   # Adoptable into ArgoCD via gitops/external-secrets/.
+  # ESO v2+ uses external-secrets.io/v1; omitting auth = instance principal.
   kubectl apply -f - <<EOF
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
   name: oci-vault
@@ -322,8 +329,6 @@ spec:
     oracle:
       vault: "${VAULT_OCID}"
       region: "${OCI_REGION}"
-      auth:
-        instancePrincipal: {}
 EOF
 
   echo "External Secrets Operator ${EXTERNAL_SECRETS_CHART_VERSION} installed. ClusterSecretStore 'oci-vault' ready."
