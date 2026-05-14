@@ -70,6 +70,15 @@ resource "oci_core_instance_configuration" "k3s_server" {
     create_before_destroy = true
     ignore_changes        = [instance_details]
   }
+
+  # OCI's DeleteInstancePool API returns 202 before the backend releases the
+  # association with the InstanceConfiguration. Without this wait, a concurrent
+  # destroy of the config gets a 409 "still associated to one or more pools".
+  # Running before the delete call gives OCI time to finish cleanup.
+  provisioner "local-exec" {
+    when    = destroy
+    command = "echo 'Waiting 90s for OCI to release instance pool association...' && sleep 90"
+  }
 }
 
 # ── Server instance pool ───────────────────────────────────────────────────────
@@ -158,6 +167,12 @@ resource "oci_core_instance_configuration" "k3s_worker" {
   lifecycle {
     create_before_destroy = true
     ignore_changes        = [instance_details]
+  }
+
+  # Same OCI eventual-consistency workaround as k3s_server config above.
+  provisioner "local-exec" {
+    when    = destroy
+    command = "echo 'Waiting 90s for OCI to release instance pool association...' && sleep 90"
   }
 }
 
