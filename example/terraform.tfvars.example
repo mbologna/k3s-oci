@@ -63,9 +63,11 @@ k3s_standalone_worker = true
 # ── Optional features ─────────────────────────────────────────────────────────
 # expose_kubeapi = false             # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
 # expose_ssh     = false             # Expose SSH via public NLB (restricted to my_public_ip_cidr); see ssh_command output
+#                                    # When true, set enable_bastion = false — OCI Bastion becomes redundant
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
-# enable_bastion              = false  # OCI Bastion Service — redundant when expose_ssh=true (NLB SSH is simpler)
+# enable_bastion              = true   # OCI Bastion Service — default access method when expose_ssh=false
+#                                      # Set to false if expose_ssh=true (avoids lingering-VNIC delay on destroy)
 # enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
 # enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
 # enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
