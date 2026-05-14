@@ -503,23 +503,34 @@ configure_grafana_ingress() {
     sleep 10
   done
 
-  # Patch Gateway: add the https-grafana listener (idempotent -- remove first if present).
-  kubectl get gateway eg -n envoy-gateway-system -o json \
-    | python3 -c "
-import sys, json
-gw = json.load(sys.stdin)
-listeners = [l for l in gw['spec'].get('listeners', []) if l.get('name') != 'https-grafana']
-listeners.append({
-  'name': 'https-grafana',
-  'port': 443,
-  'protocol': 'HTTPS',
-  'hostname': '${GRAFANA_HOSTNAME}',
-  'tls': {'mode': 'Terminate', 'certificateRefs': [{'name': 'grafana-tls'}]},
-  'allowedRoutes': {'namespaces': {'from': 'All'}}
-})
-gw['spec']['listeners'] = listeners
-print(json.dumps(gw))
-" | kubectl apply -f -
+  # Patch Gateway: add the https-grafana listener using Server-Side Apply with a
+  # custom field manager. Gateway API defines spec.listeners as a list-map keyed
+  # on `name`, so SSA merges by key — the existing `http` listener (owned by
+  # argocd-controller from gateway.yaml) is preserved. cloud-init-bootstrap owns
+  # the `https-grafana` entry; ArgoCD (applying gateway.yaml without this listener)
+  # does not own it and will not remove it.
+  # ignoreDifferences: /spec/listeners in gateway-config prevents OutOfSync alerts.
+  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: https-grafana
+      port: 443
+      protocol: HTTPS
+      hostname: "${GRAFANA_HOSTNAME}"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: grafana-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+EOF
 
   # Create (or update) the TLS Certificate.
   kubectl apply -f - <<EOF

@@ -20,6 +20,10 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+      # Use Server-Side Apply so ArgoCD manages fields via SSA ownership instead of
+      # the last-applied-configuration annotation. This avoids resourceVersion:0 errors
+      # when RespectIgnoreDifferences=true strips spec.listeners from the apply payload.
+      - ServerSideApply=true
       # Prevent ArgoCD from overwriting fields listed in ignoreDifferences during sync.
       # Requires ArgoCD 2.10+ (installed via bootstrap, Renovate-managed version).
       - RespectIgnoreDifferences=true
