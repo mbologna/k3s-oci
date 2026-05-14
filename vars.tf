@@ -283,6 +283,12 @@ variable "expose_kubeapi" {
   default     = false
 }
 
+variable "expose_ssh" {
+  type        = bool
+  description = "Expose SSH (port 22) via the public NLB to all cluster nodes (restricted to my_public_ip_cidr). Eliminates the need for OCI Bastion sessions for day-to-day access."
+  default     = false
+}
+
 # ── IAM ───────────────────────────────────────────────────────────────────────
 
 variable "oci_identity_dynamic_group_name" {

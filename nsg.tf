@@ -59,6 +59,24 @@ resource "oci_core_network_security_group_security_rule" "nlb_allow_kubeapi" {
   }
 }
 
+resource "oci_core_network_security_group_security_rule" "nlb_allow_ssh" {
+  count                     = var.expose_ssh ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.public_nlb.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "Allow SSH from operator IP (expose_ssh=true)"
+  source                    = var.my_public_ip_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = 22
+      max = 22
+    }
+  }
+}
+
 # ── Workers NSG (HTTP/HTTPS from NLB) ────────────────────────────────────────
 
 resource "oci_core_network_security_group" "workers" {
@@ -211,6 +229,43 @@ resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_from
   protocol                  = "6"
   description               = "SSH from OCI Bastion Service (private subnet)"
   source                    = var.private_subnet_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = 22
+      max = 22
+    }
+  }
+}
+
+# NLB uses is_preserve_source = true so nodes see the real client IP — use CIDR_BLOCK rules.
+resource "oci_core_network_security_group_security_rule" "servers_allow_ssh_public" {
+  count                     = var.expose_ssh ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.servers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "SSH from operator IP via public NLB (expose_ssh=true)"
+  source                    = var.my_public_ip_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = 22
+      max = 22
+    }
+  }
+}
+
+resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_public" {
+  count                     = var.expose_ssh ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.workers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "SSH from operator IP via public NLB (expose_ssh=true)"
+  source                    = var.my_public_ip_cidr
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 
