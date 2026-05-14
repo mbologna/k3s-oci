@@ -211,7 +211,7 @@ terraform-docs .
 - Deployed as a **DaemonSet** (one Envoy proxy pod per node) via the `EnvoyProxy` resource — every NLB backend serves ingress locally, no cross-node forwarding, no single-pod SPOF.
 - `priorityClassName: system-cluster-critical` ensures Envoy proxy pods preempt user workloads under memory pressure and are never evicted before system daemons.
 - `resources.requests: 100m CPU / 128Mi RAM` prevents scheduling on nodes that cannot sustain ingress load.
-- `PodDisruptionBudget maxUnavailable: 1` (`envoy-gateway-pdb`) is applied so kured/drain can only take down one proxy pod at a time — 3 of 4 nodes always serve ingress during rolling maintenance.
+- `PodDisruptionBudget maxUnavailable: 1` for the Envoy DaemonSet is NOT used — Kubernetes PDB does not support DaemonSet-controlled pods (DaemonSets do not implement the scale subresource). kured uses `--ignore-daemonsets` during drain so the one-node-at-a-time guarantee comes from kured's own distributed lock, not a PDB. Do not add a PDB for the Envoy DaemonSet pods.
 - All HTTP/HTTPS routing uses standard `HTTPRoute` resources (Gateway API v1). Proprietary `IngressRoute` CRDs are not used.
 - HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with `--feature-gates=ExperimentalGatewayAPISupport=true`.
 - TLS certificates live in the `envoy-gateway-system` namespace (same as the Gateway) so no `ReferenceGrant` is needed.
