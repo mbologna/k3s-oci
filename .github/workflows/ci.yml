@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   terraform:
-    uses: mbologna/.github/.github/workflows/terraform-ci.yml@aeb30e0b1fc4aef2b2c92b84dd07b87ab5e3ab6b # main
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@f3f1584c4872c50a42e304b0bdb7cb40088e0bfe # main
     with:
       terraform_version: "~> 1.9"
       opentofu_version: "1.9.1"
