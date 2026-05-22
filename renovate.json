@@ -13,10 +13,7 @@
       "description": "k3s patch updates: bypass the 7-day age gate — k3s patches are stable fast-follows",
       "matchPackageNames": ["k3s-io/k3s"],
       "matchUpdateTypes": ["patch"],
-      "minimumReleaseAge": "0 days",
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
+      "minimumReleaseAge": "0 days"
     }
   ],
   "customManagers": [
