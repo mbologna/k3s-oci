@@ -509,7 +509,7 @@ variable "external_secrets_chart_version" {
   type        = string
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
-  default = "2.4.1"
+  default = "2.5.0"
 }
 
 # ── GitOps SSH deploy key ──────────────────────────────────────────────────────
