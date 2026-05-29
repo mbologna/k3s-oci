@@ -341,6 +341,12 @@ variable "gitops_repo_url" {
   default     = "https://github.com/mbologna/k3s-oci.git"
 }
 
+variable "gitops_path" {
+  type        = string
+  description = "Path within gitops_repo_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Set to 'clusters/your-cluster' when using the mbologna/infra repo as the GitOps source."
+  default     = "gitops/apps"
+}
+
 # ── OCI CLI ───────────────────────────────────────────────────────────────────
 # OCI CLI is installed at latest available version at bootstrap time.
 # It is only used during node initialisation for Vault secret fetch and is
@@ -504,4 +510,13 @@ variable "external_secrets_chart_version" {
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
   default = "2.4.1"
+}
+
+# ── GitOps SSH deploy key ──────────────────────────────────────────────────────
+
+variable "vault_secret_id_gitops_ssh_key" {
+  type        = string
+  sensitive   = true
+  description = "OCI Vault secret OCID containing the SSH private key used by ArgoCD to clone the gitops repo (e.g. Codeberg deploy key). Pre-create the secret manually in OCI Vault and paste the OCID here. Leave empty to skip ArgoCD repo secret creation (only suitable when gitops_repo_url is a public HTTPS repo)."
+  default     = ""
 }
