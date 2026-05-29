@@ -69,11 +69,13 @@ data "cloudinit_config" "k3s_server" {
         availability_domain               = var.availability_domain
         cluster_name                      = var.cluster_name
         gitops_repo_url                   = var.gitops_repo_url
+        gitops_path                       = var.gitops_path
         longhorn_ui_username              = var.longhorn_ui_username
         longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
         grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
         vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
         vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
+        vault_secret_id_gitops_ssh_key    = var.vault_secret_id_gitops_ssh_key
         gateway_api_version               = var.gateway_api_version
         certmanager_email_address         = var.certmanager_email_address
         certmanager_chart_version         = var.certmanager_chart_version

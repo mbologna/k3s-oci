@@ -19,6 +19,7 @@ export COMPARTMENT_OCID="${compartment_ocid}"
 export AVAILABILITY_DOMAIN="${availability_domain}"
 export CLUSTER_NAME="${cluster_name}"
 export GITOPS_REPO_URL="${gitops_repo_url}"
+export GITOPS_PATH="${gitops_path}"
 
 # -- Feature flags -------------------------------------------------------------
 export EXPOSE_KUBEAPI="${expose_kubeapi ? "true" : "false"}"
@@ -35,6 +36,7 @@ export GRAFANA_ADMIN_PASSWORD_PLAIN="${grafana_admin_password}"
 export VAULT_SECRET_ID_K3S_TOKEN="${vault_secret_id_k3s_token}"
 export VAULT_SECRET_ID_LONGHORN_PASSWORD="${vault_secret_id_longhorn_password}"
 export VAULT_SECRET_ID_GRAFANA_PASSWORD="${vault_secret_id_grafana_password}"
+export VAULT_SECRET_ID_GITOPS_SSH_KEY="${vault_secret_id_gitops_ssh_key}"
 
 # -- Chart versions (bootstrap only; ArgoCD adopts and manages ongoing) --------
 export GATEWAY_API_VERSION="${gateway_api_version}"
