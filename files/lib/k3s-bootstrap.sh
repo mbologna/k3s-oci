@@ -344,6 +344,33 @@ install_argocd() {
   install_helm
 
   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+  # Pre-create the ArgoCD SSH repo secret so ArgoCD can clone the gitops repo
+  # immediately after install. Must exist before the App of Apps is applied.
+  if [[ -n "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" ]]; then
+    echo "Fetching gitops SSH deploy key from OCI Vault..."
+    local ssh_key
+    ssh_key=$(oci secrets secret-bundle get \
+      --secret-id "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" \
+      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    kubectl apply -n argocd -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-repo-gitops
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: ${GITOPS_REPO_URL}
+  sshPrivateKey: |
+$(echo "${ssh_key}" | sed 's/^/    /')
+EOF
+    echo "ArgoCD gitops repo SSH secret created."
+  fi
+
   helm repo add argo https://argoproj.github.io/argo-helm
   helm repo update
 
@@ -368,7 +395,7 @@ spec:
   source:
     repoURL: ${GITOPS_REPO_URL}
     targetRevision: HEAD
-    path: gitops/apps
+    path: ${GITOPS_PATH}
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
