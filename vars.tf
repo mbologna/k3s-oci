@@ -514,9 +514,9 @@ variable "external_secrets_chart_version" {
 
 # ── GitOps SSH deploy key ──────────────────────────────────────────────────────
 
-variable "vault_secret_id_gitops_ssh_key" {
+variable "gitops_ssh_private_key" {
   type        = string
   sensitive   = true
-  description = "OCI Vault secret OCID containing the SSH private key used by ArgoCD to clone the gitops repo (e.g. Codeberg deploy key). Pre-create the secret manually in OCI Vault and paste the OCID here. Leave empty to skip ArgoCD repo secret creation (only suitable when gitops_repo_url is a public HTTPS repo)."
+  description = "SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty only when gitops_repo_url is a public HTTPS repo."
   default     = ""
 }

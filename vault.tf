@@ -85,3 +85,19 @@ resource "oci_vault_secret" "grafana_admin_password" {
 
   freeform_tags = local.common_tags
 }
+
+resource "oci_vault_secret" "gitops_ssh_key" {
+  count          = var.enable_vault && var.gitops_ssh_private_key != "" ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-gitops-ssh-key"
+  description    = "ArgoCD SSH deploy key for the gitops repo (${var.gitops_repo_url})"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(var.gitops_ssh_private_key)
+  }
+
+  freeform_tags = local.common_tags
+}
