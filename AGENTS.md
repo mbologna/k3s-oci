@@ -49,9 +49,11 @@ or additional paid resources, flag it explicitly instead of implementing it.
 
 ```
 vars.tf          — all input variables (add new vars here)
-locals.tf        — derived locals (ssh_public_key, k3s_version, common_tags, agent_plugins)
+locals.tf        — derived locals (ssh_public_key, k3s_version, common_tags, agent_plugins, kubeconfig hints)
 data.tf          — cloud-init assembly (join of vars tpl + lib files), random_password resources
-terraform.tf     — required_providers and version constraints
+versions.tf      — required_providers and version constraints
+checks.tf        — Terraform check{} blocks: feature flag co-dependency validation (requires Terraform ≥ 1.9)
+moved.tf         — moved{} blocks for in-flight resource renames; cleared after one release
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
@@ -59,19 +61,25 @@ iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, inclu
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi HA)
-nlb.tf           — Public Network LB (HTTP/HTTPS ingress)
+nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
 vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), three cluster secrets (enable_vault)
 objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
 notifications.tf — OCI Notifications topic + optional email subscription (enable_notifications)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id)
-files/server-vars.sh.tpl     — cloud-init header for servers: ONLY file with Terraform ${var} syntax
-files/agent-vars.sh.tpl      — cloud-init header for agents: ONLY file with Terraform ${var} syntax
-files/lib/common.sh          — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm, resolve_flannel_params()
-files/lib/k3s-server.sh      — pure bash: first-server election, k3s install, main entry point
-files/lib/k3s-bootstrap.sh   — pure bash: secrets pre-creation, Gateway API CRDs, cert-manager, ArgoCD
-files/lib/k3s-agent.sh       — pure bash: k3s agent install, main entry point
+files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file with Terraform ${var} syntax
+files/agent-vars.sh.tpl           — cloud-init header for agents: ONLY file with Terraform ${var} syntax
+files/kubeconfig-hint-bastion.tpl     — kubeconfig retrieval instructions when bastion is enabled
+files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when bastion is disabled
+files/lib/common.sh               — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm, resolve_flannel_params()
+files/lib/k3s-server.sh           — pure bash: first-server election, k3s install, main entry point
+files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_gateway_api_crds() then run_bootstrap()
+files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, Grafana, Alertmanager, MySQL, Cloudflare secrets
+files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
+files/lib/k3s-external-secrets.sh — pure bash: install_external_secrets() — ESO Helm + ClusterSecretStore
+files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_dockerhub_secret(), create_optional_apps(), configure_grafana_ingress()
+files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
 gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
@@ -79,6 +87,7 @@ gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application te
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage
+Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just fmt, just validate
 .github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
 renovate.json    — Automated dependency updates
@@ -103,8 +112,7 @@ renovate.json    — Automated dependency updates
     to   = oci_core_instance.new_name
   }
   ```
-  Remove `moved {}` blocks after one release cycle — leave a comment in `moved.tf` explaining
-  that it's intentionally empty. The file itself must remain so its purpose is clear.
+  Add `moved {}` blocks to `moved.tf`. Remove them after one release cycle and leave only the header comment.
 
 ### Shell scripts (`files/`)
 - **`files/server-vars.sh.tpl`** and **`files/agent-vars.sh.tpl`** are the ONLY Terraform
@@ -122,9 +130,15 @@ If the component must be bootstrapped before ArgoCD starts (e.g. it provides a C
 ArgoCD apps depend on):
 1. Add a version variable to `vars.tf` with a `# renovate:` comment.
 2. Export the version in `files/server-vars.sh.tpl` as `export MY_VERSION="${my_version}"`.
-3. Write an `install_<component>()` function in `files/lib/k3s-bootstrap.sh`.
-4. Call it from `run_bootstrap()` in `k3s-bootstrap.sh`.
+3. Write an `install_<component>()` function in the most appropriate sub-script under `files/lib/`:
+   - `k3s-secrets.sh` — if it only creates Kubernetes Secrets
+   - `k3s-cert-manager.sh` — if it is cert-manager or a ClusterIssuer variant
+   - `k3s-external-secrets.sh` — if it is an ESO-related component
+   - `k3s-argocd.sh` — if it involves ArgoCD apps or Gateway resources
+   - Create a new `k3s-<component>.sh` file for completely new concerns
+4. Call it from `run_bootstrap()` in `files/lib/k3s-bootstrap.sh`.
 5. Add the version variable to the `templatefile()` vars map in `data.tf`.
+6. If you created a new `k3s-<component>.sh`, add it to the `file(...)` list in `data.cloudinit_config.k3s_server` in `data.tf` — **before** `k3s-bootstrap.sh` so its functions are defined when the orchestrator calls them.
 
 If the component is fully managed by ArgoCD (Helm chart from gitops/apps/):
 1. Add an ArgoCD `Application` manifest to `gitops/apps/` with the chart version pinned
@@ -174,7 +188,15 @@ tofu fmt -recursive
 tofu init -backend=false && tofu validate
 (cd example && tofu init -backend=false && tofu validate)
 tflint --init && tflint --recursive
-shellcheck --severity=warning files/lib/common.sh files/lib/k3s-server.sh files/lib/k3s-bootstrap.sh files/lib/k3s-agent.sh
+shellcheck --severity=warning \
+  files/lib/common.sh \
+  files/lib/k3s-server.sh \
+  files/lib/k3s-bootstrap.sh \
+  files/lib/k3s-secrets.sh \
+  files/lib/k3s-cert-manager.sh \
+  files/lib/k3s-external-secrets.sh \
+  files/lib/k3s-argocd.sh \
+  files/lib/k3s-agent.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
@@ -256,13 +278,20 @@ terraform-docs .
 - **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), file(lib/common.sh), ...])` to
   produce a single cloud-init script. The rendered vars header is prepended, making all
   `export KEY="value"` statements available to the lib scripts at runtime.
+- **Bootstrap script split**: `k3s-bootstrap.sh` is now a ~45-line orchestrator. Concerns live in
+  focused sub-scripts (all pure bash, concatenated in order before `k3s-bootstrap.sh` in `data.tf`):
+  - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, Grafana, Alertmanager, MySQL, Cloudflare
+  - `k3s-cert-manager.sh` — `install_certmanager()`: cert-manager Helm + ClusterIssuers
+  - `k3s-external-secrets.sh` — `install_external_secrets()`: ESO Helm + ClusterSecretStore
+  - `k3s-argocd.sh` — `install_argocd()`, `create_dockerhub_secret()`, `create_optional_apps()`, `configure_grafana_ingress()`
+  - `k3s-bootstrap.sh` — `install_gateway_api_crds()` + `run_bootstrap()` (calls the above)
 - **GitOps-first**: cloud-init only bootstraps what ArgoCD cannot self-manage:
   - Gateway API CRDs (must exist before ArgoCD syncs `gateway-config` app)
   - cert-manager Helm + ClusterIssuers (email is a runtime Terraform var, not static git)
   - ArgoCD Helm + App of Apps bootstrap
   - External Secrets Operator Helm + ClusterSecretStore (conditional, vault_ocid is runtime)
   - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
-  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_grafana_ingress()` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
+  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_grafana_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
 - **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
   system-upgrade-controller, external-dns Helm — all in `gitops/apps/*.yaml`.
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
@@ -274,8 +303,8 @@ terraform-docs .
 - **Flannel interface resolution**: `resolve_flannel_params()` in `common.sh` sets `LOCAL_IP` and
   `FLANNEL_IFACE` (exported) when `K3S_SUBNET` is not `default_route_table`. Called by both
   `install_k3s_server()` and `install_k3s_agent()`; server adds `--advertise-address` too.
-- **ShellCheck**: `# shellcheck disable=SC2154` in lib/ files covers exported vars from the
-  prepended template header. No other suppressions needed (was 5+ in the old monolith).
+- **ShellCheck**: `# shellcheck disable=SC2154` at the top of each lib/ file covers exported vars
+  from the prepended template header. No other suppressions are needed.
 
 ### OCI Logging (`logging.tf`)
 - Controlled by `enable_oci_logging` variable (default: `true`).
@@ -376,7 +405,7 @@ An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting 
 NLB IP changes on every redeploy. Hardcoding sslip.io addresses in `gitops/` breaks GitOps: every redeploy requires manual file edits. The design:
 - `local.grafana_hostname` in `locals.tf` auto-computes `grafana.<nlb-ip>.sslip.io` (or uses `var.grafana_hostname` if set).
 - `files/server-vars.sh.tpl` exports `GRAFANA_HOSTNAME`.
-- `files/lib/k3s-bootstrap.sh:configure_grafana_ingress()` runs after ArgoCD is installed and creates:
+- `files/lib/k3s-argocd.sh:configure_grafana_ingress()` runs after ArgoCD is installed and creates:
   - The `https-grafana` Gateway listener (SSA, field-manager=cloud-init-bootstrap)
   - The `grafana-tls` Certificate in `envoy-gateway-system`
   - The `grafana` HTTPRoute in `monitoring` (SSA, field-manager=cloud-init-bootstrap)
@@ -395,6 +424,29 @@ Similarly, `spec.hostnames` in the Grafana HTTPRoute is owned by `cloud-init-boo
 **Do NOT use CSA (kubectl apply without --server-side) to patch ArgoCD-managed resources.** CSA sets the `kubectl.kubernetes.io/last-applied-configuration` annotation, which confuses ArgoCD's 3-way merge on the next sync. Always use SSA with a custom field-manager for cloud-init patches to ArgoCD-managed resources.
 
 **gateway-config MUST use ServerSideApply=true** to avoid `resourceVersion: 0` errors. Without SSA, ArgoCD's CSA apply with `RespectIgnoreDifferences` strips `spec.listeners` from the patch payload, causing a malformed UPDATE request to fail validation.
+
+### Feature flag co-dependencies (`checks.tf`)
+Terraform 1.9+ `check {}` blocks in `checks.tf` catch invalid feature flag combinations at plan time
+before any OCI API call is made:
+- `enable_external_secrets = true` requires `enable_vault = true` and `region != null`
+- `enable_dns01_challenge = true` requires `cloudflare_api_token != null`
+- `enable_external_dns = true` requires `cloudflare_api_token`, `cloudflare_zone_id`, and `external_dns_domain_filter`
+
+These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
+Do not remove these checks.
+
+### Variable validations
+The following variables have explicit format validation to prevent late-apply OCI API failures:
+- `cluster_name`: `^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$` — OCI resource name limits; used as prefix in all display names
+- `availability_domain`: `^[^:]+:[A-Z0-9]+-AD-[1-3]$` — OCI format requirement
+- `my_public_ip_cidr`: must be a valid CIDR
+- `certmanager_email_address`: must be a valid email, not the placeholder
+- `os_image_id`: must start with `ocid1.image.` if set
+- `oci_core_vcn_dns_label`, `public_subnet_dns_label`, `private_subnet_dns_label`: `^[a-zA-Z0-9]{1,15}$` — OCI DNS label limits (no hyphens, max 15 chars)
+- `boot_volume_size_in_gbs`: must be `>= 50` (OCI hard minimum)
+- `k3s_server_pool_size`: must be odd positive integer (etcd quorum)
+
+When adding a new variable that maps to an OCI resource name or OCID, add a `validation {}` block.
 
 ### DNS-01 ACME challenge (`enable_dns01_challenge`)
 - Controlled by `enable_dns01_challenge` variable (default: `false`). Requires `cloudflare_api_token`.

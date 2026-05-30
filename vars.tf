@@ -25,6 +25,11 @@ variable "availability_domain" {
 variable "cluster_name" {
   type        = string
   description = "Logical name for the cluster. Used in display names and freeform tags."
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$", var.cluster_name))
+    error_message = "cluster_name must be 3–30 lowercase alphanumeric characters or hyphens, and must start and end with an alphanumeric character."
+  }
 }
 
 variable "environment" {
@@ -137,8 +142,8 @@ variable "boot_volume_size_in_gbs" {
   default     = 50
 
   validation {
-    condition     = var.boot_volume_size_in_gbs == 50
-    error_message = "boot_volume_size_in_gbs must be 50 GB — OCI minimum for all shapes, and 4 × 50 GB = 200 GB exactly fills the Always Free storage limit."
+    condition     = var.boot_volume_size_in_gbs >= 50
+    error_message = "boot_volume_size_in_gbs must be at least 50 GB (OCI minimum). Note: 4 nodes × 50 GB = 200 GB already fills the Always Free storage limit — increasing this will exceed it."
   }
 }
 
@@ -231,18 +236,36 @@ variable "private_subnet_cidr" {
 }
 
 variable "oci_core_vcn_dns_label" {
-  type    = string
-  default = "k3svcn"
+  type        = string
+  description = "DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint)."
+  default     = "k3svcn"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9]{1,15}$", var.oci_core_vcn_dns_label))
+    error_message = "oci_core_vcn_dns_label must be 1–15 alphanumeric characters (no hyphens)."
+  }
 }
 
 variable "public_subnet_dns_label" {
-  type    = string
-  default = "k3spublic"
+  type        = string
+  description = "DNS label for the public subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint)."
+  default     = "k3spublic"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9]{1,15}$", var.public_subnet_dns_label))
+    error_message = "public_subnet_dns_label must be 1–15 alphanumeric characters (no hyphens)."
+  }
 }
 
 variable "private_subnet_dns_label" {
-  type    = string
-  default = "k3sprivate"
+  type        = string
+  description = "DNS label for the private subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint)."
+  default     = "k3sprivate"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9]{1,15}$", var.private_subnet_dns_label))
+    error_message = "private_subnet_dns_label must be 1–15 alphanumeric characters (no hyphens)."
+  }
 }
 
 # ── Load balancers ────────────────────────────────────────────────────────────
@@ -346,11 +369,6 @@ variable "gitops_path" {
   description = "Path within gitops_repo_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Set to 'clusters/hotel' when using the mbologna/infra repo as the GitOps source."
   default     = "gitops/apps"
 }
-
-# ── OCI CLI ───────────────────────────────────────────────────────────────────
-# OCI CLI is installed at latest available version at bootstrap time.
-# It is only used during node initialisation for Vault secret fetch and is
-# not a running workload — no versioning needed.
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 

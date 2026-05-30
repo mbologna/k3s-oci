@@ -62,52 +62,17 @@ locals {
 
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────
 
-  _kubeconfig_hint_bastion = <<-EOT
-    # ── Fetch kubeconfig via OCI Bastion Service ─────────────────────────────
-    # Run from the example/ directory (requires oci CLI, tofu, jq, nc, ssh):
-    #   ./get-kubeconfig.sh
-    #
-    # Or manually — port-forwarding session (no Bastion plugin required):
-    #   oci bastion session create-port-forwarding \
-    #     --bastion-id ${var.enable_bastion ? oci_bastion_bastion.k3s[0].id : "<bastion-ocid>"} \
-    #     --ssh-public-key-file ~/.ssh/id_ed25519.pub \
-    #     --target-private-ip ${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")} \
-    #     --target-port 22 \
-    #     --session-ttl 1800
-    #   # Open tunnel (replace SESSION and REGION):
-    #   ssh -N -L 22222:${try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")}:22 \
-    #       -p 22 ocid1.bastionsession...@host.bastion.<region>.oci.oraclecloud.com &
-    #   # Fetch kubeconfig through tunnel:
-    #   ssh -p 22222 ubuntu@localhost "sudo cat /etc/rancher/k3s/k3s.yaml" \
-    #     | sed 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|'
-    #
-    # Tip: add  expose_ssh = true  to terraform.tfvars for direct SSH without Bastion sessions.
-    # See the ssh_command output after tofu apply.
-  EOT
+  _kubeconfig_hint_bastion = templatefile("${path.module}/files/kubeconfig-hint-bastion.tpl", {
+    bastion_id    = var.enable_bastion ? oci_bastion_bastion.k3s[0].id : "<bastion-ocid>"
+    server_ip     = try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")
+    public_nlb_ip = try(local.public_lb_ip[0], "<public-nlb-ip>")
+    kube_api_port = var.kube_api_port
+  })
 
-  _kubeconfig_hint_no_bastion = <<-EOT
-    # ── No bastion configured ────────────────────────────────────────────────
-    # Nodes are in a private subnet and cannot be reached directly.
-    # Pick one option:
-    #
-    # Option A — OCI serial console (no infra change, one-time):
-    #   OCI console connections require an RSA key (ed25519 is not supported).
-    #   This one-liner creates the connection and opens the shell immediately:
-    #   ssh -o ControlPath=none $(oci compute instance-console-connection create \
-    #       --instance-id ${try(data.oci_core_instance.k3s_servers[0].id, "<server-ocid>")} \
-    #       --ssh-public-key-file ~/.ssh/id_rsa.pub \
-    #       --query 'data."connection-string"' --raw-output)
-    #   # Then: sudo cat /etc/rancher/k3s/k3s.yaml
-    #
-    # Options B & C — both require a tofu apply:
-    #
-    # Option B — Enable OCI Bastion Service (managed, Always Free, no storage):
-    #   enable_bastion = true by default. If disabled, add it back to terraform.tfvars, then run tofu apply.
-    #   Then re-run: tofu output kubeconfig_hint
-    #
-    # Option C — Expose kubeapi via public NLB (restricted to ${var.my_public_ip_cidr}):
-    #   Add  expose_kubeapi = true  to terraform.tfvars, then run tofu apply.
-    #   Use Option A or B once to fetch the kubeconfig, then update the server URL:
-    #   sed -i '' 's|127.0.0.1:6443|${try(local.public_lb_ip[0], "<public-nlb-ip>")}:${var.kube_api_port}|' ~/.kube/k3s-oci.yaml
-  EOT
+  _kubeconfig_hint_no_bastion = templatefile("${path.module}/files/kubeconfig-hint-no-bastion.tpl", {
+    server_ocid       = try(data.oci_core_instance.k3s_servers[0].id, "<server-ocid>")
+    my_public_ip_cidr = var.my_public_ip_cidr
+    public_nlb_ip     = try(local.public_lb_ip[0], "<public-nlb-ip>")
+    kube_api_port     = var.kube_api_port
+  })
 }
