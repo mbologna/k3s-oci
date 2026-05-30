@@ -44,6 +44,12 @@ locals {
     length(local.public_lb_ip) > 0 ? "grafana.${local.public_lb_ip[0]}.sslip.io" : ""
   )
 
+  # Map of node-tier → NSG ID; used to apply shared ingress rules to both tiers.
+  nodes_nsgs = {
+    workers = oci_core_network_security_group.workers.id
+    servers = oci_core_network_security_group.servers.id
+  }
+
   # Shared cloud-init vars passed to both server and agent template files.
   # Server-specific vars are merged on top in data.tf.
   k3s_common_cloud_init_vars = {
