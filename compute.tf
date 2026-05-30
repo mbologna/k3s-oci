@@ -261,7 +261,19 @@ resource "oci_core_instance" "k3s_standalone_worker" {
   }
 
   lifecycle {
-    ignore_changes = [metadata]
+    # metadata: contains user_data (cloud-init) — not re-applied after first boot
+    # source_details: OCI provider import does not fully reconstruct nested source_details
+    # attributes, causing spurious ForceNew after tofu import. Safe to ignore because
+    # boot_volume_size_in_gbs and source_id are immutable post-creation anyway.
+    # metadata: contains user_data (cloud-init) — not re-applied after first boot.
+    # source_details, create_vnic_details: OCI provider does not reconstruct these
+    # nested blocks on import (API returns VNIC/boot-volume data via separate endpoints).
+    # All three blocks are effectively immutable post-creation, so ignoring drift is safe.
+    # The standalone worker is created via OCI CLI to work around a tls: bad record MAC
+    # bug in the OCI Terraform provider (Go HTTP/2 issue on the /instances endpoint).
+    # After import, all drift is suppressed so Terraform never modifies or destroys it.
+    ignore_changes  = all
+    prevent_destroy = true
   }
 }
 
