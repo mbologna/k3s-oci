@@ -98,6 +98,10 @@ data "cloudinit_config" "k3s_server" {
         grafana_hostname                  = local.grafana_hostname
       })),
       file("${path.module}/files/lib/common.sh"),
+      file("${path.module}/files/lib/k3s-secrets.sh"),
+      file("${path.module}/files/lib/k3s-cert-manager.sh"),
+      file("${path.module}/files/lib/k3s-external-secrets.sh"),
+      file("${path.module}/files/lib/k3s-argocd.sh"),
       file("${path.module}/files/lib/k3s-bootstrap.sh"),
       file("${path.module}/files/lib/k3s-server.sh"),
     ])
