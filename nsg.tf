@@ -77,7 +77,7 @@ resource "oci_core_network_security_group_security_rule" "nlb_allow_ssh" {
   }
 }
 
-# ── Workers NSG (HTTP/HTTPS from NLB) ────────────────────────────────────────
+# ── Workers NSG ───────────────────────────────────────────────────────────────
 
 resource "oci_core_network_security_group" "workers" {
   compartment_id = var.compartment_ocid
@@ -86,8 +86,13 @@ resource "oci_core_network_security_group" "workers" {
   freeform_tags  = local.common_tags
 }
 
-resource "oci_core_network_security_group_security_rule" "workers_allow_http" {
-  network_security_group_id = oci_core_network_security_group.workers.id
+# Both workers and servers are NLB backends with is_preserve_source=true, so
+# packets arrive with the real client IP. Shared rules use for_each over
+# local.nodes_nsgs to avoid duplicating identical resources per tier.
+
+resource "oci_core_network_security_group_security_rule" "nodes_allow_http" {
+  for_each                  = local.nodes_nsgs
+  network_security_group_id = each.value
   direction                 = "INGRESS"
   protocol                  = "6"
   # With is_preserve_source = true on the NLB backend sets, packets arrive at
@@ -107,44 +112,9 @@ resource "oci_core_network_security_group_security_rule" "workers_allow_http" {
   }
 }
 
-resource "oci_core_network_security_group_security_rule" "workers_allow_https" {
-  network_security_group_id = oci_core_network_security_group.workers.id
-  direction                 = "INGRESS"
-  protocol                  = "6"
-  description               = "HTTPS nodeport – allow internet IPs preserved by NLB source passthrough"
-  source                    = "0.0.0.0/0"
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-
-  tcp_options {
-    destination_port_range {
-      min = var.ingress_controller_https_nodeport
-      max = var.ingress_controller_https_nodeport
-    }
-  }
-}
-
-# Server nodes are also NLB backends (k3s_http_servers / k3s_https_servers).
-# They run the Envoy DaemonSet and must accept the same source-preserved traffic.
-resource "oci_core_network_security_group_security_rule" "servers_allow_http" {
-  network_security_group_id = oci_core_network_security_group.servers.id
-  direction                 = "INGRESS"
-  protocol                  = "6"
-  description               = "HTTP nodeport – allow internet IPs preserved by NLB source passthrough"
-  source                    = "0.0.0.0/0"
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-
-  tcp_options {
-    destination_port_range {
-      min = var.ingress_controller_http_nodeport
-      max = var.ingress_controller_http_nodeport
-    }
-  }
-}
-
-resource "oci_core_network_security_group_security_rule" "servers_allow_https" {
-  network_security_group_id = oci_core_network_security_group.servers.id
+resource "oci_core_network_security_group_security_rule" "nodes_allow_https" {
+  for_each                  = local.nodes_nsgs
+  network_security_group_id = each.value
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "HTTPS nodeport – allow internet IPs preserved by NLB source passthrough"
@@ -204,27 +174,9 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
   }
 }
 
-resource "oci_core_network_security_group_security_rule" "servers_allow_ssh_from_private_subnet" {
-  count                     = var.enable_bastion ? 1 : 0
-  network_security_group_id = oci_core_network_security_group.servers.id
-  direction                 = "INGRESS"
-  protocol                  = "6"
-  description               = "SSH from OCI Bastion Service (private subnet)"
-  source                    = var.private_subnet_cidr
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-
-  tcp_options {
-    destination_port_range {
-      min = 22
-      max = 22
-    }
-  }
-}
-
-resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_from_private_subnet" {
-  count                     = var.enable_bastion ? 1 : 0
-  network_security_group_id = oci_core_network_security_group.workers.id
+resource "oci_core_network_security_group_security_rule" "nodes_allow_ssh_from_private_subnet" {
+  for_each                  = var.enable_bastion ? local.nodes_nsgs : {}
+  network_security_group_id = each.value
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "SSH from OCI Bastion Service (private subnet)"
@@ -241,27 +193,9 @@ resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_from
 }
 
 # NLB uses is_preserve_source = true so nodes see the real client IP — use CIDR_BLOCK rules.
-resource "oci_core_network_security_group_security_rule" "servers_allow_ssh_public" {
-  count                     = var.expose_ssh ? 1 : 0
-  network_security_group_id = oci_core_network_security_group.servers.id
-  direction                 = "INGRESS"
-  protocol                  = "6"
-  description               = "SSH from operator IP via public NLB (expose_ssh=true)"
-  source                    = var.my_public_ip_cidr
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-
-  tcp_options {
-    destination_port_range {
-      min = 22
-      max = 22
-    }
-  }
-}
-
-resource "oci_core_network_security_group_security_rule" "workers_allow_ssh_public" {
-  count                     = var.expose_ssh ? 1 : 0
-  network_security_group_id = oci_core_network_security_group.workers.id
+resource "oci_core_network_security_group_security_rule" "nodes_allow_ssh_public" {
+  for_each                  = var.expose_ssh ? local.nodes_nsgs : {}
+  network_security_group_id = each.value
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "SSH from operator IP via public NLB (expose_ssh=true)"
