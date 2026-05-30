@@ -23,13 +23,9 @@ spec:
           endTime: "06:00"
           timeZone: Europe/Rome
           rebootDays:
-            - mon
             - tue
             - wed
             - thu
-            - fri
-            - sat
-            - sun
         tolerations:
           - key: node-role.kubernetes.io/control-plane
             operator: Exists
