@@ -161,17 +161,27 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 ## Quickstart
 
 ```bash
-# 1. Clone and enter the example directory
+# 1. Clone the repo
 git clone https://github.com/mbologna/k3s-oci.git
-cd k3s-oci/example
+cd k3s-oci
 
 # 2. Copy and edit the variables file
-cp terraform.tfvars.example terraform.tfvars
-$EDITOR terraform.tfvars
+cp example/terraform.tfvars.example example/terraform.tfvars
+$EDITOR example/terraform.tfvars
 
 # 3. Init and apply (terraform or tofu both work)
-terraform init && terraform apply
-# tofu init && tofu apply
+cd example && tofu init && tofu apply
+```
+
+A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
+
+```bash
+just init        # tofu init in example/
+just plan        # tofu plan in example/
+just apply       # tofu apply in example/
+just kubeconfig  # fetch kubeconfig via OCI Bastion
+just ssh worker  # SSH into a node (server1/server2/server3/worker)
+just fmt         # tofu fmt -recursive
 ```
 
 ## kubeconfig
@@ -553,12 +563,12 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_alertmanager_email"></a> [alertmanager\_email](#input\_alertmanager\_email) | Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email. | `string` | `null` | no |
 | <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.15"` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
-| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `50` | no |
+| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). Increasing this value will exceed the free storage allowance. The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `50` | no |
 | <a name="input_certmanager_chart_version"></a> [certmanager\_chart\_version](#input\_certmanager\_chart\_version) | cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate. | `string` | `"v1.20.2"` | no |
 | <a name="input_certmanager_email_address"></a> [certmanager\_email\_address](#input\_certmanager\_email\_address) | Email address for Let's Encrypt ACME registration. Must be a real address. | `string` | n/a | yes |
 | <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | Cloudflare API token. Required when enable\_external\_dns = true or enable\_dns01\_challenge = true. Create a scoped token at https://dash.cloudflare.com/profile/api-tokens with Zone:DNS:Edit permissions. | `string` | `null` | no |
 | <a name="input_cloudflare_zone_id"></a> [cloudflare\_zone\_id](#input\_cloudflare\_zone\_id) | Cloudflare Zone ID for the managed domain. Required when enable\_external\_dns = true. | `string` | `null` | no |
-| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Logical name for the cluster. Used in display names and freeform tags. | `string` | n/a | yes |
+| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Logical name for the cluster. Used in display names and freeform tags. Must be 3–30 lowercase alphanumeric characters or hyphens, starting and ending with alphanumeric. | `string` | n/a | yes |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | OCID of the compartment where all resources are created | `string` | n/a | yes |
 | <a name="input_compute_shape"></a> [compute\_shape](#input\_compute\_shape) | OCI compute shape for k3s nodes | `string` | `"VM.Standard.A1.Flex"` | no |
 | <a name="input_dockerhub_password"></a> [dockerhub\_password](#input\_dockerhub\_password) | Docker Hub access token (PAT) for ArgoCD OCI Helm chart pulls. Paired with dockerhub\_username. | `string` | `""` | no |
@@ -602,16 +612,16 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_mysql_admin_username"></a> [mysql\_admin\_username](#input\_mysql\_admin\_username) | Admin username for the MySQL HeatWave DB system. | `string` | `"admin"` | no |
 | <a name="input_mysql_shape"></a> [mysql\_shape](#input\_mysql\_shape) | MySQL HeatWave shape. 'MySQL.Free' is the Always Free shape. | `string` | `"MySQL.Free"` | no |
 | <a name="input_oci_core_vcn_cidr"></a> [oci\_core\_vcn\_cidr](#input\_oci\_core\_vcn\_cidr) | CIDR block for the VCN | `string` | `"10.0.0.0/16"` | no |
-| <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | n/a | `string` | `"k3svcn"` | no |
+| <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3svcn"` | no |
 | <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API | `string` | `"k3s-cluster-dynamic-group"` | no |
 | <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group | `string` | `"k3s-cluster-policy"` | no |
 | <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the Ubuntu 24.04 LTS (Noble) aarch64 image for A1.Flex nodes. If null, the latest matching image is resolved automatically from the tenancy. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/ | `string` | `null` | no |
 | <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
-| <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | n/a | `string` | `"k3sprivate"` | no |
+| <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | DNS label for the private subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3sprivate"` | no |
 | <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path —<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
 | <a name="input_public_key_path"></a> [public\_key\_path](#input\_public\_key\_path) | Path to SSH public key file. Used as fallback when public\_key is null. | `string` | `"~/.ssh/id_ed25519.pub"` | no |
 | <a name="input_public_subnet_cidr"></a> [public\_subnet\_cidr](#input\_public\_subnet\_cidr) | CIDR for the public subnet (load balancers and optional bastion) | `string` | `"10.0.0.0/24"` | no |
-| <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | n/a | `string` | `"k3spublic"` | no |
+| <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | DNS label for the public subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3spublic"` | no |
 | <a name="input_region"></a> [region](#input\_region) | OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable\_external\_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint. | `string` | `null` | no |
 | <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 24 GB (Always Free). | `number` | `6` | no |
 | <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 4 (Always Free). | `number` | `1` | no |
