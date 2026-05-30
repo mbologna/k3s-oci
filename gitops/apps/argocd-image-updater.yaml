@@ -11,7 +11,7 @@ spec:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argocd-image-updater
     # renovate: datasource=helm depName=argocd-image-updater registryUrl=https://argoproj.github.io/argo-helm
-    targetRevision: "1.2.0"
+    targetRevision: "1.2.2"
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
