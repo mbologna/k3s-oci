@@ -63,3 +63,7 @@ export VAULT_OCID="${vault_ocid}"
 export OCI_REGION="${oci_region}"
 export DOCKERHUB_USERNAME="${dockerhub_username}"
 export DOCKERHUB_PASSWORD="${dockerhub_password}"
+
+# -- Shared SSH host key (base64-encoded to survive multi-line export) ----------
+export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
+export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"

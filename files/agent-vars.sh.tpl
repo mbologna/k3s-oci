@@ -14,3 +14,7 @@ export K3S_SUBNET="${k3s_subnet}"
 export K3S_URL="${k3s_url}"
 export K3S_TOKEN_PLAIN="${k3s_token}"
 export VAULT_SECRET_ID_K3S_TOKEN="${vault_secret_id_k3s_token}"
+
+# -- Shared SSH host key (base64-encoded to survive multi-line export) ----------
+export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
+export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
