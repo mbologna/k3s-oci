@@ -58,6 +58,11 @@ output "ssh_command" {
   value       = var.expose_ssh ? "ssh -i ~/.ssh/id_rsa ubuntu@${try(local.public_lb_ip[0], "<public-nlb-ip>")}" : null
 }
 
+output "ssh_host_public_key" {
+  description = "Shared SSH host public key deployed to all nodes. Add to known_hosts with: ssh-keygen -R <nlb-ip> && terraform output -raw ssh_host_public_key | ssh-keyscan -f - >> ~/.ssh/known_hosts  (or simply ssh-keyscan <nlb-ip> >> ~/.ssh/known_hosts after apply)."
+  value       = tls_private_key.ssh_host_key.public_key_openssh
+}
+
 output "k3s_token" {
   description = "k3s cluster join token (sensitive)"
   value       = random_password.k3s_token.result

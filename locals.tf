@@ -58,6 +58,9 @@ locals {
     k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
     k3s_url                   = local.k3s_internal_lb_ip
     vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
+    # Base64-encoded so the multi-line PEM is safe to embed in a shell export.
+    ssh_host_key_private_b64 = base64encode(tls_private_key.ssh_host_key.private_key_openssh)
+    ssh_host_key_public      = trimspace(tls_private_key.ssh_host_key.public_key_openssh)
   }
 
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────

@@ -26,6 +26,12 @@ data "http" "github_ssh_keys" {
   }
 }
 
+# Shared SSH host key distributed to all nodes so that SSHing through the NLB
+# always presents the same fingerprint regardless of which backend is selected.
+resource "tls_private_key" "ssh_host_key" {
+  algorithm = "ED25519"
+}
+
 resource "random_password" "k3s_token" {
   length  = 64
   special = false
