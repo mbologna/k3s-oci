@@ -6,23 +6,23 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 
 ## Features
 
-- **HA control plane** — 3 control-plane nodes with embedded etcd; survives 1 node failure
-- **Full stack always deployed** — cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
-- **Separate public/private subnets** — k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
-- **Envoy Gateway ingress (Gateway API)** — DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
-- **Automatic security updates** — `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention
-- **k3s version pinned at plan time** — resolved from the GitHub API during `terraform plan`, not at boot time
-- **Cluster-scoped IAM** — dynamic group and policy scoped to nodes tagged with the cluster name, not every instance in the compartment
-- **Idempotent cloud-init** — all `kubectl` operations use `apply`; re-provisioning is safe
-- **Monitoring** (`grafana_hostname`) — kube-prometheus-stack (Prometheus + Grafana + Alertmanager) always deployed; optional public Grafana UI via `grafana_hostname`; PrometheusRules for node disk pressure and Longhorn volume health
-- **Direct SSH via NLB** (`expose_ssh = true`) — expose port 22 on the public NLB restricted to `my_public_ip_cidr`; eliminates the need for OCI Bastion sessions for day-to-day access
-- **OCI Vault** (`enable_vault = true`) — cluster secrets in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
-- **Boot volume backups** (`enable_backup = true`) — weekly full backups, 1-week retention, within the 5-backup Always Free limit
-- **Object Storage state bucket** (`enable_object_storage_state = true`) — versioned OCI Object Storage for Terraform state; S3-compatible endpoint in `terraform_state_backend` output
-- **OCI Notifications + Alertmanager** (`enable_notifications = false`) — opt-in OCI Notifications topic wired to Alertmanager as a webhook receiver
-- **MySQL HeatWave** (`enable_mysql = false`) — opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
-- **External DNS** (`enable_external_dns = false`) — automatic Cloudflare DNS record management from HTTPRoute hostnames
-- **External Secrets** (`enable_external_secrets = false`) — sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate
+- **HA control plane**: 3 control-plane nodes with embedded etcd; survives 1 node failure
+- **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
+- **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
+- **Envoy Gateway ingress (Gateway API)**: DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
+- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention
+- **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
+- **Cluster-scoped IAM**: dynamic group and policy scoped to nodes tagged with the cluster name, not every instance in the compartment
+- **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
+- **Monitoring** (`grafana_hostname`): kube-prometheus-stack (Prometheus + Grafana + Alertmanager) always deployed; optional public Grafana UI via `grafana_hostname`; PrometheusRules for node disk pressure and Longhorn volume health
+- **Direct SSH via NLB** (`expose_ssh = true`): expose port 22 on the public NLB restricted to `my_public_ip_cidr`; eliminates the need for OCI Bastion sessions for day-to-day access
+- **OCI Vault** (`enable_vault = true`): cluster secrets in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
+- **Boot volume backups** (`enable_backup = true`): weekly full backups, 1-week retention, within the 5-backup Always Free limit
+- **Object Storage state bucket** (`enable_object_storage_state = true`): versioned OCI Object Storage for Terraform state; S3-compatible endpoint in `terraform_state_backend` output
+- **OCI Notifications + Alertmanager** (`enable_notifications = false`): opt-in OCI Notifications topic wired to Alertmanager as a webhook receiver
+- **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
+- **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from HTTPRoute hostnames
+- **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate
 
 ## Architecture
 
@@ -31,32 +31,41 @@ graph TD
     Internet(["🌐 Internet"])
 
     subgraph public["Public Subnet · 10.0.0.0/24"]
-        NLB["🔀 Public NLB (Always Free)\nHTTP :80 · HTTPS :443\noptional: kubeapi :6443 · SSH :22"]
+        NLB["🔀 Public NLB (Always Free)
+HTTP :80 · HTTPS :443
+optional: kubeapi :6443 · SSH :22"]
     end
 
     subgraph private["Private Subnet · 10.0.1.0/24 · no public IPs"]
-        ILB["⚖️ Internal Flex LB (Always Free)\nkubeapi VIP :6443"]
+        ILB["⚖️ Internal Flex LB (Always Free)
+kubeapi VIP :6443"]
 
-        subgraph cp["Control Plane × 3  ·  A1.Flex (1 OCPU / 6 GB each)\nk3s-server · etcd · Envoy Gateway · Longhorn · user workloads"]
+        subgraph cp["Control Plane × 3  ·  A1.Flex (1 OCPU / 6 GB each)
+k3s-server · etcd · Envoy Gateway · Longhorn · user workloads"]
             CP0["control-plane-0"]
             CP1["control-plane-1"]
             CP2["control-plane-2"]
         end
 
-        W["worker-0  ·  A1.Flex (1 OCPU / 6 GB)\nk3s-agent · Envoy Gateway · Longhorn · user workloads"]
+        W["worker-0  ·  A1.Flex (1 OCPU / 6 GB)
+k3s-agent · Envoy Gateway · Longhorn · user workloads"]
     end
 
     NAT["🌍 NAT Gateway (Always Free)"]
-    Bastion["🔐 OCI Bastion Service\noptional · Always Free"]
+    Bastion["🔐 OCI Bastion Service
+optional · Always Free"]
 
     Internet -->|HTTP / HTTPS| NLB
     NLB -->|"Envoy Gateway NodePorts :30080 / :30443"| CP0 & CP1 & CP2 & W
-    NLB -. "kubeapi :6443\nexpose_kubeapi=true" .-> ILB
-    NLB -. "SSH :22\nexpose_ssh=true" .-> CP0 & CP1 & CP2 & W
+    NLB -. "kubeapi :6443
+expose_kubeapi=true" .-> ILB
+    NLB -. "SSH :22
+expose_ssh=true" .-> CP0 & CP1 & CP2 & W
     ILB --> CP0 & CP1 & CP2
     W -->|joins via kubeapi| ILB
     private -->|outbound| NAT --> Internet
-    Bastion -. "SSH tunnel\nenable_bastion=true" .-> private
+    Bastion -. "SSH tunnel
+enable_bastion=true" .-> private
 ```
 
 All four A1.Flex instances live in a **private subnet** with no public IPs. Internet traffic enters exclusively through two Always Free load balancers.
@@ -67,7 +76,7 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 **Internal Flex LB** provides a stable private VIP across all three control-plane nodes. Workers join via this VIP so the cluster survives any single control-plane loss.
 
-**Longhorn** runs on all four nodes with `defaultReplicaCount=3` — each PVC is replicated across three nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
+**Longhorn** runs on all four nodes with `defaultReplicaCount=3`; each PVC is replicated across three nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
 
 > **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** — the hard limit of a 4-node Always Free topology.
 
@@ -79,11 +88,11 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 | Block storage | 200 GB | 4 × 50 GB = **200 GB** |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
 | Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
-| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service — managed, no VM) |
+| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB | **2 versioned buckets** — Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **3 secrets** — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
-| Volume backups | 5 total | **4** — one per node, weekly, 1-week retention (`enable_backup = true`) |
+| Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
+| Vault (shared) | Software keys + 150 secrets | **3 secrets**: k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
+| Volume backups | 5 total | **4** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -97,7 +106,7 @@ With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum*
 
 | Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
 |---|:---:|:---:|:---:|---|
-| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal** — HA etcd, all 4 nodes contribute to workloads |
+| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal**: HA etcd, all 4 nodes contribute to workloads |
 | 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
 | 2 CP + 2 workers | ❌ Invalid | — | — | 2-node etcd cannot form quorum; worse than 1 node |
 | 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
@@ -110,9 +119,9 @@ With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum*
 
 Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 
-1. **Storage budget exhausted** — 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
-2. **1 GB RAM** — k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
-3. **1/8 OCPU** — negligible compute; adds operational complexity for near-zero workload benefit
+1. **Storage budget exhausted**: 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
+2. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+3. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
 
 ### Previously rejected alternatives
 
@@ -318,12 +327,12 @@ OCI provides two load balancer products with very different capabilities:
 
 | | OCI Network Load Balancer (NLB) | OCI Flexible Load Balancer |
 |---|---|---|
-| OSI layer | **L4 — TCP passthrough** | L7 — HTTP/HTTPS aware |
+| OSI layer | **L4 (TCP passthrough)** | L7 (HTTP/HTTPS aware) |
 | TLS termination | ❌ Not possible | ✅ Yes |
 | Always Free | **1 NLB** | 2 × 10 Mbps |
 | Used here | `nlb.tf` — public internet traffic | `lb.tf` — internal kubeapi HA VIP |
 
-The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"` — it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
+The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"`, so it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
 
 The **Flexible LB** *could* terminate TLS, but the one free allocation is already consumed by the kubeapi HA load balancer. Even if it were available, using OCI to manage certificates would break the automatic cert-manager + Let's Encrypt renewal cycle.
 
