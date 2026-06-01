@@ -652,6 +652,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="output_oci_log_group_id"></a> [oci\_log\_group\_id](#output\_oci\_log\_group\_id) | OCI Log Group OCID for k3s cloud-init logs (null if enable\_oci\_logging = false) |
 | <a name="output_public_nlb_ip"></a> [public\_nlb\_ip](#output\_public\_nlb\_ip) | Public IP address of the NLB (point your DNS here) |
 | <a name="output_ssh_command"></a> [ssh\_command](#output\_ssh\_command) | SSH command to connect to a cluster node via the public NLB (null if expose\_ssh = false). Routes to any available server. |
+| <a name="output_ssh_host_public_key"></a> [ssh\_host\_public\_key](#output\_ssh\_host\_public\_key) | Shared SSH host public key deployed to all nodes. Add to known\_hosts with: ssh-keygen -R <nlb-ip> && terraform output -raw ssh\_host\_public\_key \| ssh-keyscan -f - >> ~/.ssh/known\_hosts  (or simply ssh-keyscan <nlb-ip> >> ~/.ssh/known\_hosts after apply). |
 | <a name="output_terraform_state_backend"></a> [terraform\_state\_backend](#output\_terraform\_state\_backend) | S3-compatible backend config snippet for storing Terraform state in the provisioned OCI Object Storage bucket. Replace <region> and add S3 credentials (OCI Customer Secret Key). |
 | <a name="output_vault_id"></a> [vault\_id](#output\_vault\_id) | OCI Vault OCID (null if enable\_vault = false) |
 <!-- END_TF_DOCS -->
