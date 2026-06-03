@@ -157,9 +157,9 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
 | **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **cert-manager** | ✅ | ✅ | Deployment — schedules on any node |
-| **ArgoCD** | ✅ | ✅ | Deployment — schedules on any node |
-| **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet — any node |
+| **cert-manager** | ✅ | ✅ | Deployment: schedules on any node |
+| **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
+| **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet: any node |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
 
@@ -330,7 +330,7 @@ OCI provides two load balancer products with very different capabilities:
 | OSI layer | **L4 (TCP passthrough)** | L7 (HTTP/HTTPS aware) |
 | TLS termination | ❌ Not possible | ✅ Yes |
 | Always Free | **1 NLB** | 2 × 10 Mbps |
-| Used here | `nlb.tf` — public internet traffic | `lb.tf` — internal kubeapi HA VIP |
+| Used here | `nlb.tf`: public internet traffic | `lb.tf`: internal kubeapi HA VIP |
 
 The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"`, so it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
 
