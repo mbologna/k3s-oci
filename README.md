@@ -108,7 +108,7 @@ With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum*
 |---|:---:|:---:|:---:|---|
 | **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal**: HA etcd, all 4 nodes contribute to workloads |
 | 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
-| 2 CP + 2 workers | ❌ Invalid | — | — | 2-node etcd cannot form quorum; worse than 1 node |
+| 2 CP + 2 workers | ❌ Invalid | - | - | 2-node etcd cannot form quorum; worse than 1 node |
 | 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
 
 †etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
@@ -155,12 +155,12 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 |---|:---:|:---:|---|
 | **etcd** | ✅ | ❌ | k3s built-in; servers only |
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
-| **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet — 1 pod per node |
-| **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet — 1 pod per node |
+| **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
+| **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **cert-manager** | ✅ | ✅ | Deployment — schedules on any node |
 | **ArgoCD** | ✅ | ✅ | Deployment — schedules on any node |
 | **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet — any node |
-| **kured** | ✅ | ✅ | DaemonSet — 1 pod per node |
+| **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
 
 > **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
@@ -592,7 +592,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_enable_notifications"></a> [enable\_notifications](#input\_enable\_notifications) | Create an OCI Notifications topic and wire it to Alertmanager as a webhook receiver (Always Free: 1M HTTPS + 3K email/month). | `bool` | `false` | no |
 | <a name="input_enable_object_storage_state"></a> [enable\_object\_storage\_state](#input\_enable\_object\_storage\_state) | Provision an Always Free OCI Object Storage bucket for storing Terraform/OpenTofu state (S3-compatible API). See the terraform\_state\_backend output for the backend configuration snippet. | `bool` | `true` | no |
 | <a name="input_enable_oci_logging"></a> [enable\_oci\_logging](#input\_enable\_oci\_logging) | Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month). | `bool` | `true` | no |
-| <a name="input_enable_vault"></a> [enable\_vault](#input\_enable\_vault) | Store cluster secrets (k3s\_token, longhorn\_ui\_password, grafana\_admin\_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance\_principal at boot — plaintext values are removed from cloud-init user-data. | `bool` | `true` | no |
+| <a name="input_enable_vault"></a> [enable\_vault](#input\_enable\_vault) | Store cluster secrets (k3s\_token, longhorn\_ui\_password, grafana\_admin\_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance\_principal at boot; plaintext values are removed from cloud-init user-data. | `bool` | `true` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment label (e.g. staging, production) | `string` | `"staging"` | no |
 | <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |
 | <a name="input_expose_ssh"></a> [expose\_ssh](#input\_expose\_ssh) | Expose SSH (port 22) via the public NLB to all cluster nodes (restricted to my\_public\_ip\_cidr). Eliminates the need for OCI Bastion sessions for day-to-day access. | `bool` | `false` | no |
