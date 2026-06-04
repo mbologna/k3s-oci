@@ -1,0 +1,4 @@
+# KSV-0114: ClusterRole longhorn-webhook-patcher intentionally has get+patch access
+# to webhook configurations. This ArgoCD PostSync hook sets failurePolicy=Ignore
+# after each Longhorn Helm sync — it requires exactly these verbs by design.
+KSV-0114
