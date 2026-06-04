@@ -7,23 +7,29 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://charts.longhorn.io
-    chart: longhorn
-    # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-    targetRevision: "1.11.2"
-    helm:
-      valuesObject:
-        defaultSettings:
-          # 3 replicas: any single node can be lost without PVC data loss
-          defaultReplicaCount: 3
-        persistence:
-          defaultClassReplicaCount: 3
-        # Disable pre-upgrade job: ArgoCD runs it on every sync (including
-        # fresh installs) where longhorn-manager isn't running yet, causing
-        # the job to fail and block the sync.
-        preUpgradeChecker:
-          jobEnabled: false
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+      targetRevision: "1.11.2"
+      helm:
+        valuesObject:
+          defaultSettings:
+            # 3 replicas: any single node can be lost without PVC data loss
+            defaultReplicaCount: 3
+          persistence:
+            defaultClassReplicaCount: 3
+          # Disable pre-upgrade job: ArgoCD runs it on every sync (including
+          # fresh installs) where longhorn-manager isn't running yet, causing
+          # the job to fail and block the sync.
+          preUpgradeChecker:
+            jobEnabled: false
+    # PostSync hook: sets webhook failurePolicy to Ignore after each Helm sync.
+    # The Helm chart resets failurePolicy to Fail on every sync; the hook re-applies
+    # the Ignore patch to prevent the konnectivity 502 issue from breaking startup.
+    - repoURL: https://github.com/mbologna/k3s-oci.git
+      targetRevision: HEAD
+      path: gitops/longhorn/webhook-postsync
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
@@ -33,3 +39,25 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
+  # konnectivity proxy (k3s HA EgressSelector) cannot route webhook calls to
+  # pods — returns 502 — causing longhorn-manager to crash-loop at startup.
+  # The PostSync hook re-applies failurePolicy:Ignore after each sync.
+  # ignoreDifferences prevents ArgoCD from showing OutOfSync.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: longhorn-webhook-validator
+      jqPathExpressions:
+        - .webhooks[].failurePolicy
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: longhorn-webhook-mutator
+      jqPathExpressions:
+        - .webhooks[].failurePolicy
