@@ -26,12 +26,15 @@ spec:
           prometheusSpec:
             retention: 7d
             retentionSize: "8GB"
+            # ARM64 (A1.Flex) startup is slower — relax liveness probe to avoid false restarts
+            livenessProbeFailureThreshold: 30
+            livenessProbeTimeout: 10
             resources:
               requests:
                 memory: 512Mi
                 cpu: 100m
               limits:
-                memory: 1Gi
+                memory: 2Gi   # 1Gi OOMKills on ARM64 with 7d retention; 2Gi is stable
             storageSpec:
               volumeClaimTemplate:
                 spec:
