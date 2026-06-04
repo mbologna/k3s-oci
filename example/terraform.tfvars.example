@@ -101,6 +101,18 @@ k3s_standalone_worker = true
 # Requires enable_vault = true.
 # enable_external_secrets = false
 
+# ── Tailscale operator ────────────────────────────────────────────────────────
+# Store Tailscale OAuth credentials in OCI Vault so the operator ExternalSecret
+# can sync them without committing secrets to git. Requires enable_vault = true.
+# Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth
+#   Scope: Devices → Write (devices:core:write). Allowed tag: tag:k8s-operator.
+#   NOTE: OAuth client scopes cannot be changed after creation.
+# Vault secrets created: <cluster_name>-tailscale-oauth-client-id + -client-secret
+# See output tailscale_vault_secret_names for the exact names to use in ExternalSecrets.
+# enable_tailscale              = false
+# tailscale_oauth_client_id     = "tskey-client-...CNTRL"
+# tailscale_oauth_client_secret = "tskey-client-...secret"
+
 # ── DNS-01 ACME challenge (Cloudflare) ────────────────────────────────────────
 # Use Cloudflare DNS-01 solver instead of HTTP-01 for cert-manager.
 # Enables wildcard certs (*.example.com); requires enable_external_dns = true.
