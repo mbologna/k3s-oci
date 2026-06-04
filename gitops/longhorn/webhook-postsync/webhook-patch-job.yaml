@@ -1,0 +1,82 @@
+---
+# PostSync hook: set Longhorn webhook failurePolicy to Ignore after every sync.
+#
+# Why: k3s HA konnectivity proxy (EgressSelector) cannot route webhook calls
+# to pods — returns 502. With failurePolicy:Fail (the Helm default), any
+# Longhorn CRD operation fails when the webhook is temporarily unreachable,
+# causing longhorn-manager to crash-loop on startup.
+# Setting failurePolicy:Ignore allows the manager to start and operate
+# normally even when the webhook is momentarily unavailable.
+#
+# This hook runs after each longhorn sync to re-apply the patch,
+# since the Helm chart resets failurePolicy:Fail on every sync.
+#
+# Implementation note: rancher/kubectl and bitnami/kubectl ARM64 images are
+# distroless (no sh/bash). Two init containers call kubectl directly without
+# a shell wrapper; the main container just runs kubectl version --client.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: longhorn-webhook-failurepolicy-ignore
+  namespace: longhorn-system
+  labels:
+    app.kubernetes.io/name: longhorn-webhook-failurepolicy-ignore
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: longhorn-webhook-failurepolicy-ignore
+    spec:
+      serviceAccountName: longhorn-webhook-patcher
+      restartPolicy: Never
+      initContainers:
+        - name: patch-validating-webhook
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          command:
+            - kubectl
+            - patch
+            - validatingwebhookconfiguration
+            - longhorn-webhook-validator
+            - --type=json
+            - -p
+            - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
+        - name: patch-mutating-webhook
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          command:
+            - kubectl
+            - patch
+            - mutatingwebhookconfiguration
+            - longhorn-webhook-mutator
+            - --type=json
+            - -p
+            - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
+      containers:
+        - name: done
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          command:
+            - kubectl
+            - version
+            - --client
