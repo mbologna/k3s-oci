@@ -37,7 +37,7 @@ do not introduce resources that incur cost.
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | 3 secrets — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
+| Vault (shared) | Software keys + 150 secrets | 3–5 secrets — k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
 | Volume backups | 5 total | 4 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | Notifications | 1M HTTPS + 3K email/month | 1 topic wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
@@ -63,11 +63,11 @@ compute.tf       — Instance pool (servers), pool (workers), standalone extra w
 lb.tf            — Internal Flexible LB (kubeapi HA)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
-vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), three cluster secrets (enable_vault)
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 3–5 cluster secrets: k3s_token, longhorn_ui_password, grafana_admin_password; +tailscale OAuth pair when enable_tailscale = true
 objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
 notifications.tf — OCI Notifications topic + optional email subscription (enable_notifications)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
-output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id)
+output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id, tailscale_vault_secret_names)
 files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file with Terraform ${var} syntax
 files/agent-vars.sh.tpl           — cloud-init header for agents: ONLY file with Terraform ${var} syntax
 files/kubeconfig-hint-bastion.tpl     — kubeconfig retrieval instructions when bastion is enabled
@@ -82,7 +82,7 @@ files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_docker
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn ingress with BasicAuth (Envoy Gateway SecurityPolicy + HTTPRoute)
+gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target template, taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for k3s HA konnectivity 502)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
@@ -321,6 +321,14 @@ terraform-docs .
 - Run `terraform-docs .` locally before pushing to avoid an extra CI commit.
 - Config is in `.terraform-docs.yml` (inject mode, sort by name).
 
+### Tailscale operator (`enable_tailscale`)
+- Controlled by `enable_tailscale` variable (default: `false`). Requires `enable_vault = true`.
+- Stores two Vault secrets: `${cluster_name}-tailscale-oauth-client-id` and `${cluster_name}-tailscale-oauth-client-secret`.
+- Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth — scope `Devices → Write (devices:core:write)`, allowed tag `tag:k8s-operator`. Scopes cannot be changed after creation.
+- `tailscale_vault_secret_names` output shows the generated secret names; reference these in `platform/<cluster>/tailscale-operator/oauth-secret.yaml` ExternalSecret.
+- The Tailscale operator Helm chart + RBAC is NOT bootstrapped by cloud-init — it is deployed by ArgoCD using the manifests in the consumer repo (`clusters/<cluster>/tailscale-operator.yaml`).
+- Using Tailscale LoadBalancer Services: add `loadBalancerClass: tailscale` + `tailscale.com/hostname: <name>` annotation; the operator creates a proxy pod and registers `<name>.<tailnet>.ts.net`.
+
 ### OCI Vault (`vault.tf`)
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
@@ -431,6 +439,7 @@ before any OCI API call is made:
 - `enable_external_secrets = true` requires `enable_vault = true` and `region != null`
 - `enable_dns01_challenge = true` requires `cloudflare_api_token != null`
 - `enable_external_dns = true` requires `cloudflare_api_token`, `cloudflare_zone_id`, and `external_dns_domain_filter`
+- `enable_tailscale = true` requires `enable_vault = true` and both `tailscale_oauth_client_id` and `tailscale_oauth_client_secret` set
 
 These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
 Do not remove these checks.
