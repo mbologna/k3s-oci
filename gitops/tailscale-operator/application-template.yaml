@@ -1,0 +1,81 @@
+# ArgoCD Application for Tailscale Operator
+#
+# ⚠️  TEMPLATE — DO NOT copy to gitops/apps/ without editing first.
+#
+# REQUIRED before activating:
+#   1. Set in terraform.tfvars and run tofu apply:
+#        enable_tailscale              = true
+#        enable_vault                  = true   (already default)
+#        enable_external_secrets       = true
+#        tailscale_oauth_client_id     = "tskey-client-..."
+#        tailscale_oauth_client_secret = "tskey-client-...secret"
+#      Terraform stores the credentials in OCI Vault as:
+#        <cluster_name>-tailscale-oauth-client-id
+#        <cluster_name>-tailscale-oauth-client-secret
+#      Verify with: terraform output tailscale_vault_secret_names
+#
+#   2. Edit gitops/tailscale-operator/oauth-secret.yaml:
+#      Replace "my-k3s" with your cluster_name from terraform.tfvars
+#
+#   3. In this file, replace "my-k3s-k8s-operator" with <cluster_name>-k8s-operator
+#
+#   4. Copy this file to gitops/apps/:
+#        cp gitops/tailscale-operator/application-template.yaml gitops/apps/tailscale-operator.yaml
+#
+# Pre-requisite: create an OAuth client in the Tailscale admin console:
+#   https://login.tailscale.com/admin/settings/oauth
+#   Required scope: Devices → Write (devices:core:write)
+#   Allowed tag: tag:k8s-operator (must exist in ACL tagOwners)
+#   NOTE: OAuth client scopes cannot be changed after creation.
+#
+# See: https://tailscale.com/kb/1236/kubernetes-operator
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      # renovate: datasource=helm depName=tailscale-operator registryUrl=https://pkgs.tailscale.com/helmcharts
+      targetRevision: "1.96.5"
+      helm:
+        valuesObject:
+          operatorConfig:
+            # TODO: replace with <cluster_name>-k8s-operator
+            hostname: my-k3s-k8s-operator
+            defaultTags:
+              - "tag:k8s-operator"
+          # OAuth credentials are synced from OCI Vault via the ExternalSecret in
+          # gitops/tailscale-operator/oauth-secret.yaml. Leave empty here.
+          oauth:
+            clientId: ""
+            clientSecret: ""
+          operatorDeployment:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+    - repoURL: https://github.com/mbologna/k3s-oci.git
+      targetRevision: HEAD
+      path: gitops/tailscale-operator
+      directory:
+        exclude: 'application-template.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
