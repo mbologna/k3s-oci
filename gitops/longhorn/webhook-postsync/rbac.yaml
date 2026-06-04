@@ -10,6 +10,8 @@ metadata:
   annotations:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 ---
+# trivy:ignore:KSV-0114 - patch on webhook configs is required by design:
+# this PostSync hook must set failurePolicy=Ignore after each Helm sync.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
