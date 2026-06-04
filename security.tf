@@ -50,6 +50,20 @@ resource "oci_core_security_list" "public" {
       max = var.https_lb_port
     }
   }
+
+  # kubeapi via public NLB — inbound to NLB on the public subnet
+  dynamic "ingress_security_rules" {
+    for_each = var.expose_kubeapi ? [1] : []
+    content {
+      protocol    = "6"
+      source      = var.my_public_ip_cidr
+      description = "kubeapi from operator"
+      tcp_options {
+        min = var.kube_api_port
+        max = var.kube_api_port
+      }
+    }
+  }
 }
 
 # Security list for the private subnet (k3s nodes)
@@ -77,5 +91,35 @@ resource "oci_core_security_list" "private" {
     protocol    = "all"
     source      = var.oci_core_vcn_cidr
     description = "All traffic within VCN (k3s cluster communication)"
+  }
+
+  # OCI NLB operates in pass-through mode: the original client IP reaches the backend
+  # instance directly. When expose_ssh or expose_kubeapi is enabled, the private subnet
+  # must allow those ports from the operator IP so NLB-forwarded packets aren't dropped.
+
+  dynamic "ingress_security_rules" {
+    for_each = var.expose_ssh ? [1] : []
+    content {
+      protocol    = "6"
+      source      = var.my_public_ip_cidr
+      description = "SSH from operator via NLB pass-through"
+      tcp_options {
+        min = 22
+        max = 22
+      }
+    }
+  }
+
+  dynamic "ingress_security_rules" {
+    for_each = var.expose_kubeapi ? [1] : []
+    content {
+      protocol    = "6"
+      source      = var.my_public_ip_cidr
+      description = "kubeapi from operator via NLB pass-through"
+      tcp_options {
+        min = var.kube_api_port
+        max = var.kube_api_port
+      }
+    }
   }
 }
