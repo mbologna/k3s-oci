@@ -1,0 +1,18 @@
+---
+# ProxyClass — resource limits for Tailscale proxy StatefulSet pods.
+# Applied to Services via the tailscale.com/proxy-class annotation.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: cross-cluster
+spec:
+  statefulSet:
+    pod:
+      tailscaleContainer:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi

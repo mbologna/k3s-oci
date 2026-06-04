@@ -59,6 +59,11 @@ gitops/
 │   └── monitoring.yaml               # monitoring namespace
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
+├── tailscale-operator/               # Tailscale Operator (opt-in — copy application-template.yaml to apps/)
+│   ├── application-template.yaml    # Template Application — edit cluster_name, then copy to apps/
+│   ├── oauth-secret.yaml            # ExternalSecret: OCI Vault → operator-oauth Secret
+│   ├── proxyclass.yaml              # ProxyClass: resource limits for Tailscale proxy pods
+│   └── kustomization.yaml
 ├── update-repo-url.sh                # Helper: update repoURL after forking (see below)
 └── README.md
 ```
