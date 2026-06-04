@@ -336,6 +336,38 @@ variable "external_secrets_chart_version" {
   default = "2.4.1"
 }
 
+# ── GitOps ────────────────────────────────────────────────────────────────────
+
+variable "gitops_path" {
+  type    = string
+  default = "gitops/apps"
+}
+
+variable "gitops_ssh_private_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+
+variable "enable_tailscale" {
+  type    = bool
+  default = false
+}
+
+variable "tailscale_oauth_client_id" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
+variable "tailscale_oauth_client_secret" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
 module "k3s_cluster" {
   source = "../"
 
@@ -369,6 +401,11 @@ module "k3s_cluster" {
   longhorn_hostname                 = var.longhorn_hostname
   grafana_hostname                  = var.grafana_hostname
   gitops_repo_url                   = var.gitops_repo_url
+  gitops_path                       = var.gitops_path
+  gitops_ssh_private_key            = var.gitops_ssh_private_key
+  enable_tailscale                  = var.enable_tailscale
+  tailscale_oauth_client_id         = var.tailscale_oauth_client_id
+  tailscale_oauth_client_secret     = var.tailscale_oauth_client_secret
   enable_external_dns               = var.enable_external_dns
   cloudflare_api_token              = var.cloudflare_api_token
   cloudflare_zone_id                = var.cloudflare_zone_id
