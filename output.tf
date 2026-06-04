@@ -119,3 +119,14 @@ output "vault_id" {
   description = "OCI Vault OCID (null if enable_vault = false)"
   value       = var.enable_vault ? oci_kms_vault.k3s[0].id : null
 }
+
+output "tailscale_vault_secret_names" {
+  description = <<-EOT
+    OCI Vault secret names for the Tailscale operator OAuth credentials (null if enable_tailscale = false).
+    Reference these names in the ExternalSecret (platform/<cluster>/tailscale-operator/oauth-secret.yaml).
+  EOT
+  value = var.enable_tailscale ? {
+    client_id     = oci_vault_secret.tailscale_oauth_client_id[0].secret_name
+    client_secret = oci_vault_secret.tailscale_oauth_client_secret[0].secret_name
+  } : null
+}
