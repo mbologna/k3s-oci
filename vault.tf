@@ -86,6 +86,38 @@ resource "oci_vault_secret" "grafana_admin_password" {
   freeform_tags = local.common_tags
 }
 
+resource "oci_vault_secret" "tailscale_oauth_client_id" {
+  count          = var.enable_vault && var.enable_tailscale ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-tailscale-oauth-client-id"
+  description    = "Tailscale operator OAuth client ID"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(var.tailscale_oauth_client_id)
+  }
+
+  freeform_tags = local.common_tags
+}
+
+resource "oci_vault_secret" "tailscale_oauth_client_secret" {
+  count          = var.enable_vault && var.enable_tailscale ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-tailscale-oauth-client-secret"
+  description    = "Tailscale operator OAuth client secret"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(var.tailscale_oauth_client_secret)
+  }
+
+  freeform_tags = local.common_tags
+}
+
 resource "oci_vault_secret" "gitops_ssh_key" {
   count          = var.enable_vault && var.gitops_ssh_private_key != "" ? 1 : 0
   compartment_id = var.compartment_ocid

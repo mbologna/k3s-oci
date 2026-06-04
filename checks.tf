@@ -30,3 +30,17 @@ check "external_dns_requires_cloudflare" {
     error_message = "enable_external_dns = true requires cloudflare_api_token, cloudflare_zone_id, and external_dns_domain_filter."
   }
 }
+
+check "tailscale_requires_vault" {
+  assert {
+    condition     = !var.enable_tailscale || var.enable_vault
+    error_message = "enable_tailscale = true requires enable_vault = true (OAuth credentials are stored in OCI Vault and synced via ExternalSecret)."
+  }
+}
+
+check "tailscale_requires_credentials" {
+  assert {
+    condition     = !var.enable_tailscale || (var.tailscale_oauth_client_id != null && var.tailscale_oauth_client_secret != null)
+    error_message = "enable_tailscale = true requires tailscale_oauth_client_id and tailscale_oauth_client_secret."
+  }
+}

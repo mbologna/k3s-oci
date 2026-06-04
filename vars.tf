@@ -530,6 +530,34 @@ variable "external_secrets_chart_version" {
   default = "2.5.0"
 }
 
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+
+variable "enable_tailscale" {
+  type        = bool
+  description = <<-EOT
+    Store Tailscale Kubernetes operator OAuth credentials in OCI Vault so the
+    tailscale-operator ExternalSecret can sync them into the cluster without
+    committing secrets to git. Requires enable_vault = true.
+    Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth
+    with scope Devices → Write (devices:core:write) and allowed tag tag:k8s-operator.
+  EOT
+  default     = false
+}
+
+variable "tailscale_oauth_client_id" {
+  type        = string
+  sensitive   = true
+  description = "Tailscale OAuth client ID. Required when enable_tailscale = true."
+  default     = null
+}
+
+variable "tailscale_oauth_client_secret" {
+  type        = string
+  sensitive   = true
+  description = "Tailscale OAuth client secret. Required when enable_tailscale = true."
+  default     = null
+}
+
 # ── GitOps SSH deploy key ──────────────────────────────────────────────────────
 
 variable "gitops_ssh_private_key" {
