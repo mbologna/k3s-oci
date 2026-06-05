@@ -30,6 +30,14 @@ spec:
               template:
                 spec:
                   priorityClassName: system-cluster-critical
+                  containers:
+                    - name: envoy
+                      resources:
+                        requests:
+                          cpu: 100m
+                          memory: 128Mi
+                        limits:
+                          memory: 256Mi
       envoyService:
         type: NodePort
         patch:

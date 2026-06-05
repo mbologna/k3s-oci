@@ -322,13 +322,23 @@ variable "expose_ssh" {
 
 variable "oci_identity_dynamic_group_name" {
   type        = string
-  description = "Name for the OCI dynamic group granting instances access to the OCI API"
+  description = <<-EOT
+    Name for the OCI dynamic group granting instances access to the OCI API.
+    Must be unique per tenancy — the default 'k3s-cluster-dynamic-group' collides
+    if you deploy multiple clusters in the same tenancy. Recommended: set to
+    "<cluster_name>-dynamic-group" in your tfvars.
+  EOT
   default     = "k3s-cluster-dynamic-group"
 }
 
 variable "oci_identity_policy_name" {
   type        = string
-  description = "Name for the OCI IAM policy attached to the dynamic group"
+  description = <<-EOT
+    Name for the OCI IAM policy attached to the dynamic group.
+    Must be unique per tenancy — the default 'k3s-cluster-policy' collides
+    if you deploy multiple clusters in the same tenancy. Recommended: set to
+    "<cluster_name>-policy" in your tfvars.
+  EOT
   default     = "k3s-cluster-policy"
 }
 

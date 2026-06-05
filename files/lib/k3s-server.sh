@@ -8,8 +8,8 @@
 
 wait_for_kubeapi() {
   local max_attempts=180 attempt=0
-  echo "Waiting for k3s API at ${K3S_URL}:6443 ..."
-  until curl --output /dev/null --silent --insecure "https://${K3S_URL}:6443"; do
+  echo "Waiting for k3s API at ${K3S_URL}:${KUBE_API_PORT:-6443} ..."
+  until curl --output /dev/null --silent --insecure "https://${K3S_URL}:${KUBE_API_PORT:-6443}"; do
     attempt=$(( attempt + 1 ))
     if [[ $attempt -ge $max_attempts ]]; then
       echo "ERROR: kubeapi not reachable after ${max_attempts} attempts."

@@ -14,11 +14,19 @@ install_k3s_agent() {
   fi
 
   local max_api_attempts=180 max_attempts=10 attempt=0
+  local api_port="${KUBE_API_PORT:-6443}"
 
-  echo "Waiting for k3s API at ${K3S_URL}:6443 (max ${max_api_attempts} attempts × 10s) ..."
-  until curl --output /dev/null --silent --insecure "https://${K3S_URL}:6443"; do
+  echo "Waiting for k3s API at ${K3S_URL}:${api_port} (max ${max_api_attempts} attempts × 10s) ..."
+  until curl --output /dev/null --silent --insecure "https://${K3S_URL}:${api_port}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_api_attempts} ]] && { echo "ERROR: k3s API unreachable after ${max_api_attempts} attempts."; exit 1; }
+    # Every 30 attempts (~5 min) log the actual curl error to help diagnose connectivity issues
+    if (( attempt % 30 == 0 )); then
+      echo "  still waiting (${attempt}/${max_api_attempts}) -- curl error:"
+      curl --insecure "https://${K3S_URL}:${api_port}" 2>&1 | head -3 || true
+    else
+      echo "  attempt ${attempt}/${max_api_attempts} -- sleeping 10s"
+    fi
     sleep 10
   done
 
@@ -26,7 +34,7 @@ install_k3s_agent() {
   # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${K3S_URL} in arg uses outer scope (intentional)
   until curl -sfL https://get.k3s.io | \
       INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
-      sh -s - agent --server "https://${K3S_URL}:6443" "${install_params[@]}"; do
+      sh -s - agent --server "https://${K3S_URL}:${api_port}" "${install_params[@]}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s agent install failed after ${max_attempts} attempts."; exit 1; }
     echo "  retrying (${attempt}/${max_attempts}) ..."
