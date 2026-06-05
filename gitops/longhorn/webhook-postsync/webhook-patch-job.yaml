@@ -40,6 +40,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: patch-validating-webhook
+          # renovate: datasource=docker depName=rancher/kubectl
           image: rancher/kubectl:v1.31.5
           resources:
             requests:

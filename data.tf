@@ -79,8 +79,8 @@ data "cloudinit_config" "k3s_server" {
         longhorn_ui_username              = var.longhorn_ui_username
         longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
         grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
-        vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.longhorn_ui_password[0].id : ""
-        vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.grafana_admin_password[0].id : ""
+        vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.cluster["longhorn_ui_password"].id : ""
+        vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.cluster["grafana_admin_password"].id : ""
         vault_secret_id_gitops_ssh_key    = var.enable_vault && var.gitops_ssh_private_key != "" ? oci_vault_secret.gitops_ssh_key[0].id : ""
         gateway_api_version               = var.gateway_api_version
         certmanager_email_address         = var.certmanager_email_address
@@ -102,6 +102,9 @@ data "cloudinit_config" "k3s_server" {
         dockerhub_username                = var.dockerhub_username
         dockerhub_password                = var.dockerhub_password
         grafana_hostname                  = local.grafana_hostname
+        argocd_hostname                   = local.argocd_hostname
+        longhorn_hostname                 = local.longhorn_hostname
+        trace_enabled                     = var.trace_enabled
       })),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-secrets.sh"),
@@ -121,7 +124,9 @@ data "cloudinit_config" "k3s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = join("\n", [
-      templatefile("${path.module}/files/agent-vars.sh.tpl", local.k3s_common_cloud_init_vars),
+      templatefile("${path.module}/files/agent-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
+        trace_enabled = var.trace_enabled
+      })),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-agent.sh"),
     ])

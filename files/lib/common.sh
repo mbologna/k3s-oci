@@ -232,5 +232,11 @@ resolve_flannel_params() {
     export FLANNEL_IFACE
     LOCAL_IP=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=src )(\S+)')
     FLANNEL_IFACE=$(ip -4 route ls "${K3S_SUBNET}" | grep -Po '(?<=dev )(\S+)')
+    if [[ -z "${LOCAL_IP}" || -z "${FLANNEL_IFACE}" ]]; then
+      echo "ERROR: resolve_flannel_params: could not determine LOCAL_IP or FLANNEL_IFACE from subnet '${K3S_SUBNET}'."
+      echo "  'ip -4 route ls ${K3S_SUBNET}' returned no usable result."
+      echo "  Check that K3S_SUBNET matches an interface route on this node."
+      exit 1
+    fi
   fi
 }

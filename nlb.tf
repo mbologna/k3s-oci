@@ -3,7 +3,7 @@
 
 resource "oci_network_load_balancer_network_load_balancer" "k3s_public_nlb" {
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true
   }
 
   compartment_id                 = var.compartment_ocid
@@ -36,6 +36,22 @@ locals {
       nodeport         = var.ingress_controller_https_nodeport
     }
   }
+
+  # Flattened backend maps for each node tier × protocol combination.
+  # for_each keys encode both protocol and pool index to allow per-instance sequencing.
+  nlb_backends_workers = {
+    for pair in setproduct(keys(local.nlb_web_protocols), range(var.k3s_worker_pool_size)) :
+    "${pair[0]}_${pair[1]}" => { protocol = pair[0], index = pair[1] }
+  }
+
+  nlb_backends_standalone = var.k3s_standalone_worker ? {
+    for k in keys(local.nlb_web_protocols) : k => { protocol = k }
+  } : {}
+
+  nlb_backends_servers = {
+    for pair in setproduct(keys(local.nlb_web_protocols), range(var.k3s_server_pool_size)) :
+    "${pair[0]}_${pair[1]}" => { protocol = pair[0], index = pair[1] }
+  }
 }
 
 resource "oci_network_load_balancer_backend_set" "k3s_web" {
@@ -62,93 +78,47 @@ resource "oci_network_load_balancer_listener" "k3s_web" {
   protocol                 = "TCP"
 }
 
-# ── HTTP backends ──────────────────────────────────────────────────────────────
+# ── HTTP + HTTPS backends (for_each by tier × protocol) ───────────────────────
 # OCI NLB has a global lifecycle lock: only one backend operation at a time per NLB.
-# Chain all backend resource blocks so they execute sequentially and avoid 409 conflicts.
+# Three tiers (workers pool → standalone worker → servers pool) are chained via
+# depends_on to ensure serial execution across tiers. Within each tier, Terraform
+# may add backends in parallel; the OCI provider handles 409 conflicts via retry.
 
-resource "oci_network_load_balancer_backend" "k3s_http_workers" {
+resource "oci_network_load_balancer_backend" "k3s_workers" {
   depends_on = [oci_core_instance_pool.k3s_workers]
+  for_each   = local.nlb_backends_workers
 
-  count                    = var.k3s_worker_pool_size
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["http"].name
+  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web[each.value.protocol].name
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id, var.ingress_controller_http_nodeport)
-  port                     = var.ingress_controller_http_nodeport
-  target_id                = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
+  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_workers.instances[each.value.index].id, local.nlb_web_protocols[each.value.protocol].nodeport)
+  port                     = local.nlb_web_protocols[each.value.protocol].nodeport
+  target_id                = data.oci_core_instance_pool_instances.k3s_workers.instances[each.value.index].id
 }
 
-resource "oci_network_load_balancer_backend" "k3s_http_standalone_worker" {
-  depends_on = [oci_network_load_balancer_backend.k3s_http_workers]
+resource "oci_network_load_balancer_backend" "k3s_standalone" {
+  depends_on = [oci_network_load_balancer_backend.k3s_workers]
+  for_each   = local.nlb_backends_standalone
 
-  count = var.k3s_standalone_worker ? 1 : 0
-
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["http"].name
+  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web[each.value.protocol].name
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, var.ingress_controller_http_nodeport)
-  port                     = var.ingress_controller_http_nodeport
+  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, local.nlb_web_protocols[each.value.protocol].nodeport)
+  port                     = local.nlb_web_protocols[each.value.protocol].nodeport
   target_id                = oci_core_instance.k3s_standalone_worker[0].id
 }
 
-resource "oci_network_load_balancer_backend" "k3s_http_servers" {
+resource "oci_network_load_balancer_backend" "k3s_servers" {
   depends_on = [
     oci_core_instance_pool.k3s_servers,
-    oci_network_load_balancer_backend.k3s_http_standalone_worker,
-    oci_network_load_balancer_backend.k3s_http_workers,
+    oci_network_load_balancer_backend.k3s_standalone,
+    oci_network_load_balancer_backend.k3s_workers,
   ]
+  for_each = local.nlb_backends_servers
 
-  count                    = var.k3s_server_pool_size
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["http"].name
+  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web[each.value.protocol].name
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id, var.ingress_controller_http_nodeport)
-  port                     = var.ingress_controller_http_nodeport
-  target_id                = data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id
-}
-
-# ── HTTPS backends ─────────────────────────────────────────────────────────────
-
-resource "oci_network_load_balancer_backend" "k3s_https_workers" {
-  depends_on = [
-    oci_core_instance_pool.k3s_workers,
-    oci_network_load_balancer_backend.k3s_http_servers,
-    oci_network_load_balancer_backend.k3s_http_standalone_worker,
-  ]
-
-  count                    = var.k3s_worker_pool_size
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["https"].name
-  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id, var.ingress_controller_https_nodeport)
-  port                     = var.ingress_controller_https_nodeport
-  target_id                = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
-}
-
-resource "oci_network_load_balancer_backend" "k3s_https_standalone_worker" {
-  depends_on = [
-    oci_network_load_balancer_backend.k3s_https_workers,
-    oci_network_load_balancer_backend.k3s_http_servers,
-  ]
-
-  count = var.k3s_standalone_worker ? 1 : 0
-
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["https"].name
-  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", oci_core_instance.k3s_standalone_worker[0].id, var.ingress_controller_https_nodeport)
-  port                     = var.ingress_controller_https_nodeport
-  target_id                = oci_core_instance.k3s_standalone_worker[0].id
-}
-
-resource "oci_network_load_balancer_backend" "k3s_https_servers" {
-  depends_on = [
-    oci_core_instance_pool.k3s_servers,
-    oci_network_load_balancer_backend.k3s_https_standalone_worker,
-    oci_network_load_balancer_backend.k3s_https_workers,
-  ]
-
-  count                    = var.k3s_server_pool_size
-  backend_set_name         = oci_network_load_balancer_backend_set.k3s_web["https"].name
-  network_load_balancer_id = oci_network_load_balancer_network_load_balancer.k3s_public_nlb.id
-  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id, var.ingress_controller_https_nodeport)
-  port                     = var.ingress_controller_https_nodeport
-  target_id                = data.oci_core_instance_pool_instances.k3s_servers.instances[count.index].id
+  name                     = format("%s:%s", data.oci_core_instance_pool_instances.k3s_servers.instances[each.value.index].id, local.nlb_web_protocols[each.value.protocol].nodeport)
+  port                     = local.nlb_web_protocols[each.value.protocol].nodeport
+  target_id                = data.oci_core_instance_pool_instances.k3s_servers.instances[each.value.index].id
 }
 
 # ── kubeapi (optional) ────────────────────────────────────────────────────────
@@ -180,8 +150,8 @@ resource "oci_network_load_balancer_listener" "k3s_kubeapi_public" {
 resource "oci_network_load_balancer_backend" "k3s_kubeapi_public_servers" {
   depends_on = [
     oci_core_instance_pool.k3s_servers,
-    oci_network_load_balancer_backend.k3s_https_servers,
-    oci_network_load_balancer_backend.k3s_https_standalone_worker,
+    oci_network_load_balancer_backend.k3s_servers,
+    oci_network_load_balancer_backend.k3s_standalone,
   ]
 
   count = var.expose_kubeapi ? var.k3s_server_pool_size : 0

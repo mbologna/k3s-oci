@@ -1,0 +1,89 @@
+---
+# Default-deny for the envoy-gateway-system namespace.
+# Envoy proxy pods receive direct internet traffic via the OCI NLB (NodePort)
+# and must only allow the specific ports they serve.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: envoy-gateway-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow Envoy proxy pods to receive HTTP/HTTPS traffic from the NLB (NodePort 30080/30443)
+# and health-check probes from any source.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nodeport-ingress
+  namespace: envoy-gateway-system
+spec:
+  podSelector:
+    matchLabels:
+      gateway.envoyproxy.io/owning-gateway-name: eg
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 30080
+        - protocol: TCP
+          port: 30443
+---
+# Allow Envoy Gateway control-plane and proxy pods to reach the Kubernetes API (kubeapi).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubeapi-egress
+  namespace: envoy-gateway-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 6443
+---
+# Allow Envoy Gateway to reach upstream backends (pods in other namespaces via ClusterIP).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-egress
+  namespace: envoy-gateway-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+        - protocol: TCP
+          port: 3000
+---
+# Allow DNS resolution for all pods in the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: envoy-gateway-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

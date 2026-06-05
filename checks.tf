@@ -44,3 +44,14 @@ check "tailscale_requires_credentials" {
     error_message = "enable_tailscale = true requires tailscale_oauth_client_id and tailscale_oauth_client_secret."
   }
 }
+
+check "backup_count_within_free_limit" {
+  assert {
+    condition = !var.enable_backup || (
+      var.k3s_server_pool_size +
+      (var.k3s_standalone_worker ? 1 : 0) +
+      (var.k3s_worker_pool_size > 0 ? var.k3s_worker_pool_size : 0)
+    ) <= 5
+    error_message = "enable_backup = true with the current node count would exceed the Always Free 5-backup limit. Reduce k3s_server_pool_size or disable the standalone worker."
+  }
+}

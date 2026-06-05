@@ -51,12 +51,14 @@ gitops/
 │   ├── longhorn-servicemonitor.yaml  # ServiceMonitor for Longhorn metrics scraping
 │   ├── prometheus-rules.yaml         # Disk + Longhorn alert rules
 │   └── README.md                     # Grafana access, dashboards, alerting how-to
-├── network-policies/                 # NetworkPolicies (default-deny + allow rules)
+├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
 │   ├── default-deny.yaml             # default namespace
-│   ├── argocd.yaml                   # argocd namespace
-│   ├── cert-manager.yaml             # cert-manager namespace
+│   ├── argocd.yaml                   # argocd namespace (includes port 22 SSH egress for git clone)
+│   ├── cert-manager.yaml             # cert-manager namespace (includes port 80 egress for HTTP-01)
+│   ├── envoy-gateway-system.yaml     # envoy-gateway-system namespace (NodePort ingress + backend egress)
 │   ├── longhorn-system.yaml          # longhorn-system namespace
-│   └── monitoring.yaml               # monitoring namespace
+│   ├── monitoring.yaml               # monitoring namespace
+│   └── system-upgrade.yaml           # system-upgrade namespace
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
 ├── tailscale-operator/               # Tailscale Operator (opt-in — copy application-template.yaml to apps/)
@@ -82,6 +84,30 @@ git push
 
 Then set `gitops_repo_url = "https://github.com/your-org/your-fork.git"` in your
 `terraform.tfvars` so cloud-init bootstraps the App of Apps with the correct URL.
+
+## Bootstrap vs ArgoCD responsibilities
+
+Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
+
+| Component | Who manages it | Why |
+|---|---|---|
+| Gateway API CRDs | cloud-init | Must exist before ArgoCD syncs `envoy-gateway` and `gateway-config` |
+| cert-manager Helm | cloud-init | ClusterIssuers need the real email from `var.certmanager_email_address` |
+| ClusterIssuers (staging/prod) | cloud-init | Email is a runtime Terraform variable, not static git content |
+| ArgoCD Helm + App of Apps | cloud-init | Chicken-and-egg: ArgoCD must be installed before it can manage itself |
+| ESO Helm + ClusterSecretStore | cloud-init | `vault_ocid` is runtime; conditional on `enable_external_secrets` |
+| Kubernetes Secrets with runtime values | cloud-init | Passwords, endpoints, OCI OCIDs resolved at `tofu apply` time |
+| `https-grafana` / `https-argocd` / `https-longhorn` Gateway listeners | cloud-init | NLB IP changes on every deploy; cannot be hardcoded in git |
+| Envoy Gateway Helm | ArgoCD (`apps/envoy-gateway.yaml`) | Helm chart, no runtime variables |
+| Longhorn Helm | ArgoCD (`apps/longhorn.yaml`) | Helm chart, no runtime variables |
+| kured Helm | ArgoCD (`apps/kured.yaml`) | Helm chart, no runtime variables |
+| system-upgrade-controller Helm | ArgoCD (`apps/system-upgrade-controller.yaml`) | Helm chart, no runtime variables |
+| external-dns Helm | ArgoCD (`apps/external-dns.yaml`) or optional-external-dns wrapper | Helm chart |
+| All `gitops/gateway/` resources | ArgoCD (`apps/gateway-config.yaml`) | Pure Kubernetes manifests, no runtime values |
+| All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
+| All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |
+
+**Key rule**: if a resource needs a value that only exists after `tofu apply` (IP addresses, OCIDs, passwords), it goes in cloud-init. Everything else goes in `gitops/`.
 
 ## Bootstrap
 

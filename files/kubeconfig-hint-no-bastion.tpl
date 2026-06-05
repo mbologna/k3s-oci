@@ -20,4 +20,4 @@
 # Option C — Expose kubeapi via public NLB (restricted to ${my_public_ip_cidr}):
 #   Add  expose_kubeapi = true  to terraform.tfvars, then run tofu apply.
 #   Use Option A or B once to fetch the kubeconfig, then update the server URL:
-#   sed -i '' 's|127.0.0.1:6443|${public_nlb_ip}:${kube_api_port}|' ~/.kube/k3s-oci.yaml
+#   sed -i.bak 's|127.0.0.1:6443|${public_nlb_ip}:${kube_api_port}|' ~/.kube/k3s-oci.yaml && rm -f ~/.kube/k3s-oci.yaml.bak
