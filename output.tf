@@ -3,7 +3,7 @@ output "grafana_admin_credentials" {
   value = {
     username = "admin"
     password = random_password.grafana_admin_password.result
-    hint     = "Access via: https://${var.grafana_hostname != null ? var.grafana_hostname : "<grafana-hostname>"}"
+    hint     = "Access via: https://${local.grafana_hostname}"
   }
   sensitive = true
 }
