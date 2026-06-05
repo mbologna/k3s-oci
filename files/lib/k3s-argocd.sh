@@ -109,73 +109,146 @@ EOF
 # Optional apps live in gitops/optional/ (outside the main app-of-apps scope).
 # Cloud-init creates thin wrapper ArgoCD Applications here so that ArgoCD
 # only deploys an optional component when its feature flag is enabled.
-# Each wrapper points to a single file in gitops/optional/ via directory.include,
-# which ArgoCD then applies -- creating the actual ArgoCD Application for the
-# Helm chart. This is the standard app-of-apps pattern, kept conditional.
+
+# create_optional_app <app-name> <filename> [extra_sync_option...]
+# Creates a single ArgoCD Application pointing at gitops/optional/<filename>.
+create_optional_app() {
+  local app_name="$1"
+  local filename="$2"
+  shift 2
+  local extra_sync_options=("$@")
+
+  local sync_options_yaml="      - CreateNamespace=true"
+  for opt in "${extra_sync_options[@]}"; do
+    sync_options_yaml="${sync_options_yaml}
+      - ${opt}"
+  done
+
+  kubectl apply -n argocd -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: optional-${app_name}
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ${GITOPS_REPO_URL}
+    targetRevision: HEAD
+    path: gitops/optional
+    directory:
+      include: "${filename}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+${sync_options_yaml}
+EOF
+  echo "optional-${app_name} ArgoCD Application created."
+}
 
 create_optional_apps() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-  if [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]]; then
-    kubectl apply -n argocd -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: optional-external-dns
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  source:
-    repoURL: ${GITOPS_REPO_URL}
-    targetRevision: HEAD
-    path: gitops/optional
-    directory:
-      include: "external-dns.yaml"
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-EOF
-    echo "optional-external-dns ArgoCD Application created."
-  fi
+  [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]] && \
+    create_optional_app "external-dns" "external-dns.yaml"
 
-  if [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]]; then
-    kubectl apply -n argocd -f - <<EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
+  [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]] && \
+    create_optional_app "external-secrets" "external-secrets.yaml" "ServerSideApply=true"
+}
+
+# -- Generic app ingress helper ------------------------------------------------
+# configure_app_ingress <hostname> <namespace> <service> <port> <listener_name>
+#
+# Creates (or updates) three resources for an HTTPS-terminated app:
+#   1. A Gateway listener named <listener_name> (SSA, field-manager=cloud-init-bootstrap)
+#   2. A cert-manager Certificate in envoy-gateway-system
+#   3. An HTTPRoute in <namespace> with <hostname> (SSA, field-manager=cloud-init-bootstrap)
+#
+# All resources survive ArgoCD reconciliation because cloud-init-bootstrap owns
+# the specific fields; ArgoCD never claims them.
+configure_app_ingress() {
+  local hostname="$1"
+  local namespace="$2"
+  local service="$3"
+  local port="$4"
+  local listener_name="$5"
+
+  [[ -z "${hostname}" ]] && return 0
+
+  echo "Configuring ${service} ingress for ${hostname} (listener=${listener_name})..."
+
+  local attempts=0
+  until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
+    attempts=$((attempts + 1))
+    [[ ${attempts} -ge 60 ]] && echo "Timeout waiting for Gateway eg" && return 1
+    echo "  waiting for Gateway eg... (${attempts}/60)"
+    sleep 10
+  done
+
+  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
 metadata:
-  name: optional-external-secrets
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  name: eg
+  namespace: envoy-gateway-system
 spec:
-  project: default
-  source:
-    repoURL: ${GITOPS_REPO_URL}
-    targetRevision: HEAD
-    path: gitops/optional
-    directory:
-      include: "external-secrets.yaml"
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+  gatewayClassName: eg
+  listeners:
+    - name: ${listener_name}
+      port: 443
+      protocol: HTTPS
+      hostname: "${hostname}"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: ${listener_name}-tls
+      allowedRoutes:
+        namespaces:
+          from: All
 EOF
-    echo "optional-external-secrets ArgoCD Application created."
-  fi
+
+  kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ${listener_name}-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: ${listener_name}-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "${hostname}"
+EOF
+
+  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ${service}
+  namespace: ${namespace}
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: ${listener_name}
+  hostnames:
+    - "${hostname}"
+  rules:
+    - backendRefs:
+        - name: ${service}
+          port: ${port}
+EOF
+
+  echo "${service} ingress configured: https://${hostname}"
 }
 
 # -- Grafana ingress (hostname-specific, created outside gitops/) ---------------
@@ -186,91 +259,56 @@ EOF
 
 configure_grafana_ingress() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  [[ -z "${GRAFANA_HOSTNAME}" ]] && return 0
-
-  echo "Configuring Grafana ingress for ${GRAFANA_HOSTNAME}..."
-
-  # Wait for the Gateway to exist (ArgoCD syncs gateway-config after install_argocd).
-  local attempts=0
-  until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
-    attempts=$((attempts + 1))
-    [[ ${attempts} -ge 60 ]] && echo "Timeout waiting for Gateway eg" && return 1
-    echo "  waiting for Gateway eg... (${attempts}/60)"
-    sleep 10
-  done
-
-  # Patch Gateway: add the https-grafana listener using Server-Side Apply with a
-  # custom field manager. Gateway API defines spec.listeners as a list-map keyed
-  # on `name`, so SSA merges by key — the existing `http` listener (owned by
-  # argocd-controller from gateway.yaml) is preserved. cloud-init-bootstrap owns
-  # the `https-grafana` entry; ArgoCD (applying gateway.yaml without this listener)
-  # does not own it and will not remove it.
-  # ignoreDifferences: /spec/listeners in gateway-config prevents OutOfSync alerts.
-  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: eg
-  namespace: envoy-gateway-system
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: https-grafana
-      port: 443
-      protocol: HTTPS
-      hostname: "${GRAFANA_HOSTNAME}"
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: grafana-tls
-      allowedRoutes:
-        namespaces:
-          from: All
-EOF
-
-  # Create (or update) the TLS Certificate.
-  kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: grafana-tls
-  namespace: envoy-gateway-system
-spec:
-  secretName: grafana-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - "${GRAFANA_HOSTNAME}"
-EOF
-
-  # Create (or update) the Grafana HTTPRoute in the monitoring namespace.
-  # Use Server-Side Apply with a custom field manager so cloud-init "owns" the
-  # hostnames field. ArgoCD's SSA (field-manager=argocd-controller) applies
-  # grafana-ingress.yaml without spec.hostnames → it won't own or clear this field.
-  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: grafana
-  namespace: monitoring
-spec:
-  parentRefs:
-    - name: eg
-      namespace: envoy-gateway-system
-      sectionName: https-grafana
-  hostnames:
-    - "${GRAFANA_HOSTNAME}"
-  rules:
-    - backendRefs:
-        - name: kube-prometheus-stack-grafana
-          port: 80
-EOF
+  configure_app_ingress \
+    "${GRAFANA_HOSTNAME}" \
+    "monitoring" \
+    "kube-prometheus-stack-grafana" \
+    "80" \
+    "https-grafana"
 
   # The HTTP->HTTPS redirect HTTPRoute (gitops/gateway/redirect.yaml) intentionally
   # has no hostnames and matches ALL HTTP traffic. The ACME challenge HTTPRoute
   # (created by cert-manager) has a more specific hostname+path match and takes
   # precedence. No patching of the redirect route is needed.
+}
 
-  echo "Grafana ingress configured: https://${GRAFANA_HOSTNAME}"
+# -- ArgoCD ingress -------------------------------------------------------------
+configure_argocd_ingress() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  configure_app_ingress \
+    "${ARGOCD_HOSTNAME}" \
+    "argocd" \
+    "argocd-server" \
+    "80" \
+    "https-argocd"
+}
+
+# -- Longhorn ingress -----------------------------------------------------------
+configure_longhorn_ingress() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  [[ -z "${LONGHORN_HOSTNAME}" ]] && return 0
+
+  configure_app_ingress \
+    "${LONGHORN_HOSTNAME}" \
+    "longhorn-system" \
+    "longhorn-frontend" \
+    "80" \
+    "https-longhorn"
+
+  # Apply BasicAuth SecurityPolicy so the Longhorn UI requires credentials.
+  kubectl apply -f - <<EOF
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: longhorn-basic-auth
+  namespace: longhorn-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: longhorn-frontend
+  basicAuth:
+    users:
+      name: longhorn-basic-auth-secret
+EOF
 }

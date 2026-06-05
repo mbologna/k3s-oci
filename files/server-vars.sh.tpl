@@ -9,6 +9,11 @@ exec > >(tee /var/log/k3s-cloud-init.log | logger -t k3s-cloud-init) 2>&1
 
 echo "==> k3s server cloud-init starting at $(date -u)"
 
+# Enable bash trace mode when trace_enabled = true in terraform.tfvars.
+# Produces verbose output — do NOT enable in production.
+export TRACE="${trace_enabled ? "true" : "false"}"
+[[ "$${TRACE}" == "true" ]] && set -x
+
 # -- Cluster identity ----------------------------------------------------------
 export K3S_VERSION="${k3s_version}"
 export K3S_SUBNET="${k3s_subnet}"
@@ -49,6 +54,10 @@ export EXTERNAL_SECRETS_CHART_VERSION="${external_secrets_chart_version}"
 # Grafana ingress: cloud-init creates the Gateway listener, TLS cert, and HTTPRoute
 # so that gitops/ files are IP-independent. Empty = skip Grafana HTTPS setup.
 export GRAFANA_HOSTNAME="${grafana_hostname}"
+# ArgoCD ingress: same pattern as Grafana. Auto-derived as argocd.<nlb-ip>.sslip.io if null.
+export ARGOCD_HOSTNAME="${argocd_hostname}"
+# Longhorn ingress: set longhorn_hostname in tfvars to enable. No sslip.io fallback.
+export LONGHORN_HOSTNAME="${longhorn_hostname}"
 
 # -- Optional integrations -----------------------------------------------------
 export LONGHORN_UI_USERNAME="${longhorn_ui_username}"

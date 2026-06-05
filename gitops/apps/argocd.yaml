@@ -18,6 +18,20 @@ spec:
         configs:
           params:
             server.insecure: true
+        server:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+        repoServer:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

@@ -1,8 +1,7 @@
 ---
 # k3s upgrade Plans managed by system-upgrade-controller.
 # Edit 'channel' below to switch between "stable", "latest", or "testing".
-# Using "latest" while the cluster is ahead of the stable channel prevents
-# SUC from repeatedly cordoning nodes with failed downgrade attempts.
+# "stable" is the default; override in your fork if you need a different channel.
 apiVersion: upgrade.cattle.io/v1
 kind: Plan
 metadata:
@@ -10,7 +9,7 @@ metadata:
   namespace: system-upgrade
 spec:
   concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/latest
+  channel: https://update.k3s.io/v1-release/channels/stable
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/control-plane: "true"
@@ -29,7 +28,7 @@ metadata:
   namespace: system-upgrade
 spec:
   concurrency: 1
-  channel: https://update.k3s.io/v1-release/channels/latest
+  channel: https://update.k3s.io/v1-release/channels/stable
   nodeSelector:
     matchExpressions:
       - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}

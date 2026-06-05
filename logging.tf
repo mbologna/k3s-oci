@@ -5,12 +5,6 @@
 # Requires the OCI Unified Monitoring Agent (oracle-cloud-agent) to be enabled.
 # The agent is pre-installed on OCI Ubuntu platform images.
 
-variable "enable_oci_logging" {
-  type        = bool
-  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month)."
-  default     = true
-}
-
 resource "oci_logging_log_group" "k3s" {
   count          = var.enable_oci_logging ? 1 : 0
   compartment_id = var.compartment_ocid

@@ -6,6 +6,30 @@
 #
 # shellcheck disable=SC2154
 
+# apply_cluster_issuer <name> <acme_server_url> <solver_yaml>
+# Creates a cert-manager ClusterIssuer with the given name, ACME server URL,
+# and solver block (indented YAML string). Reusable for staging/prod × http01/dns01.
+apply_cluster_issuer() {
+  local name="$1"
+  local server="$2"
+  local solver_yaml="$3"
+
+  kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ${name}
+spec:
+  acme:
+    server: ${server}
+    email: ${CERTMANAGER_EMAIL}
+    privateKeySecretRef:
+      name: ${name}
+    solvers:
+${solver_yaml}
+EOF
+}
+
 install_certmanager() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
@@ -33,86 +57,39 @@ stringData:
   api-token: "${CLOUDFLARE_API_TOKEN}"
 EOF
 
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-staging
-spec:
-  acme:
-    server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: ${CERTMANAGER_EMAIL}
-    privateKeySecretRef:
-      name: letsencrypt-staging
-    solvers:
-      - dns01:
+    local dns01_solver
+    dns01_solver="      - dns01:
           cloudflare:
             apiTokenSecretRef:
               name: cloudflare-api-token
-              key: api-token
-EOF
+              key: api-token"
 
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: ${CERTMANAGER_EMAIL}
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-      - dns01:
-          cloudflare:
-            apiTokenSecretRef:
-              name: cloudflare-api-token
-              key: api-token
-EOF
+    apply_cluster_issuer "letsencrypt-staging" \
+      "https://acme-staging-v02.api.letsencrypt.org/directory" \
+      "${dns01_solver}"
+
+    apply_cluster_issuer "letsencrypt-prod" \
+      "https://acme-v02.api.letsencrypt.org/directory" \
+      "${dns01_solver}"
   else
     # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) -- no Ingress controller needed.
     # Bootstrap ClusterIssuers with the correct email address.
     # Adoptable by ArgoCD via gitops/cert-manager/ (update email in cluster-issuers.yaml first).
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-staging
-spec:
-  acme:
-    server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: ${CERTMANAGER_EMAIL}
-    privateKeySecretRef:
-      name: letsencrypt-staging
-    solvers:
-      - http01:
+    local http01_solver
+    http01_solver="      - http01:
           gatewayHTTPRoute:
             parentRefs:
               - name: eg
                 namespace: envoy-gateway-system
-                kind: Gateway
-EOF
+                kind: Gateway"
 
-    kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: ${CERTMANAGER_EMAIL}
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-      - http01:
-          gatewayHTTPRoute:
-            parentRefs:
-              - name: eg
-                namespace: envoy-gateway-system
-                kind: Gateway
-EOF
+    apply_cluster_issuer "letsencrypt-staging" \
+      "https://acme-staging-v02.api.letsencrypt.org/directory" \
+      "${http01_solver}"
+
+    apply_cluster_issuer "letsencrypt-prod" \
+      "https://acme-v02.api.letsencrypt.org/directory" \
+      "${http01_solver}"
   fi
 
   echo "cert-manager ${CERTMANAGER_CHART_VERSION} installed with ClusterIssuers (email: ${CERTMANAGER_EMAIL})."

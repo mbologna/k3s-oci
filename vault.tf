@@ -38,49 +38,43 @@ resource "oci_kms_key" "k3s" {
   }
 }
 
-resource "oci_vault_secret" "k3s_token" {
-  count          = var.enable_vault ? 1 : 0
-  compartment_id = var.compartment_ocid
-  vault_id       = oci_kms_vault.k3s[0].id
-  key_id         = oci_kms_key.k3s[0].id
-  secret_name    = "${var.cluster_name}-k3s-token"
-  description    = "k3s cluster join token"
+# ── Cluster secrets (for_each over a shared map) ──────────────────────────────
+# Collapses k3s_token, longhorn_ui_password, and grafana_admin_password into one
+# resource. The conditional secrets (tailscale, gitops_ssh_key) remain separate
+# because they have different enable conditions.
 
-  secret_content {
-    content_type = "BASE64"
-    content      = base64encode(random_password.k3s_token.result)
-  }
-
-  freeform_tags = local.common_tags
+locals {
+  cluster_vault_secrets = var.enable_vault ? {
+    k3s_token = {
+      name        = "${var.cluster_name}-k3s-token"
+      description = "k3s cluster join token"
+      content     = base64encode(random_password.k3s_token.result)
+    }
+    longhorn_ui_password = {
+      name        = "${var.cluster_name}-longhorn-ui-password"
+      description = "Longhorn UI BasicAuth password"
+      content     = base64encode(random_password.longhorn_ui_password.result)
+    }
+    grafana_admin_password = {
+      name        = "${var.cluster_name}-grafana-admin-password"
+      description = "Grafana admin password"
+      content     = base64encode(random_password.grafana_admin_password.result)
+    }
+  } : {}
 }
 
-resource "oci_vault_secret" "longhorn_ui_password" {
-  count          = var.enable_vault ? 1 : 0
+resource "oci_vault_secret" "cluster" {
+  for_each = local.cluster_vault_secrets
+
   compartment_id = var.compartment_ocid
   vault_id       = oci_kms_vault.k3s[0].id
   key_id         = oci_kms_key.k3s[0].id
-  secret_name    = "${var.cluster_name}-longhorn-ui-password"
-  description    = "Longhorn UI BasicAuth password"
+  secret_name    = each.value.name
+  description    = each.value.description
 
   secret_content {
     content_type = "BASE64"
-    content      = base64encode(random_password.longhorn_ui_password.result)
-  }
-
-  freeform_tags = local.common_tags
-}
-
-resource "oci_vault_secret" "grafana_admin_password" {
-  count          = var.enable_vault ? 1 : 0
-  compartment_id = var.compartment_ocid
-  vault_id       = oci_kms_vault.k3s[0].id
-  key_id         = oci_kms_key.k3s[0].id
-  secret_name    = "${var.cluster_name}-grafana-admin-password"
-  description    = "Grafana admin password"
-
-  secret_content {
-    content_type = "BASE64"
-    content      = base64encode(random_password.grafana_admin_password.result)
+    content      = each.value.content
   }
 
   freeform_tags = local.common_tags

@@ -13,12 +13,12 @@ install_k3s_agent() {
     install_params+=("--node-ip" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
   fi
 
-  local max_api_wait=180 max_attempts=10 attempt=0
+  local max_api_attempts=180 max_attempts=10 attempt=0
 
-  echo "Waiting for k3s API at ${K3S_URL}:6443 ..."
+  echo "Waiting for k3s API at ${K3S_URL}:6443 (max ${max_api_attempts} attempts × 10s) ..."
   until curl --output /dev/null --silent --insecure "https://${K3S_URL}:6443"; do
     attempt=$(( attempt + 1 ))
-    [[ ${attempt} -ge ${max_api_wait} ]] && { echo "ERROR: k3s API unreachable after ${max_api_wait} attempts."; exit 1; }
+    [[ ${attempt} -ge ${max_api_attempts} ]] && { echo "ERROR: k3s API unreachable after ${max_api_attempts} attempts."; exit 1; }
     sleep 10
   done
 

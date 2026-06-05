@@ -12,11 +12,14 @@ locals {
   # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy
   os_image_id = var.os_image_id != null ? var.os_image_id : data.oci_core_images.k3s_nodes[0].images[0].id
 
-  # Applied to every OCI resource for consistent identification and cost tracking
+  # Applied to every OCI resource for consistent identification and cost tracking.
+  # `clustername` (no hyphens) is used in the IAM dynamic group matching_rule because
+  # OCI's rule language does not reliably support hyphenated freeform tag key names.
   common_tags = {
     provisioner          = "terraform"
     environment          = var.environment
     k3s-cluster-name     = var.cluster_name
+    clustername          = var.cluster_name
     (var.unique_tag_key) = var.unique_tag_value
   }
 
@@ -28,8 +31,9 @@ locals {
     { name = "Bastion", desired_state = var.enable_bastion ? "ENABLED" : "DISABLED" },
   ]
 
-  # Internal LB IP used as the k3s server URL for agent join
-  k3s_internal_lb_ip = oci_load_balancer_load_balancer.k3s_internal_lb.ip_address_details[0].ip_address
+  # Internal LB IP used as the k3s server URL for agent join.
+  # try() guards against the race condition where the LB has no IP yet at plan time.
+  k3s_internal_lb_ip = try(oci_load_balancer_load_balancer.k3s_internal_lb.ip_address_details[0].ip_address, "")
 
   # Public NLB IP (first public address)
   public_lb_ip = [
@@ -38,11 +42,17 @@ locals {
   ]
 
   # Grafana hostname: user-supplied or derived from NLB IP via sslip.io.
-  # Cloud-init uses this to create the Gateway listener, Certificate, and HTTPRoute
-  # so that gitops/ manifests remain IP-independent across redeployments.
   grafana_hostname = var.grafana_hostname != null ? var.grafana_hostname : (
     length(local.public_lb_ip) > 0 ? "grafana.${local.public_lb_ip[0]}.sslip.io" : ""
   )
+
+  # ArgoCD hostname: user-supplied or derived from NLB IP via sslip.io.
+  argocd_hostname = var.argocd_hostname != null ? var.argocd_hostname : (
+    length(local.public_lb_ip) > 0 ? "argocd.${local.public_lb_ip[0]}.sslip.io" : ""
+  )
+
+  # Longhorn hostname: user-supplied (no sslip.io fallback — Longhorn UI is optional).
+  longhorn_hostname = var.longhorn_hostname != null ? var.longhorn_hostname : ""
 
   # Map of node-tier → NSG ID; used to apply shared ingress rules to both tiers.
   nodes_nsgs = {
@@ -57,7 +67,7 @@ locals {
     k3s_subnet                = var.k3s_subnet
     k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
     k3s_url                   = local.k3s_internal_lb_ip
-    vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.k3s_token[0].id : ""
+    vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.cluster["k3s_token"].id : ""
     # Base64-encoded so the multi-line PEM is safe to embed in a shell export.
     ssh_host_key_private_b64 = base64encode(tls_private_key.ssh_host_key.private_key_openssh)
     ssh_host_key_public      = trimspace(tls_private_key.ssh_host_key.public_key_openssh)
