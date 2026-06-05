@@ -81,13 +81,16 @@ k3s_standalone_worker = true
 # mysql_shape          = "MySQL.Free"   # Do not change — MySQL.Free is the Always Free shape
 
 # ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
+# If not set, sslip.io hostnames are auto-derived from the NLB IP (e.g. grafana.<nlb-ip>.sslip.io).
 # longhorn_hostname    = "longhorn.example.com"
 # longhorn_ui_username = "admin"          # BasicAuth username for the Longhorn UI
 # grafana_hostname     = "grafana.example.com"
+# argocd_hostname      = "argocd.example.com"
 
 # ── GitOps ────────────────────────────────────────────────────────────────────
 # Set to your fork URL so ArgoCD pulls from the right repository:
 # gitops_repo_url = "https://github.com/your-org/k3s-oci.git"
+# gitops_ssh_private_key = "<base64-encoded-PEM>"  # For private git repos; stored in OCI Vault when enable_vault=true
 
 # ── External DNS (Cloudflare) ─────────────────────────────────────────────────
 # Automatically creates/updates DNS records for Ingress/Service resources.
@@ -100,6 +103,10 @@ k3s_standalone_worker = true
 # Sync OCI Vault secrets into Kubernetes Secrets via ExternalSecret CRs.
 # Requires enable_vault = true.
 # enable_external_secrets = false
+
+# ── Debug ─────────────────────────────────────────────────────────────────────
+# Enable bash set -x trace mode in cloud-init scripts. Do NOT use in production.
+# trace_enabled = false
 
 # ── Tailscale operator ────────────────────────────────────────────────────────
 # Store Tailscale OAuth credentials in OCI Vault so the operator ExternalSecret

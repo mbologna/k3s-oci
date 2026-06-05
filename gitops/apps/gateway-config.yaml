@@ -37,10 +37,10 @@ spec:
         - .spec.rules[].backendRefs[].kind
         - .spec.rules[].backendRefs[].weight
         - .spec.rules[].matches
-    # cloud-init adds hostname-specific HTTPS listeners (e.g. https-grafana) to
-    # the Gateway after ArgoCD deploys it. Ignore spec.listeners so ArgoCD does
-    # not remove them on reconciliation.
+    # cloud-init adds hostname-specific HTTPS listeners (e.g. https-grafana, https-argocd,
+    # https-longhorn) to the Gateway after ArgoCD deploys it. Only ignore those cloud-init-owned
+    # listeners; ArgoCD still detects changes to its own `http` listener.
     - group: gateway.networking.k8s.io
       kind: Gateway
-      jsonPointers:
-        - /spec/listeners
+      jqPathExpressions:
+        - .spec.listeners[] | select(.name | startswith("https-"))

@@ -1,3 +1,9 @@
+# TEMPLATE — DO NOT APPLY DIRECTLY
+# This file is a reference template for Longhorn UI ingress configuration.
+# Cloud-init creates these resources automatically when longhorn_hostname is set.
+# If you prefer GitOps management: fill in the hostname, generate the htpasswd hash,
+# then copy this file to your gitops/apps/ setup.
+#
 # Longhorn UI HTTPRoute with BasicAuth via Envoy Gateway SecurityPolicy
 #
 # To enable: set longhorn_hostname = "longhorn.example.com" in terraform.tfvars

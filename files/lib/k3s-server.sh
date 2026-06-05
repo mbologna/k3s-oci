@@ -142,22 +142,18 @@ install_k3s_server() {
 # -- Wait for cluster ready ----------------------------------------------------
 
 wait_for_cluster_ready() {
-  local max=60 attempt=0
-  local timeout_seconds=$(( max * 10 ))
+  local timeout_seconds=600
   echo "Waiting for all nodes to be Ready (timeout: ${timeout_seconds}s) ..."
-  until [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
-               | grep -v " Ready " | wc -l) -eq 0 ]] && \
-        [[ $(kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null \
-               | wc -l) -gt 0 ]]; do
+  # Export KUBECONFIG so kubectl can find the cluster config
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  # Wait for at least 1 node to exist before calling kubectl wait
+  local attempt=0 max=60
+  until [[ $(kubectl get nodes --no-headers 2>/dev/null | wc -l) -gt 0 ]]; do
     attempt=$(( attempt + 1 ))
-    [[ ${attempt} -ge ${max} ]] && {
-      echo "ERROR: cluster not ready after ${timeout_seconds}s."
-      kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get nodes --no-headers 2>/dev/null || true
-      exit 1
-    }
-    echo "  waiting (${attempt}/${max}, $(( attempt * 10 ))/${timeout_seconds}s) ..."
-    sleep 10
+    [[ ${attempt} -ge ${max} ]] && { echo "ERROR: no nodes appeared after ${max} attempts."; exit 1; }
+    sleep 5
   done
+  kubectl wait --for=condition=Ready nodes --all --timeout="${timeout_seconds}s"
   echo "All nodes are Ready."
 }
 

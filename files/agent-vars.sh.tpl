@@ -9,6 +9,9 @@ exec > >(tee /var/log/k3s-cloud-init.log | logger -t k3s-cloud-init) 2>&1
 
 echo "==> k3s agent cloud-init starting at $(date -u)"
 
+export TRACE="${trace_enabled ? "true" : "false"}"
+[[ "$${TRACE}" == "true" ]] && set -x
+
 export K3S_VERSION="${k3s_version}"
 export K3S_SUBNET="${k3s_subnet}"
 export K3S_URL="${k3s_url}"

@@ -1,11 +1,13 @@
-# Dynamic group is scoped to instances tagged with this cluster's name,
-# so multiple clusters in the same compartment don't cross-pollinate permissions.
+# Dynamic group is scoped to instances in this compartment tagged with this cluster's name.
+# Using the `clustername` freeform tag (hyphen-free key) because OCI's rule language
+# does not support hyphenated attribute names. The matching_rule prevents instances from
+# other clusters in the same compartment from cross-pollinating IAM permissions.
 resource "oci_identity_dynamic_group" "k3s" {
   compartment_id = var.tenancy_ocid
   description    = "k3s cluster '${var.cluster_name}' instances"
   name           = var.oci_identity_dynamic_group_name
 
-  matching_rule = "All {instance.compartment.id = '${var.compartment_ocid}'}"
+  matching_rule = "All {instance.compartment.id = '${var.compartment_ocid}', instance.freeform_tag.clustername = '${var.cluster_name}'}"
 
   freeform_tags = local.common_tags
 }

@@ -48,3 +48,22 @@ outputs:
 # Show kubeconfig hint
 kubeconfig-hint:
     cd example && tofu output kubeconfig_hint
+
+# Run ShellCheck on all cloud-init lib scripts
+shellcheck:
+    shellcheck --severity=warning \
+        files/lib/common.sh \
+        files/lib/k3s-server.sh \
+        files/lib/k3s-bootstrap.sh \
+        files/lib/k3s-secrets.sh \
+        files/lib/k3s-cert-manager.sh \
+        files/lib/k3s-external-secrets.sh \
+        files/lib/k3s-argocd.sh \
+        files/lib/k3s-agent.sh
+
+# Run YAML lint on gitops/ and .github/workflows/
+yamllint:
+    yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
+
+# Run all CI checks locally (fmt + validate + shellcheck + yamllint)
+ci: fmt validate shellcheck yamllint

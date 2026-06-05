@@ -78,7 +78,9 @@ files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_
 files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, Grafana, Alertmanager, MySQL, Cloudflare secrets
 files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
 files/lib/k3s-external-secrets.sh — pure bash: install_external_secrets() — ESO Helm + ClusterSecretStore
-files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_dockerhub_secret(), create_optional_apps(), configure_grafana_ingress()
+files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_dockerhub_secret(), create_optional_app(),
+                                    create_optional_apps(), configure_app_ingress(), configure_grafana_ingress(),
+                                    configure_argocd_ingress(), configure_longhorn_ingress()
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
@@ -283,7 +285,9 @@ terraform-docs .
   - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, Grafana, Alertmanager, MySQL, Cloudflare
   - `k3s-cert-manager.sh` — `install_certmanager()`: cert-manager Helm + ClusterIssuers
   - `k3s-external-secrets.sh` — `install_external_secrets()`: ESO Helm + ClusterSecretStore
-  - `k3s-argocd.sh` — `install_argocd()`, `create_dockerhub_secret()`, `create_optional_apps()`, `configure_grafana_ingress()`
+  - `k3s-argocd.sh` — `install_argocd()`, `create_dockerhub_secret()`, `create_optional_app()`,
+    `create_optional_apps()`, `configure_app_ingress()`, `configure_grafana_ingress()`,
+    `configure_argocd_ingress()`, `configure_longhorn_ingress()`
   - `k3s-bootstrap.sh` — `install_gateway_api_crds()` + `run_bootstrap()` (calls the above)
 - **GitOps-first**: cloud-init only bootstraps what ArgoCD cannot self-manage:
   - Gateway API CRDs (must exist before ArgoCD syncs `gateway-config` app)
@@ -388,6 +392,45 @@ terraform-docs .
 - Users create `ExternalSecret` resources referencing Vault secret OCIDs; the operator syncs them
   into Kubernetes Secrets automatically and rotates on the configured refresh interval.
 
+### Adding HTTPS ingress for a new app
+
+Use `configure_app_ingress()` in `files/lib/k3s-argocd.sh` when a new cluster component needs
+an HTTPS endpoint with a cert-manager TLS certificate. The generic helper handles the three
+required resources atomically (Gateway listener, Certificate, HTTPRoute) using SSA so ArgoCD
+reconciliation never removes cloud-init-owned fields.
+
+**Signature:**
+```bash
+configure_app_ingress <hostname> <namespace> <service> <port> <listener_name>
+```
+
+**To add a new cloud-init-managed HTTPS app:**
+1. Add `var.myapp_hostname` to `vars.tf` (nullable string, default null).
+2. Add `local.myapp_hostname` to `locals.tf` (sslip.io fallback or just `var.myapp_hostname`).
+3. Export `MYAPP_HOSTNAME="${myapp_hostname}"` in `files/server-vars.sh.tpl`.
+4. Add `myapp_hostname = local.myapp_hostname` to the `templatefile()` vars map in `data.tf`.
+5. In `files/lib/k3s-argocd.sh`, add:
+   ```bash
+   configure_myapp_ingress() {
+     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+     configure_app_ingress \
+       "${MYAPP_HOSTNAME}" \
+       "my-namespace" \
+       "my-service" \
+       "8080" \
+       "https-myapp"
+   }
+   ```
+6. Call it from `run_bootstrap()` in `k3s-bootstrap.sh` with error-check:
+   ```bash
+   configure_myapp_ingress || { echo "ERROR: configure_myapp_ingress failed"; exit 1; }
+   ```
+7. Add `ignoreDifferences` for the new listener in `gitops/apps/gateway-config.yaml`
+   — it's already covered by the `jqPathExpression` targeting `https-*` listener names.
+
+**Note:** For apps that also need BasicAuth (like Longhorn), add the `SecurityPolicy` resource
+after calling `configure_app_ingress()`. See `configure_longhorn_ingress()` as the reference.
+
 ### Deploying web apps — known pitfalls
 
 The following issues were discovered while deploying the first HTTPS application. Document them here so agents do not repeat the investigation.
@@ -412,11 +455,15 @@ An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting 
 
 NLB IP changes on every redeploy. Hardcoding sslip.io addresses in `gitops/` breaks GitOps: every redeploy requires manual file edits. The design:
 - `local.grafana_hostname` in `locals.tf` auto-computes `grafana.<nlb-ip>.sslip.io` (or uses `var.grafana_hostname` if set).
-- `files/server-vars.sh.tpl` exports `GRAFANA_HOSTNAME`.
-- `files/lib/k3s-argocd.sh:configure_grafana_ingress()` runs after ArgoCD is installed and creates:
-  - The `https-grafana` Gateway listener (SSA, field-manager=cloud-init-bootstrap)
-  - The `grafana-tls` Certificate in `envoy-gateway-system`
-  - The `grafana` HTTPRoute in `monitoring` (SSA, field-manager=cloud-init-bootstrap)
+- `local.argocd_hostname` auto-computes `argocd.<nlb-ip>.sslip.io` (or uses `var.argocd_hostname` if set).
+- `local.longhorn_hostname` uses `var.longhorn_hostname` (no sslip.io fallback — Longhorn UI is opt-in).
+- `files/server-vars.sh.tpl` exports `GRAFANA_HOSTNAME`, `ARGOCD_HOSTNAME`, `LONGHORN_HOSTNAME`.
+- `files/lib/k3s-argocd.sh:configure_app_ingress(hostname namespace service port listener_name)` is the generic helper.
+  - Creates the Gateway HTTPS listener (SSA, field-manager=cloud-init-bootstrap)
+  - Creates the cert-manager Certificate in `envoy-gateway-system`
+  - Creates the app HTTPRoute in the app namespace (SSA, field-manager=cloud-init-bootstrap)
+- `configure_grafana_ingress()`, `configure_argocd_ingress()`, `configure_longhorn_ingress()` each call the generic helper.
+- `configure_longhorn_ingress()` additionally applies the `SecurityPolicy` for BasicAuth.
 - `gitops/gateway/gateway.yaml` has ONLY the `http` listener (ArgoCD owns it via SSA).
 - `gitops/monitoring/grafana-ingress.yaml` has the Grafana HTTPRoute WITHOUT `hostnames` (ArgoCD owns all fields except `spec.hostnames`, which cloud-init-bootstrap owns).
 

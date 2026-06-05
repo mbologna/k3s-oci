@@ -44,6 +44,10 @@ jobs:
         files/lib/common.sh
         files/lib/k3s-server.sh
         files/lib/k3s-bootstrap.sh
+        files/lib/k3s-secrets.sh
+        files/lib/k3s-cert-manager.sh
+        files/lib/k3s-external-secrets.sh
+        files/lib/k3s-argocd.sh
         files/lib/k3s-agent.sh
       example_dir: example
     secrets: inherit

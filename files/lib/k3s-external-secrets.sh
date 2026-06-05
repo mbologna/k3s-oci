@@ -11,6 +11,12 @@ install_external_secrets() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
 
+  if [[ -z "${VAULT_OCID:-}" || -z "${OCI_REGION:-}" ]]; then
+    echo "ERROR: install_external_secrets requires VAULT_OCID and OCI_REGION to be set."
+    echo "  Ensure enable_vault=true and region is configured in your Terraform variables."
+    exit 1
+  fi
+
   helm repo add external-secrets https://charts.external-secrets.io
   helm repo update
 

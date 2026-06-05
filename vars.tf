@@ -20,6 +20,12 @@ variable "availability_domain" {
   }
 }
 
+variable "region" {
+  type        = string
+  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable_external_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint."
+  default     = null
+}
+
 # ── Cluster identity ──────────────────────────────────────────────────────────
 
 variable "cluster_name" {
@@ -338,7 +344,7 @@ variable "certmanager_email_address" {
   }
 }
 
-# ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
+# ── Longhorn ──────────────────────────────────────────────────────────────────
 
 variable "longhorn_hostname" {
   type        = string
@@ -352,16 +358,37 @@ variable "longhorn_ui_username" {
   default     = "admin"
 }
 
+# ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
+
 variable "grafana_hostname" {
   type        = string
   description = "Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
   default     = null
 }
 
+variable "argocd_hostname" {
+  type        = string
+  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP."
+  default     = null
+}
+
+# ── Debug ─────────────────────────────────────────────────────────────────────
+
+variable "trace_enabled" {
+  type        = bool
+  description = "Enable bash trace mode (set -x) in cloud-init scripts. Produces verbose output in /var/log/k3s-cloud-init.log. Useful for debugging bootstrap failures. Do NOT enable in production."
+  default     = false
+}
+
 variable "gitops_repo_url" {
   type        = string
   description = "Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo."
   default     = "https://github.com/mbologna/k3s-oci.git"
+
+  validation {
+    condition     = can(regex("^(https://|git@)", var.gitops_repo_url))
+    error_message = "gitops_repo_url must start with 'https://' (public HTTPS) or 'git@' (SSH)."
+  }
 }
 
 variable "gitops_path" {
@@ -404,6 +431,11 @@ variable "alertmanager_email" {
   type        = string
   description = "Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email."
   default     = null
+
+  validation {
+    condition     = var.alertmanager_email == null || can(regex("^[^@]+@[^@]+\\.[^@]+$", var.alertmanager_email))
+    error_message = "alertmanager_email must be a valid email address or null."
+  }
 }
 
 # ── MySQL HeatWave ────────────────────────────────────────────────────────────
@@ -424,6 +456,11 @@ variable "mysql_admin_username" {
   type        = string
   description = "Admin username for the MySQL HeatWave DB system."
   default     = "admin"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z][a-zA-Z0-9_]{0,31}$", var.mysql_admin_username))
+    error_message = "mysql_admin_username must start with a letter and contain only alphanumeric characters and underscores (max 32 chars)."
+  }
 }
 
 # ── Vault ─────────────────────────────────────────────────────────────────────
@@ -469,11 +506,7 @@ variable "enable_external_secrets" {
   default     = false
 }
 
-variable "region" {
-  type        = string
-  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable_external_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint."
-  default     = null
-}
+# region is defined in the # ── OCI Identity ── section above.
 
 # ── DNS-01 ACME challenge via Cloudflare ──────────────────────────────────────
 
@@ -494,6 +527,11 @@ variable "gateway_api_version" {
   description = "Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config."
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   default = "v1.5.1"
+
+  validation {
+    condition     = length(var.gateway_api_version) > 0 && can(regex("^[v0-9]", var.gateway_api_version))
+    error_message = "gateway_api_version must be non-empty and start with 'v' or a digit (e.g. 'v1.5.1')."
+  }
 }
 
 variable "dockerhub_username" {
@@ -514,6 +552,11 @@ variable "certmanager_chart_version" {
   description = "cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   default = "v1.20.2"
+
+  validation {
+    condition     = length(var.certmanager_chart_version) > 0 && can(regex("^[v0-9]", var.certmanager_chart_version))
+    error_message = "certmanager_chart_version must be non-empty and start with 'v' or a digit."
+  }
 }
 
 variable "argocd_chart_version" {
@@ -521,6 +564,11 @@ variable "argocd_chart_version" {
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
   default = "9.5.16"
+
+  validation {
+    condition     = length(var.argocd_chart_version) > 0 && can(regex("^[v0-9]", var.argocd_chart_version))
+    error_message = "argocd_chart_version must be non-empty and start with 'v' or a digit."
+  }
 }
 
 variable "external_secrets_chart_version" {
@@ -528,6 +576,19 @@ variable "external_secrets_chart_version" {
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
   default = "2.5.0"
+
+  validation {
+    condition     = length(var.external_secrets_chart_version) > 0 && can(regex("^[v0-9]", var.external_secrets_chart_version))
+    error_message = "external_secrets_chart_version must be non-empty and start with 'v' or a digit."
+  }
+}
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+variable "enable_oci_logging" {
+  type        = bool
+  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month)."
+  default     = true
 }
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────

@@ -161,10 +161,13 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
   network_security_group_id = oci_core_network_security_group.servers.id
   direction                 = "INGRESS"
   protocol                  = "6"
-  description               = "kubeapi from public NLB (expose_kubeapi=true)"
-  source                    = oci_core_network_security_group.public_nlb.id
-  source_type               = "NETWORK_SECURITY_GROUP"
-  stateless                 = false
+  description               = "kubeapi from operator IP via public NLB (expose_kubeapi=true)"
+  # NLB uses is_preserve_source=true so the real client IP arrives at the node VNIC,
+  # not the NLB IP. NETWORK_SECURITY_GROUP source type only matches the NLB's own
+  # health-check traffic. Use CIDR_BLOCK so actual kubeapi connections are allowed.
+  source      = var.my_public_ip_cidr
+  source_type = "CIDR_BLOCK"
+  stateless   = false
 
   tcp_options {
     destination_port_range {
