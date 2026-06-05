@@ -6,6 +6,30 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **`output.tf`: grafana hint showed literal `<grafana-hostname>`** instead of the
+  actual derived hostname. `local.grafana_hostname` already resolves to either the
+  user-set `var.grafana_hostname` or the auto-derived `grafana.<nlb-ip>.sslip.io`.
+  Using the literal string meant the hint was useless when `var.grafana_hostname`
+  was null (the common case with sslip.io).
+
+### Added
+
+- **Resource limits for cert-manager components** (`gitops/apps/cert-manager.yaml`):
+  Added `resources.requests` and `limits` for the controller, webhook, cainjector, and
+  startupapicheck. On a 6 GB RAM A1.Flex node running etcd + k3s + user workloads,
+  unbounded cert-manager pods can cause OOM events under memory pressure.
+
+- **PodDisruptionBudgets for monitoring stack** (`gitops/pdbs/pod-disruption-budgets.yaml`):
+  Added PDBs (`maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow`) for:
+  - `grafana` (monitoring namespace) — single-replica Deployment
+  - `alertmanager` (monitoring namespace) — single-replica StatefulSet
+  - `kube-state-metrics` (monitoring namespace) — single-replica Deployment
+  
+  Without these, kured could evict all three simultaneously on a node drain during
+  a rolling reboot window, causing a complete monitoring outage until pods reschedule.
+
+### Fixed
+
 - **`k3s-server.sh`: hardcoded `:6443` in join command** (`files/lib/k3s-server.sh`):
   The `install_k3s_server()` join branch was using `"https://${K3S_URL}:6443"` instead of
   `"https://${K3S_URL}:${KUBE_API_PORT:-6443}"`. This bug was previously fixed in

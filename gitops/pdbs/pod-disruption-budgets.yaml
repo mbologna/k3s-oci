@@ -65,3 +65,49 @@ spec:
     matchLabels:
       app.kubernetes.io/name: webhook
       app.kubernetes.io/instance: cert-manager
+---
+# PodDisruptionBudget for Grafana
+# Grafana runs as a single replica. Without a PDB, kured can evict it immediately
+# during a node drain, causing a brief Grafana outage on every node reboot.
+# maxUnavailable: 1 lets the eviction proceed but records the intent.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+---
+# PodDisruptionBudget for Alertmanager
+# Alertmanager StatefulSet, single replica. PDB prevents simultaneous disruption
+# alongside other components during rolling node reboots.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+---
+# PodDisruptionBudget for kube-state-metrics
+# kube-state-metrics is a single-replica Deployment providing cluster-level metrics.
+# A PDB prevents it from being evicted at the same time as other monitoring components.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
