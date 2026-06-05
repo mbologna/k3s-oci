@@ -130,7 +130,7 @@ install_k3s_server() {
     # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${K3S_URL} in arg uses outer scope (intentional)
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
-        sh -s - --server "https://${K3S_URL}:6443" "${install_params[@]}"; do
+        sh -s - --server "https://${K3S_URL}:${KUBE_API_PORT:-6443}" "${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s join failed after ${max_attempts} attempts."; exit 1; }
       echo "  retrying (${attempt}/${max_attempts}) ..."

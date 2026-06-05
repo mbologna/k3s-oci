@@ -156,11 +156,74 @@ EOF
 create_optional_apps() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-  [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]] && \
-    create_optional_app "external-dns" "external-dns.yaml"
+  [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]] && create_external_dns_app
 
   [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]] && \
     create_optional_app "external-secrets" "external-secrets.yaml" "ServerSideApply=true"
+}
+
+# -- External DNS ArgoCD Application -------------------------------------------
+# Creates the external-dns Application inline with runtime values (domainFilters,
+# zoneIdFilters, txtOwnerId). These cannot be embedded in the static gitops YAML
+# because they depend on Terraform variables resolved at plan time.
+# The gitops/optional/external-dns.yaml file is a reference template only.
+create_external_dns_app() {
+  # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
+  local chart_version="1.21.1"
+
+  kubectl apply -n argocd -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns
+    chart: external-dns
+    targetRevision: "${chart_version}"
+    helm:
+      valuesObject:
+        provider:
+          name: cloudflare
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-credentials
+                key: apiToken
+        # policy=sync: external-dns will also delete DNS records for removed resources.
+        # Use policy=upsert-only to prevent deletions if you manage DNS elsewhere.
+        policy: sync
+        # Restrict external-dns to manage only records within this domain.
+        domainFilters:
+          - "${EXTERNAL_DNS_DOMAIN_FILTER}"
+        # Scope the Cloudflare zone to avoid touching unrelated zones in the account.
+        zoneIdFilters:
+          - "${CLOUDFLARE_ZONE_ID}"
+        # txtOwnerId scopes TXT ownership records so multiple clusters can share a
+        # Cloudflare zone without conflicting with each other.
+        txtOwnerId: "${CLUSTER_NAME}"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+EOF
+  echo "external-dns ArgoCD Application created (domain=${EXTERNAL_DNS_DOMAIN_FILTER}, zone=${CLOUDFLARE_ZONE_ID}, owner=${CLUSTER_NAME})."
 }
 
 # -- Generic app ingress helper ------------------------------------------------
