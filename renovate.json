@@ -58,6 +58,16 @@
       ],
       "depNameTemplate": "rancher/system-upgrade-controller",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "Update external-dns chart version hardcoded in create_external_dns_app() shell function. Must be kept in sync with gitops/optional/external-dns.yaml targetRevision.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)files/lib/k3s-argocd\\.sh$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*local chart_version=\"(?<currentValue>[^\"]+)\""
+      ]
     }
   ]
 }
