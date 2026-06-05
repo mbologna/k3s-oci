@@ -61,7 +61,7 @@ bootstrap() {
   # Tolerate partial mirror failures (transient OCI regional mirror issues)
   apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends \
-    software-properties-common jq curl python3 python3-pip \
+    software-properties-common jq curl python3 \
     open-iscsi nfs-common util-linux
   # Hold the oracle kernel packages so that apt-get upgrade or unattended-upgrades
   # cannot install a newer kernel during cloud-init. A new kernel would become the
@@ -76,9 +76,14 @@ bootstrap() {
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 
-  # Cap journal size to protect the boot volume
-  echo "SystemMaxUse=100M"      >> /etc/systemd/journald.conf
-  echo "SystemMaxFileSize=100M" >> /etc/systemd/journald.conf
+  # Cap journal size to protect the boot volume.
+  # Use a drop-in so this is idempotent on repeated cloud-init runs.
+  mkdir -p /etc/systemd/journald.conf.d
+  cat > /etc/systemd/journald.conf.d/10-k3s-size-limit.conf << 'JEOF'
+[Journal]
+SystemMaxUse=100M
+SystemMaxFileSize=100M
+JEOF
   systemctl restart systemd-journald
 
   setup_shared_ssh_host_key
@@ -89,7 +94,8 @@ bootstrap() {
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
   wait_apt_lock
-  apt-get update -q || apt-get update -q || true
+  # Note: apt-get update already ran in bootstrap(); this second run ensures
+  # unattended-upgrades and needrestart are always installable even on slow mirrors.
   apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges needrestart
   apt-get clean
   rm -rf /var/lib/apt/lists/*

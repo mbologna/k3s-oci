@@ -127,3 +127,22 @@ resource "oci_vault_secret" "gitops_ssh_key" {
 
   freeform_tags = local.common_tags
 }
+
+# Store the Cloudflare API token in Vault when vault is enabled and the token is set.
+# This removes the token from cloud-init user-data (IMDS-accessible) and fetches it
+# at bootstrap time via OCI CLI instance_principal instead.
+resource "oci_vault_secret" "cloudflare_api_token" {
+  count          = var.enable_vault && var.cloudflare_api_token != null ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-cloudflare-api-token"
+  description    = "Cloudflare API token for external-dns and/or cert-manager DNS-01 challenges"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(var.cloudflare_api_token)
+  }
+
+  freeform_tags = local.common_tags
+}

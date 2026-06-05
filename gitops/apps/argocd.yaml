@@ -32,6 +32,27 @@ spec:
               memory: 128Mi
             limits:
               memory: 512Mi
+        applicationController:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+        redis:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        notifications:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
