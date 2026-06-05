@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`k3s-server.sh`: hardcoded `:6443` in join command** (`files/lib/k3s-server.sh`):
+  The `install_k3s_server()` join branch was using `"https://${K3S_URL}:6443"` instead of
+  `"https://${K3S_URL}:${KUBE_API_PORT:-6443}"`. This bug was previously fixed in
+  `wait_for_kubeapi()` but missed in the actual `curl -sfL https://get.k3s.io | sh`
+  join invocation. Non-default `kube_api_port` values would silently fall back to 6443
+  when a server tried to join the existing cluster.
+
+- **`external-dns`: `domainFilters`, `zoneIdFilters`, `txtOwnerId` never injected**
+  (`files/lib/k3s-argocd.sh`, `gitops/optional/external-dns.yaml`):
+  `EXTERNAL_DNS_DOMAIN_FILTER` was exported to cloud-init (and required by `checks.tf`) but
+  never actually passed to the external-dns Helm release. `CLOUDFLARE_ZONE_ID` and
+  `CLUSTER_NAME` were also absent from the Helm values, meaning external-dns would manage ALL
+  zones the token had access to, with a hardcoded `txtOwnerId: k3s-cluster` that would conflict
+  in multi-cluster setups.
+  
+  Fixed by replacing the `create_optional_app "external-dns"` call with a new
+  `create_external_dns_app()` function that creates the ArgoCD Application inline (similar to
+  how `install_argocd` creates the App of Apps) with the correct runtime values:
+  - `domainFilters: [${EXTERNAL_DNS_DOMAIN_FILTER}]`
+  - `zoneIdFilters: [${CLOUDFLARE_ZONE_ID}]`
+  - `txtOwnerId: ${CLUSTER_NAME}`
+  
+  `gitops/optional/external-dns.yaml` is now a reference template only (marked clearly with a
+  header comment). Added a `# renovate:` comment to `create_external_dns_app()` so Renovate
+  opens PRs when a new chart version is published. Updated `renovate.json` with a custom manager
+  to parse the shell function's `local chart_version=` pattern.
+
+### Changed
+
+- **CI trigger paths** (`.github/workflows/ci.yml`): Added `CHANGELOG.md`, `AGENTS.md`,
+  and `Justfile` to both the `push` and `pull_request` path filters so CI runs when these
+  files are modified.
+
+- **`AGENTS.md`**: Updated External DNS section — removed the manual `txtOwnerId` update
+  instruction (now automatic from `var.cluster_name`) and documented that
+  `gitops/optional/external-dns.yaml` is a reference template only.
+
 ### Added
 
 - **Always Free budget `check {}` blocks** (`checks.tf`): Four new Terraform 1.9+ check blocks

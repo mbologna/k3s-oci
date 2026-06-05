@@ -1,3 +1,18 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE TEMPLATE — DO NOT APPLY DIRECTLY
+#
+# This file documents the external-dns ArgoCD Application structure.
+# When enable_external_dns = true in Terraform, cloud-init creates the
+# Application inline via create_external_dns_app() in files/lib/k3s-argocd.sh,
+# injecting runtime values that cannot be stored in a static YAML file:
+#   - domainFilters   ← var.external_dns_domain_filter
+#   - zoneIdFilters   ← var.cloudflare_zone_id
+#   - txtOwnerId      ← var.cluster_name
+#
+# To update the chart version, edit the targetRevision below AND update
+# chart_version in create_external_dns_app() in files/lib/k3s-argocd.sh.
+# Renovate tracks the version in this file via the inline comment below.
+# ─────────────────────────────────────────────────────────────────────────────
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -22,13 +37,14 @@ spec:
               secretKeyRef:
                 name: cloudflare-credentials
                 key: apiToken
-        # policy=sync means external-dns will also delete DNS records for removed resources.
-        # Use policy=upsert-only to prevent deletions if you manage DNS records elsewhere.
         policy: sync
-        # txtOwnerId scopes ownership so multiple clusters can share the same zone
-        # without stepping on each other's records.
-        # ⚠️  Must match var.cluster_name in terraform.tfvars. Update here when forking.
-        txtOwnerId: k3s-cluster
+        # ⚠️  These values are injected at bootstrap time from Terraform variables.
+        # See create_external_dns_app() in files/lib/k3s-argocd.sh.
+        domainFilters:
+          - "<var.external_dns_domain_filter>"
+        zoneIdFilters:
+          - "<var.cloudflare_zone_id>"
+        txtOwnerId: "<var.cluster_name>"
         resources:
           requests:
             cpu: 10m
