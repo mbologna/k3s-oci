@@ -12,6 +12,14 @@ spec:
     chart: argocd-image-updater
     # renovate: datasource=helm depName=argocd-image-updater registryUrl=https://argoproj.github.io/argo-helm
     targetRevision: "1.2.2"
+    helm:
+      valuesObject:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -21,3 +29,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+  # NOTE: ArgoCD Image Updater monitors container images and opens PRs / commits
+  # bumped image tags. To use it, annotate ArgoCD Applications with:
+  #   argocd-image-updater.argoproj.io/image-list: myapp=docker.io/myorg/myapp
+  #   argocd-image-updater.argoproj.io/myapp.update-strategy: semver
+  # See https://argocd-image-updater.readthedocs.io/ for configuration details.

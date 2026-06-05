@@ -2,6 +2,13 @@
 # k3s upgrade Plans managed by system-upgrade-controller.
 # Edit 'channel' below to switch between "stable", "latest", or "testing".
 # "stable" is the default; override in your fork if you need a different channel.
+#
+# Pin a specific version by setting the 'version' field below (and setting
+# channel to "" or removing it). Renovate will open PRs to bump the version
+# automatically using the regex manager configured in renovate.json.
+# Example:
+#   version: v1.31.4+k3s1   # renovate: datasource=github-releases depName=k3s-io/k3s
+#   channel: ""
 apiVersion: upgrade.cattle.io/v1
 kind: Plan
 metadata:
@@ -10,6 +17,7 @@ metadata:
 spec:
   concurrency: 1
   channel: https://update.k3s.io/v1-release/channels/stable
+  # version: v1.31.4+k3s1  # renovate: datasource=github-releases depName=k3s-io/k3s
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/control-plane: "true"
@@ -29,6 +37,7 @@ metadata:
 spec:
   concurrency: 1
   channel: https://update.k3s.io/v1-release/channels/stable
+  # version: v1.31.4+k3s1  # renovate: datasource=github-releases depName=k3s-io/k3s
   nodeSelector:
     matchExpressions:
       - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}

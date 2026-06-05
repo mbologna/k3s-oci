@@ -39,7 +39,8 @@ fmt:
 
 # Validate Terraform configuration (root + example/)
 validate:
-    tofu validate && cd example && tofu validate
+    tofu init -backend=false -reconfigure && tofu validate
+    cd example && tofu init -backend=false -reconfigure && tofu validate
 
 # Show all Terraform outputs
 outputs:
@@ -65,5 +66,17 @@ shellcheck:
 yamllint:
     yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 
-# Run all CI checks locally (fmt + validate + shellcheck + yamllint)
-ci: fmt validate shellcheck yamllint
+# Run tflint (Terraform linter) — requires tflint installed
+tflint:
+    tflint --init && tflint --recursive
+
+# Run Trivy IaC scan for HIGH/CRITICAL findings — requires trivy installed
+trivy:
+    trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
+
+# Generate and inject terraform-docs into README.md — requires terraform-docs installed
+docs:
+    terraform-docs .
+
+# Run all CI checks locally (fmt + validate + shellcheck + yamllint + tflint + trivy)
+ci: fmt validate shellcheck yamllint tflint trivy

@@ -164,12 +164,17 @@ create_optional_apps() {
 }
 
 # -- Generic app ingress helper ------------------------------------------------
-# configure_app_ingress <hostname> <namespace> <service> <port> <listener_name>
+# configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [route_name]
 #
 # Creates (or updates) three resources for an HTTPS-terminated app:
 #   1. A Gateway listener named <listener_name> (SSA, field-manager=cloud-init-bootstrap)
 #   2. A cert-manager Certificate in envoy-gateway-system
-#   3. An HTTPRoute in <namespace> with <hostname> (SSA, field-manager=cloud-init-bootstrap)
+#   3. An HTTPRoute named <route_name> (defaults to <service>) in <namespace>
+#      with <hostname> (SSA, field-manager=cloud-init-bootstrap)
+#
+# <route_name> is optional and defaults to <service>. Set it explicitly when the
+# gitops HTTPRoute file uses a different name from the backend service (e.g. grafana
+# HTTPRoute is named "grafana" while the service is "kube-prometheus-stack-grafana").
 #
 # All resources survive ArgoCD reconciliation because cloud-init-bootstrap owns
 # the specific fields; ArgoCD never claims them.
@@ -179,10 +184,11 @@ configure_app_ingress() {
   local service="$3"
   local port="$4"
   local listener_name="$5"
+  local route_name="${6:-${service}}"
 
   [[ -z "${hostname}" ]] && return 0
 
-  echo "Configuring ${service} ingress for ${hostname} (listener=${listener_name})..."
+  echo "Configuring ${service} ingress for ${hostname} (listener=${listener_name}, route=${route_name})..."
 
   local attempts=0
   until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
@@ -233,7 +239,7 @@ EOF
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: ${service}
+  name: ${route_name}
   namespace: ${namespace}
 spec:
   parentRefs:
@@ -256,6 +262,10 @@ EOF
 # (hostname includes the NLB IP). They are created here so that gitops/ files
 # remain IP-independent across redeployments. ArgoCD gateway-config is configured
 # to ignore differences in Gateway spec.listeners so these survive reconciliation.
+#
+# The HTTPRoute is named "grafana" (matching gitops/monitoring/grafana-ingress.yaml)
+# so that cloud-init-bootstrap owns spec.hostnames via SSA while ArgoCD owns the
+# rest of the manifest. monitoring-extras app ignoreDifferences covers /spec/hostnames.
 
 configure_grafana_ingress() {
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -264,7 +274,8 @@ configure_grafana_ingress() {
     "monitoring" \
     "kube-prometheus-stack-grafana" \
     "80" \
-    "https-grafana"
+    "https-grafana" \
+    "grafana"
 
   # The HTTP->HTTPS redirect HTTPRoute (gitops/gateway/redirect.yaml) intentionally
   # has no hostnames and matches ALL HTTP traffic. The ACME challenge HTTPRoute

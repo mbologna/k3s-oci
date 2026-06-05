@@ -28,6 +28,17 @@ pre_create_secrets() {
     GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_PLAIN}"
   fi
 
+  # Resolve Cloudflare token from Vault when available; otherwise use the plain-text
+  # value embedded in user-data (CLOUDFLARE_API_TOKEN is empty when vault is enabled).
+  if [[ -n "${VAULT_SECRET_ID_CLOUDFLARE:-}" ]]; then
+    echo "Fetching Cloudflare API token from OCI Vault..."
+    CLOUDFLARE_API_TOKEN=$(oci secrets secret-bundle get \
+      --secret-id "${VAULT_SECRET_ID_CLOUDFLARE}" \
+      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    export CLOUDFLARE_API_TOKEN
+  fi
+  # When vault is not used, CLOUDFLARE_API_TOKEN is already exported from server-vars.sh.tpl
+
   # Longhorn BasicAuth -- htpasswd hash generated here because openssl apr1 hashing
   # is not possible inside static gitops YAML. Secret is referenced by
   # gitops/longhorn/ingress.yaml (user-configured HTTPRoute + SecurityPolicy).

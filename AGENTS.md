@@ -401,8 +401,10 @@ reconciliation never removes cloud-init-owned fields.
 
 **Signature:**
 ```bash
-configure_app_ingress <hostname> <namespace> <service> <port> <listener_name>
+configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [route_name]
 ```
+
+`route_name` is optional and defaults to `<service>`. Set it explicitly when the gitops HTTPRoute file uses a different name from the backend service (e.g. `grafana` vs `kube-prometheus-stack-grafana`).
 
 **To add a new cloud-init-managed HTTPS app:**
 1. Add `var.myapp_hostname` to `vars.tf` (nullable string, default null).

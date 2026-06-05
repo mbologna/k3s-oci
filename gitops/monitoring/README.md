@@ -9,6 +9,7 @@ The core stack (Prometheus, Grafana, Alertmanager, node-exporter, kube-state-met
 | File | Description |
 |---|---|
 | `grafana-ingress.yaml` | Gateway API HTTPRoute + cert-manager Certificate for Grafana UI |
+| `longhorn-servicemonitor.yaml` | ServiceMonitor scraping Longhorn metrics into Prometheus |
 | `prometheus-rules.yaml` | PrometheusRule alerts for node disk pressure and Longhorn volume health |
 
 ## Grafana access

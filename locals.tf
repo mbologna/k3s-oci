@@ -67,6 +67,7 @@ locals {
     k3s_subnet                = var.k3s_subnet
     k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
     k3s_url                   = local.k3s_internal_lb_ip
+    kube_api_port             = var.kube_api_port
     vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.cluster["k3s_token"].id : ""
     # Base64-encoded so the multi-line PEM is safe to embed in a shell export.
     ssh_host_key_private_b64 = base64encode(tls_private_key.ssh_host_key.private_key_openssh)

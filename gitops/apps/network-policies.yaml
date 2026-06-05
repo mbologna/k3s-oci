@@ -20,4 +20,7 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false
+      # CreateNamespace=true: optional feature namespaces (external-dns, external-secrets)
+      # receive their NetworkPolicies even before the feature helm chart creates the namespace.
+      # An empty namespace with NetworkPolicies is harmless until pods appear.
+      - CreateNamespace=true

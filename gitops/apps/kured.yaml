@@ -26,6 +26,12 @@ spec:
             - tue
             - wed
             - thu
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
         tolerations:
           - key: node-role.kubernetes.io/control-plane
             operator: Exists
