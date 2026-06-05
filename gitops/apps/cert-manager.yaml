@@ -20,6 +20,37 @@ spec:
           apiVersion: controller.config.cert-manager.io/v1alpha1
           kind: ControllerConfiguration
           enableGatewayAPI: true
+        # Controller — issues certificates, manages ACME challenges
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        # Webhook — validates and mutates cert-manager CRs; must be available for API calls
+        webhook:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        # cainjector — injects CA bundles into webhook configurations
+        cainjector:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        # startupapicheck — one-shot init job that verifies the API is ready
+        startupapicheck:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 32Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
