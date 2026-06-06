@@ -26,6 +26,12 @@ spec:
       # cloud-init-bootstrap owns the `https-grafana` listener; ArgoCD's SSA apply
       # never touches it. ignoreDifferences below suppresses OutOfSync warnings.
       - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
   ignoreDifferences:
     # Gateway API defaults group/kind on parentRefs/backendRefs at server side.
     - group: gateway.networking.k8s.io
