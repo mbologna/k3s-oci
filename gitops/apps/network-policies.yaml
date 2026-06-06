@@ -24,3 +24,9 @@ spec:
       # receive their NetworkPolicies even before the feature helm chart creates the namespace.
       # An empty namespace with NetworkPolicies is harmless until pods appear.
       - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

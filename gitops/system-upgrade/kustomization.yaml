@@ -25,3 +25,23 @@ patches:
                 env:
                   - name: SYSTEM_UPGRADE_JOB_ACTIVE_DEADLINE_SECONDS
                     value: "1800"
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "64Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "256Mi"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: system-upgrade-controller
+        namespace: system-upgrade
+        labels:
+          app.kubernetes.io/name: system-upgrade-controller
+      spec:
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: system-upgrade-controller

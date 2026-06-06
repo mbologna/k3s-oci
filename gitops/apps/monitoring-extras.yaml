@@ -22,6 +22,12 @@ spec:
       - CreateNamespace=false
       - ServerSideApply=true   # required for PrometheusRule CRDs
       - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
   ignoreDifferences:
     # Gateway API defaults group/kind on parentRefs at the server side.
     # These fields are not in the source manifests, causing false OutOfSync.

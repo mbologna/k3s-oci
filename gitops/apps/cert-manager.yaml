@@ -51,6 +51,21 @@ spec:
               memory: 32Mi
             limits:
               memory: 32Mi
+  # k3s HA konnectivity (EgressSelector) returns 502 for all admission webhook calls.
+  # ignoreDifferences on failurePolicy prevents ArgoCD (SSA) from claiming ownership,
+  # allowing a manual patch to set failurePolicy:Ignore to survive syncs.
+  # caBundle is continuously rotated by cert-manager cainjector — also excluded.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+        - .webhooks[].failurePolicy
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+        - .webhooks[].failurePolicy
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
@@ -61,3 +76,9 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true  # required for CRD resources with large annotations
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
