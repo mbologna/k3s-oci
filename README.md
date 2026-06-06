@@ -182,6 +182,8 @@ $EDITOR example/terraform.tfvars
 cd example && tofu init && tofu apply
 ```
 
+> **Real-world example:** The [infra](https://codeberg.org/mbologna/infra) homelab monorepo uses this module with `gitops_repo_url = "ssh://git@codeberg.org/mbologna/infra.git"` and `gitops_path = "clusters/hotel"`, deploying the ArgoCD application stack defined in `clusters/hotel/` and `platform/hotel/`. Hotel-specific operational runbooks are in `infra/docs/platform/hotel-k3s-oci-deployment.md`.
+
 A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
 
 ```bash
