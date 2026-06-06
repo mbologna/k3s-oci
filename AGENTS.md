@@ -10,6 +10,19 @@ Terraform module that deploys a production-ready [k3s](https://k3s.io) cluster o
 resources. All compute, networking, and storage must fit within the Always Free budget —
 do not introduce resources that incur cost.
 
+## Primary consumer
+
+The [`infra`](https://github.com/your-org/your-gitops-repo) homelab monorepo is the primary real-world consumer of this module. It provisions the **hotel** cluster with:
+
+```hcl
+gitops_repo_url = "https://github.com/your-org/your-gitops-repo.git"
+gitops_path     = "clusters/your-cluster"
+```
+
+Hotel-specific operational runbooks (deploy, kubeconfig retrieval, teardown) live in `infra/docs/platform/your-cluster-k3s-oci-deployment.md`. The infra repo's `clusters/your-cluster/` and `platform/your-cluster/` directories are the GitOps source of truth for the hotel cluster.
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
