@@ -46,6 +46,8 @@ spec:
           protocol: TCP
         - port: 8443
           protocol: TCP
+        - port: 9443
+          protocol: TCP
 ---
 # Allow Kubernetes API server to reach cert-manager webhook (port 9443).
 # k3s uses 10250 for kubelet/konnectivity-server — cert-manager webhook must use 9443
