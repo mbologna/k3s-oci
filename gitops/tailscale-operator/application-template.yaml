@@ -43,7 +43,7 @@ spec:
     - repoURL: https://pkgs.tailscale.com/helmcharts
       chart: tailscale-operator
       # renovate: datasource=helm depName=tailscale-operator registryUrl=https://pkgs.tailscale.com/helmcharts
-      targetRevision: "1.98.3"
+      targetRevision: "1.98.4"
       helm:
         valuesObject:
           operatorConfig:
