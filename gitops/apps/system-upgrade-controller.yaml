@@ -24,3 +24,9 @@ spec:
       # skip dry-run so ArgoCD applies CRDs first then retries the Plans.
       - SkipDryRunOnMissingResource=true
       - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

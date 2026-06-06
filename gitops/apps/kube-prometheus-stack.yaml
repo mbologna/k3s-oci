@@ -109,3 +109,9 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true   # required for CRDs with large annotations
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

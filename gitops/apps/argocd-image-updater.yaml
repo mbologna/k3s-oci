@@ -29,6 +29,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
   # NOTE: ArgoCD Image Updater monitors container images and opens PRs / commits
   # bumped image tags. To use it, annotate ArgoCD Applications with:
   #   argocd-image-updater.argoproj.io/image-list: myapp=docker.io/myorg/myapp
