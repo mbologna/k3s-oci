@@ -108,59 +108,6 @@ just ssh worker  # SSH into a node (server1/server2/server3/worker)
 just fmt         # tofu fmt -recursive
 ```
 
-## Always Free budget
-
-| Resource | Free allowance | This module |
-|---|---|---|
-| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker = **4 OCPUs / 24 GB** |
-| Block storage | 200 GB | 4 × 50 GB = **200 GB** |
-| Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
-| Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
-| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
-| NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **3 secrets**: k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
-| Volume backups | 5 total | **4** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
-| Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
-| MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
-
-> ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
-
-## Failure tolerance
-
-| Component | Tolerance | What happens on failure |
-|---|---|---|
-| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (3 replicas) keeps storage up; Envoy Gateway DaemonSet keeps ingress up on remaining nodes |
-| **2 nodes simultaneously** | ⚠️ Partial | Workloads and ingress continue on 2 surviving nodes; **if both failed nodes are control-planes**, etcd quorum is lost and the API server stops accepting writes (running pods keep running, no new scheduling) |
-| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore |
-| **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
-| **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
-| **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
-| **PVC data (Longhorn)** | ✅ 1 node | 3 replicas across 4 nodes; 1 replica lost, 2 remain serving |
-| **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
-| **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
-| **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
-
-## Node roles and workload placement
-
-Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available for workloads.
-
-| What | control-plane-0/1/2 | worker-0 | Scheduling mechanism |
-|---|:---:|:---:|---|
-| **etcd** | ✅ | ❌ | k3s built-in; servers only |
-| **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
-| **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **cert-manager** | ✅ | ✅ | Deployment: schedules on any node |
-| **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
-| **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet: any node |
-| **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
-
-> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
->
-> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes and survive any single-node failure.
-
 ## kubeconfig
 
 After `terraform apply`, run:
@@ -184,108 +131,6 @@ kubectl get nodes
 > $(terraform output -raw ssh_command)
 > ```
 > This is faster than Bastion sessions and avoids session TTLs. When using `expose_ssh = true` you can set `enable_bastion = false` to skip the Bastion Service resource entirely.
-
-## Automatic updates & reboots (unattended-upgrades + kured)
-
-`unattended-upgrades` applies Ubuntu security patches daily and sets `/var/run/reboot-required` when a kernel update needs a reboot.
-
-[kured](https://github.com/kubereboot/kured) watches every node for `/var/run/reboot-required` and, when found:
-1. Acquires a cluster-wide lock (only one node reboots at a time)
-2. Cordons + drains the node
-3. Reboots
-4. Waits for the node to return and uncordons it
-
-This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
-
-## GitOps — App of Apps
-
-The `gitops/` directory contains ArgoCD `Application` manifests managed with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern).
-
-After the cluster is running, bootstrap it:
-
-```bash
-kubectl apply -n argocd -f gitops/apps/app-of-apps.yaml
-```
-
-ArgoCD will then continuously reconcile every manifest under `gitops/apps/`.
-
-### Adding your own applications
-
-This repo is designed to be forked. To add your own apps on top of the built-in stack:
-
-1. **Fork this repo** on GitHub.
-
-2. **Update all `repoURL` references** to point to your fork:
-   ```bash
-   bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
-   git add gitops/apps/ && git commit -m "chore: update gitops repoURL"
-   git push
-   ```
-
-3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` — ArgoCD syncs them automatically. Each app can point at any Helm chart registry or any Git repository.
-
-> **Deploying for the first time?** Also set `gitops_repo_url` in `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL at bootstrap:
-> ```hcl
-> gitops_repo_url = "https://github.com/your-org/your-fork.git"
-> ```
-> **Already have a running cluster?** Patch the App of Apps directly:
-> ```bash
-> argocd app set app-of-apps --repo https://github.com/your-org/your-fork.git
-> ```
-
-> **Private repos**: set `gitops_ssh_private_key` in `terraform.tfvars` with your SSH private key — Terraform stores it in OCI Vault automatically and cloud-init creates the `argocd-repo-gitops` Secret before ArgoCD starts. No manual `argocd repo add` step needed. For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
-
-## Monitoring (Grafana + Prometheus)
-
-kube-prometheus-stack (Prometheus, Grafana, Alertmanager) is always deployed as part of the full stack.
-
-### Accessing Grafana
-
-Set `grafana_hostname` in `terraform.tfvars` to expose the Grafana UI with HTTPS and a Let's Encrypt certificate:
-
-```hcl
-grafana_hostname = "grafana.example.com"   # or leave null for auto sslip.io hostname
-```
-
-When `grafana_hostname` is null, Grafana is reachable at `grafana.<nlb-ip>.sslip.io` — no domain purchase required.
-
-Retrieve the admin credentials after `terraform apply`:
-
-```bash
-terraform output -raw grafana_admin_credentials
-```
-
-The password is generated by Terraform and stored in OCI Vault when `enable_vault = true` — it is never embedded in cloud-init user-data.
-
-### Built-in alert rules
-
-The following PrometheusRules are included out of the box (`gitops/monitoring/prometheus-rules.yaml`):
-
-| Alert | Condition |
-|---|---|
-| `NodeDiskPressure` | Node has disk pressure condition |
-| `NodeDiskSpaceLow` | < 15% free disk on any node |
-| `NodeDiskSpaceCritical` | < 5% free disk on any node |
-| `LonghornVolumeDegraded` | Longhorn volume in degraded state |
-| `LonghornVolumeFaulted` | Longhorn volume in faulted state |
-| `LonghornNodeStorageWarning` | Longhorn node storage > 80% used |
-
-### Adding custom dashboards
-
-Create a ConfigMap in the `monitoring` namespace with label `grafana_dashboard: "1"` — the Grafana sidecar auto-discovers and loads it:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: my-dashboard
-  namespace: monitoring
-  labels:
-    grafana_dashboard: "1"
-data:
-  my-dashboard.json: |
-    { ... }   # Grafana dashboard JSON
-```
 
 ## Deploying a web application
 
@@ -495,6 +340,108 @@ spec:
 
 With 4 identically-sized nodes, 2 replicas survive any single node failure. Envoy Gateway runs as a DaemonSet with `maxUnavailable: 1`, so ingress remains up on the other 3 nodes throughout any single-node drain or failure.
 
+## Monitoring (Grafana + Prometheus)
+
+kube-prometheus-stack (Prometheus, Grafana, Alertmanager) is always deployed as part of the full stack.
+
+### Accessing Grafana
+
+Set `grafana_hostname` in `terraform.tfvars` to expose the Grafana UI with HTTPS and a Let's Encrypt certificate:
+
+```hcl
+grafana_hostname = "grafana.example.com"   # or leave null for auto sslip.io hostname
+```
+
+When `grafana_hostname` is null, Grafana is reachable at `grafana.<nlb-ip>.sslip.io` — no domain purchase required.
+
+Retrieve the admin credentials after `terraform apply`:
+
+```bash
+terraform output -raw grafana_admin_credentials
+```
+
+The password is generated by Terraform and stored in OCI Vault when `enable_vault = true` — it is never embedded in cloud-init user-data.
+
+### Built-in alert rules
+
+The following PrometheusRules are included out of the box (`gitops/monitoring/prometheus-rules.yaml`):
+
+| Alert | Condition |
+|---|---|
+| `NodeDiskPressure` | Node has disk pressure condition |
+| `NodeDiskSpaceLow` | < 15% free disk on any node |
+| `NodeDiskSpaceCritical` | < 5% free disk on any node |
+| `LonghornVolumeDegraded` | Longhorn volume in degraded state |
+| `LonghornVolumeFaulted` | Longhorn volume in faulted state |
+| `LonghornNodeStorageWarning` | Longhorn node storage > 80% used |
+
+### Adding custom dashboards
+
+Create a ConfigMap in the `monitoring` namespace with label `grafana_dashboard: "1"` — the Grafana sidecar auto-discovers and loads it:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  my-dashboard.json: |
+    { ... }   # Grafana dashboard JSON
+```
+
+## GitOps — App of Apps
+
+The `gitops/` directory contains ArgoCD `Application` manifests managed with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern).
+
+After the cluster is running, bootstrap it:
+
+```bash
+kubectl apply -n argocd -f gitops/apps/app-of-apps.yaml
+```
+
+ArgoCD will then continuously reconcile every manifest under `gitops/apps/`.
+
+### Adding your own applications
+
+This repo is designed to be forked. To add your own apps on top of the built-in stack:
+
+1. **Fork this repo** on GitHub.
+
+2. **Update all `repoURL` references** to point to your fork:
+   ```bash
+   bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
+   git add gitops/apps/ && git commit -m "chore: update gitops repoURL"
+   git push
+   ```
+
+3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` — ArgoCD syncs them automatically. Each app can point at any Helm chart registry or any Git repository.
+
+> **Deploying for the first time?** Also set `gitops_repo_url` in `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL at bootstrap:
+> ```hcl
+> gitops_repo_url = "https://github.com/your-org/your-fork.git"
+> ```
+> **Already have a running cluster?** Patch the App of Apps directly:
+> ```bash
+> argocd app set app-of-apps --repo https://github.com/your-org/your-fork.git
+> ```
+
+> **Private repos**: set `gitops_ssh_private_key` in `terraform.tfvars` with your SSH private key — Terraform stores it in OCI Vault automatically and cloud-init creates the `argocd-repo-gitops` Secret before ArgoCD starts. No manual `argocd repo add` step needed. For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
+
+## Automatic updates & reboots (unattended-upgrades + kured)
+
+`unattended-upgrades` applies Ubuntu security patches daily and sets `/var/run/reboot-required` when a kernel update needs a reboot.
+
+[kured](https://github.com/kubereboot/kured) watches every node for `/var/run/reboot-required` and, when found:
+1. Acquires a cluster-wide lock (only one node reboots at a time)
+2. Cordons + drains the node
+3. Reboots
+4. Waits for the node to return and uncordons it
+
+This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
+
 ## Dependency updates (Renovate)
 
 [Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable with the [Renovate GitHub App](https://github.com/apps/renovate) or the self-hosted workflow at `.github/workflows/renovate.yml` (requires a `RENOVATE_TOKEN` secret with `repo` scope).
@@ -525,6 +472,59 @@ terraform {
 ```
 
 > Generate OCI Customer Secret Keys under **Identity → Users → your user → Customer Secret Keys**. The bucket name and namespace endpoint are in `terraform output terraform_state_backend`.
+
+## Always Free budget
+
+| Resource | Free allowance | This module |
+|---|---|---|
+| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker = **4 OCPUs / 24 GB** |
+| Block storage | 200 GB | 4 × 50 GB = **200 GB** |
+| Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
+| Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
+| E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
+| NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
+| Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
+| Vault (shared) | Software keys + 150 secrets | **3 secrets**: k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
+| Volume backups | 5 total | **4** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
+| Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
+| MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
+
+> ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
+
+## Failure tolerance
+
+| Component | Tolerance | What happens on failure |
+|---|---|---|
+| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (3 replicas) keeps storage up; Envoy Gateway DaemonSet keeps ingress up on remaining nodes |
+| **2 nodes simultaneously** | ⚠️ Partial | Workloads and ingress continue on 2 surviving nodes; **if both failed nodes are control-planes**, etcd quorum is lost and the API server stops accepting writes (running pods keep running, no new scheduling) |
+| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore |
+| **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
+| **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
+| **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
+| **PVC data (Longhorn)** | ✅ 1 node | 3 replicas across 4 nodes; 1 replica lost, 2 remain serving |
+| **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
+| **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
+| **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
+
+## Node roles and workload placement
+
+Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available for workloads.
+
+| What | control-plane-0/1/2 | worker-0 | Scheduling mechanism |
+|---|:---:|:---:|---|
+| **etcd** | ✅ | ❌ | k3s built-in; servers only |
+| **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
+| **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
+| **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
+| **cert-manager** | ✅ | ✅ | Deployment: schedules on any node |
+| **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
+| **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet: any node |
+| **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
+| **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
+
+> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
+>
+> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes and survive any single-node failure.
 
 ## Why this topology
 
