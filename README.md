@@ -80,6 +80,34 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 > **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** — the hard limit of a 4-node Always Free topology.
 
+## Quickstart
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/mbologna/k3s-oci.git
+cd k3s-oci
+
+# 2. Copy and edit the variables file
+cp example/terraform.tfvars.example example/terraform.tfvars
+$EDITOR example/terraform.tfvars
+
+# 3. Init and apply (terraform or tofu both work)
+cd example && tofu init && tofu apply
+```
+
+> **Real-world example:** The [infra](https://codeberg.org/mbologna/infra) homelab monorepo uses this module with `gitops_repo_url = "ssh://git@codeberg.org/mbologna/infra.git"` and `gitops_path = "clusters/hotel"`, deploying the ArgoCD application stack defined in `clusters/hotel/` and `platform/hotel/`. Hotel-specific operational runbooks are in `infra/docs/platform/hotel-k3s-oci-deployment.md`.
+
+A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
+
+```bash
+just init        # tofu init in example/
+just plan        # tofu plan in example/
+just apply       # tofu apply in example/
+just kubeconfig  # fetch kubeconfig via OCI Bastion
+just ssh worker  # SSH into a node (server1/server2/server3/worker)
+just fmt         # tofu fmt -recursive
+```
+
 ## Always Free budget
 
 | Resource | Free allowance | This module |
@@ -132,34 +160,6 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 > **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
 >
 > **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes and survive any single-node failure.
-
-## Quickstart
-
-```bash
-# 1. Clone the repo
-git clone https://github.com/mbologna/k3s-oci.git
-cd k3s-oci
-
-# 2. Copy and edit the variables file
-cp example/terraform.tfvars.example example/terraform.tfvars
-$EDITOR example/terraform.tfvars
-
-# 3. Init and apply (terraform or tofu both work)
-cd example && tofu init && tofu apply
-```
-
-> **Real-world example:** The [infra](https://codeberg.org/mbologna/infra) homelab monorepo uses this module with `gitops_repo_url = "ssh://git@codeberg.org/mbologna/infra.git"` and `gitops_path = "clusters/hotel"`, deploying the ArgoCD application stack defined in `clusters/hotel/` and `platform/hotel/`. Hotel-specific operational runbooks are in `infra/docs/platform/hotel-k3s-oci-deployment.md`.
-
-A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
-
-```bash
-just init        # tofu init in example/
-just plan        # tofu plan in example/
-just apply       # tofu apply in example/
-just kubeconfig  # fetch kubeconfig via OCI Bastion
-just ssh worker  # SSH into a node (server1/server2/server3/worker)
-just fmt         # tofu fmt -recursive
-```
 
 ## kubeconfig
 
