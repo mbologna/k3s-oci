@@ -43,8 +43,8 @@ run_bootstrap() {
   install_argocd
   create_dockerhub_secret
   create_optional_apps
-  configure_grafana_ingress || { echo "ERROR: configure_grafana_ingress failed — aborting bootstrap."; exit 1; }
-  configure_longhorn_ingress || { echo "ERROR: configure_longhorn_ingress failed — aborting bootstrap."; exit 1; }
-  configure_argocd_ingress   || { echo "ERROR: configure_argocd_ingress failed — aborting bootstrap."; exit 1; }
+  configure_grafana_ingress || { echo "ERROR: configure_grafana_ingress failed - aborting bootstrap."; exit 1; }
+  configure_longhorn_ingress || { echo "ERROR: configure_longhorn_ingress failed - aborting bootstrap."; exit 1; }
+  configure_argocd_ingress   || { echo "ERROR: configure_argocd_ingress failed - aborting bootstrap."; exit 1; }
   echo "==> Bootstrap complete. ArgoCD will reconcile remaining stack via gitops/."
 }

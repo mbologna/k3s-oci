@@ -34,7 +34,7 @@ detect_first_server() {
   export OCI_CLI_AUTH=instance_principal
   export PATH="/root/bin:$PATH"
 
-  local instance_display_name first_server pool_id
+  local instance_display_name="" first_server="" pool_id=""
   instance_display_name=$(curl -sfL \
     -H "Authorization: Bearer Oracle" \
     http://169.254.169.254/opc/v2/instance | jq -r '.displayName')

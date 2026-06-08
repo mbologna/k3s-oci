@@ -10,7 +10,7 @@ exec > >(tee /var/log/k3s-cloud-init.log | logger -t k3s-cloud-init) 2>&1
 echo "==> k3s server cloud-init starting at $(date -u)"
 
 # Enable bash trace mode when trace_enabled = true in terraform.tfvars.
-# Produces verbose output — do NOT enable in production.
+# Produces verbose output - do NOT enable in production.
 export TRACE="${trace_enabled ? "true" : "false"}"
 [[ "$${TRACE}" == "true" ]] && set -x
 
