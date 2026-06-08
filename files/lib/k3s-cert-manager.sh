@@ -8,7 +8,7 @@
 
 # apply_cluster_issuer <name> <acme_server_url> <solver_yaml>
 # Creates a cert-manager ClusterIssuer with the given name, ACME server URL,
-# and solver block (indented YAML string). Reusable for staging/prod × http01/dns01.
+# and solver block (indented YAML string). Reusable for staging/prod x http01/dns01.
 apply_cluster_issuer() {
   local name="$1"
   local server="$2"

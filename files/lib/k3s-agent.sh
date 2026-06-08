@@ -16,7 +16,7 @@ install_k3s_agent() {
   local max_api_attempts=180 max_attempts=10 attempt=0
   local api_port="${KUBE_API_PORT:-6443}"
 
-  echo "Waiting for k3s API at ${K3S_URL}:${api_port} (max ${max_api_attempts} attempts × 10s) ..."
+  echo "Waiting for k3s API at ${K3S_URL}:${api_port} (max ${max_api_attempts} attempts x 10s) ..."
   until curl --output /dev/null --silent --insecure "https://${K3S_URL}:${api_port}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_api_attempts} ]] && { echo "ERROR: k3s API unreachable after ${max_api_attempts} attempts."; exit 1; }

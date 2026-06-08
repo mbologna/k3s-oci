@@ -78,7 +78,7 @@ locals {
   _server_gitops_vars = {
     gitops_repo_url                = var.gitops_repo_url
     gitops_path                    = var.gitops_path
-    vault_secret_id_gitops_ssh_key = var.enable_vault && var.gitops_ssh_private_key != "" ? oci_vault_secret.gitops_ssh_key[0].id : ""
+    vault_secret_id_gitops_ssh_key = var.enable_vault && var.gitops_ssh_private_key != "" ? try(oci_vault_secret.gitops_ssh_key[0].id, "") : ""
   }
 
   # Bootstrap chart versions (cloud-init installs; ArgoCD adopts ongoing management)
@@ -95,8 +95,8 @@ locals {
     longhorn_ui_username              = var.longhorn_ui_username
     longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
     grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
-    vault_secret_id_longhorn_password = var.enable_vault ? oci_vault_secret.cluster["longhorn_ui_password"].id : ""
-    vault_secret_id_grafana_password  = var.enable_vault ? oci_vault_secret.cluster["grafana_admin_password"].id : ""
+    vault_secret_id_longhorn_password = var.enable_vault ? try(oci_vault_secret.cluster["longhorn_ui_password"].id, "") : ""
+    vault_secret_id_grafana_password  = var.enable_vault ? try(oci_vault_secret.cluster["grafana_admin_password"].id, "") : ""
     vault_ocid                        = var.enable_vault ? oci_kms_vault.k3s[0].id : ""
   }
 

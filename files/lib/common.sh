@@ -96,7 +96,7 @@ configure_unattended_upgrades() {
   wait_apt_lock
   # Note: apt-get update already ran in bootstrap(); this second run ensures
   # unattended-upgrades and needrestart are always installable even on slow mirrors.
-  apt-get install -y -q --no-install-recommends unattended-upgrades apt-listchanges needrestart
+  apt-get install -y -q --no-install-recommends unattended-upgrades needrestart
   apt-get clean
   rm -rf /var/lib/apt/lists/*
 
