@@ -396,8 +396,8 @@ variable "gitops_repo_url" {
   default     = "https://github.com/mbologna/k3s-oci.git"
 
   validation {
-    condition     = can(regex("^(https://|git@)", var.gitops_repo_url))
-    error_message = "gitops_repo_url must start with 'https://' (public HTTPS) or 'git@' (SSH)."
+    condition     = can(regex("^(https://|git@|ssh://git@)", var.gitops_repo_url))
+    error_message = "gitops_repo_url must start with 'https://' (public HTTPS), 'git@' (SCP-style SSH), or 'ssh://git@' (URL-style SSH)."
   }
 }
 
