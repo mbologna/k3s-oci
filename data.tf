@@ -111,8 +111,8 @@ locals {
   _server_optional_vars = {
     # Cloudflare: plaintext only when vault is disabled; vault secret ID used otherwise.
     cloudflare_api_token        = var.enable_vault ? "" : coalesce(var.cloudflare_api_token, "")
-    cloudflare_zone_id          = coalesce(var.cloudflare_zone_id, "")
-    external_dns_domain_filter  = coalesce(var.external_dns_domain_filter, "")
+    cloudflare_zone_id          = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
+    external_dns_domain_filter  = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
     vault_secret_id_cloudflare  = var.enable_vault && var.cloudflare_api_token != null ? oci_vault_secret.cloudflare_api_token[0].id : ""
     oci_region                  = coalesce(var.region, "")
     notification_topic_endpoint = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : ""

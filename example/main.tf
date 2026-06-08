@@ -338,6 +338,11 @@ variable "external_secrets_chart_version" {
 
 # ── GitOps ────────────────────────────────────────────────────────────────────
 
+variable "argocd_hostname" {
+  type    = string
+  default = null
+}
+
 variable "gitops_path" {
   type    = string
   default = "gitops/apps"
@@ -400,6 +405,7 @@ module "k3s_cluster" {
   github_ssh_keys_username          = var.github_ssh_keys_username
   longhorn_hostname                 = var.longhorn_hostname
   grafana_hostname                  = var.grafana_hostname
+  argocd_hostname                   = var.argocd_hostname
   gitops_repo_url                   = var.gitops_repo_url
   gitops_path                       = var.gitops_path
   gitops_ssh_private_key            = var.gitops_ssh_private_key
@@ -458,6 +464,12 @@ output "terraform_state_backend" { value = module.k3s_cluster.terraform_state_ba
 output "longhorn_backup_setup" { value = module.k3s_cluster.longhorn_backup_setup }
 output "mysql_endpoint" { value = module.k3s_cluster.mysql_endpoint }
 output "vault_id" { value = module.k3s_cluster.vault_id }
+output "tailscale_vault_secret_names" { value = module.k3s_cluster.tailscale_vault_secret_names }
+
+output "ssh_host_public_key" {
+  value     = module.k3s_cluster.ssh_host_public_key
+  sensitive = true
+}
 
 output "grafana_admin_credentials" {
   value     = module.k3s_cluster.grafana_admin_credentials
