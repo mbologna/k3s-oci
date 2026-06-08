@@ -98,40 +98,6 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 > ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
 
-## Why this topology
-
-With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The result is a 3-server HA cluster plus 1 standalone worker that saturates every Always Free resource class with nothing left unused and nothing that costs money.
-
-### Topology comparison
-
-| Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
-|---|:---:|:---:|:---:|---|
-| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal**: HA etcd, all 4 nodes contribute to workloads |
-| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
-| 2 CP + 2 workers | ❌ Invalid | - | - | 2-node etcd cannot form quorum; worse than 1 node |
-| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
-
-†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
-
-**4 × 1 OCPU even split** prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
-
-### Why not use the 2 free E2.1.Micro instances as extra workers?
-
-Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
-
-1. **Storage budget exhausted**: 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
-2. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
-3. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
-
-### Previously rejected alternatives
-
-| Alternative | Why it was rejected |
-|---|---|
-| nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
-| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
-| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance |
-| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
-
 ## Failure tolerance
 
 | Component | Tolerance | What happens on failure |
@@ -559,6 +525,65 @@ terraform {
 ```
 
 > Generate OCI Customer Secret Keys under **Identity → Users → your user → Customer Secret Keys**. The bucket name and namespace endpoint are in `terraform output terraform_state_backend`.
+
+## Why this topology
+
+With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The result is a 3-server HA cluster plus 1 standalone worker that saturates every Always Free resource class with nothing left unused and nothing that costs money.
+
+### Topology comparison
+
+| Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
+|---|:---:|:---:|:---:|---|
+| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal**: HA etcd, all 4 nodes contribute to workloads |
+| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
+| 2 CP + 2 workers | ❌ Invalid | - | - | 2-node etcd cannot form quorum; worse than 1 node |
+| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
+
+†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
+
+**4 × 1 OCPU even split** prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
+
+### Why not use the 2 free E2.1.Micro instances as extra workers?
+
+Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
+
+1. **Storage budget exhausted**: 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
+2. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+3. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
+
+### Previously rejected alternatives
+
+| Alternative | Why it was rejected |
+|---|---|
+| nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
+| OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
+| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance |
+| Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
+| openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image or Marketplace listing. The cloud-init scripts (`files/lib/common.sh`) are deeply Ubuntu-specific (`apt`, `unattended-upgrades`, `needrestart`). See below for the custom image import path. |
+
+### Using a custom OS image (advanced)
+
+The `os_image_id` variable accepts any OCI image OCID, including custom-imported images.
+**All cloud-init scripts assume Ubuntu 24.04 and will fail on any other OS** unless you fork
+and rewrite `files/lib/common.sh` (and the unattended-upgrades logic). This is unsupported.
+
+If you specifically want openSUSE, the closest viable path is:
+
+1. Download the JeOS EFI QCOW2 for aarch64 (~927 MiB):
+   ```
+   https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-ARM-JeOS-efi.aarch64.qcow2
+   ```
+2. Upload to OCI Object Storage, then import via Console:
+   **Compute → Custom Images → Import Image** — type `QCOW2`, mode `Paravirtualized`
+3. Edit image capabilities: set Firmware to `UEFI_64` and all attachment types to `PARAVIRTUALIZED`
+4. Add shape compatibility: `VM.Standard.A1.Flex`
+5. Pass the resulting OCID as `os_image_id` in your `terraform.tfvars`
+
+Caveats to be aware of:
+- The OCI metadata datasource (`Oracle`) may need to be added to `/etc/cloud/cloud.cfg`'s `datasource_list` manually before the image is imported, otherwise cloud-init will not inject SSH keys
+- Oracle Cloud Agent (OCA) is unavailable — no native OCI monitoring or patch management
+- All cluster bootstrap (`k3s`, `cert-manager`, Helm, etc.) must be installed manually; the cloud-init user-data will not work as-is
+- No community reports of this specific combination (openSUSE Leap 15.6 + OCI A1.Flex) have been verified
 
 ## License
 
