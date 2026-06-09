@@ -53,14 +53,23 @@ if [ -n "$BASTION_OCID" ]; then
     -o "ProxyCommand=ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -W %h:22 -p 22 $BASTION_ENDPOINT")
   SSH_TARGET="ubuntu@${SERVER_IP}"
 else
-  # ── direct mode (expose_ssh = true, NLB forwards port 22 to servers) ──────
-  echo "No bastion configured — connecting directly to NLB ${NLB_IP}:22..."
-  SSH_OPTS=(-i "$SSH_KEY"
+  # ── direct mode (expose_ssh = true, NLB forwards port 22 to all nodes) ────
+  # The NLB SSH listener may route to the standalone worker which does not
+  # have k3s.yaml. Use the first server's private IP via NLB ProxyJump.
+  SERVER_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[0]')
+  echo "No bastion configured — connecting to server ${SERVER_IP} via NLB ${NLB_IP}:22..."
+  NLB_OPTS=(-i "$SSH_KEY"
     -o StrictHostKeyChecking=no
     -o UserKnownHostsFile=/dev/null
     -o IdentitiesOnly=yes
     -o ConnectTimeout=10)
-  SSH_TARGET="ubuntu@${NLB_IP}"
+  SSH_OPTS=(-i "$SSH_KEY"
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+    -o IdentitiesOnly=yes
+    -o ConnectTimeout=10
+    -o "ProxyCommand=ssh ${NLB_OPTS[*]} -W %h:%p ubuntu@${NLB_IP}")
+  SSH_TARGET="ubuntu@${SERVER_IP}"
 fi
 
 echo "Fetching kubeconfig..."
