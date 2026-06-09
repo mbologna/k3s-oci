@@ -80,3 +80,30 @@ resolve_flannel_params() {
     fi
   fi
 }
+
+# fetch_from_vault <secret_ocid>
+# Retries up to 20 times (30s gap = ~10 min) to handle IAM dynamic-group
+# propagation delay on newly launched instances.
+# Diagnostic output goes to stderr so it appears in the log even when this
+# function is called inside a $() command substitution (which captures stdout).
+fetch_from_vault() {
+  local secret_id="$1"
+  local max_attempts=20
+  local delay=30
+  local attempt=0
+  local raw_value
+  while [[ $attempt -lt $max_attempts ]]; do
+    attempt=$((attempt + 1))
+    if raw_value=$(oci secrets secret-bundle get \
+      --secret-id "${secret_id}" \
+      --query 'data."secret-bundle-content".content' \
+      --raw-output 2>&1); then
+      echo "${raw_value}" | base64 -d
+      return 0
+    fi
+    echo "Vault fetch attempt ${attempt}/${max_attempts} failed, retrying in ${delay}s..." >&2
+    sleep "${delay}"
+  done
+  echo "ERROR: Failed to fetch secret '${secret_id}' from OCI Vault after ${max_attempts} attempts." >&2
+  return 1
+}

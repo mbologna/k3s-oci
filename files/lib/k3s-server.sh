@@ -166,12 +166,18 @@ install_oci_cli
 
 detect_first_server
 
-# Resolve cluster secrets: OCI Vault when enabled, else from user-data header
+# Resolve cluster secrets: OCI Vault when enabled, else from user-data header.
+# Falls back to K3S_TOKEN_PLAIN when vault fetch fails (handles IAM propagation
+# delays that can exceed the retry window on newly created instances).
 if [[ -n "${VAULT_SECRET_ID_K3S_TOKEN}" ]]; then
   echo "Fetching k3s token from OCI Vault..."
-  K3S_TOKEN=$(oci secrets secret-bundle get \
-    --secret-id "${VAULT_SECRET_ID_K3S_TOKEN}" \
-    --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+  if K3S_TOKEN=$(fetch_from_vault "${VAULT_SECRET_ID_K3S_TOKEN}"); then
+    echo "Vault fetch successful."
+  else
+    echo "WARNING: Vault fetch failed — falling back to plaintext token from user-data." >&2
+    K3S_TOKEN="${K3S_TOKEN_PLAIN}"
+    [[ -z "${K3S_TOKEN}" ]] && { echo "ERROR: K3S_TOKEN_PLAIN is empty — cannot continue." >&2; exit 1; }
+  fi
 else
   K3S_TOKEN="${K3S_TOKEN_PLAIN}"
 fi

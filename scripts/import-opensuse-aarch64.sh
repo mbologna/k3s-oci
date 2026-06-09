@@ -40,8 +40,8 @@
 #     #cloud-config that sets ssh_authorized_keys explicitly (example shown at end).
 #   - Oracle Cloud Agent (OCA): unavailable on custom images — no OCI-native
 #     monitoring or patch management.
-#   - This module's cloud-init scripts are Ubuntu-specific (apt, unattended-upgrades).
-#     Using the imported image with os_image_id requires a custom fork.
+#   - SSH key injection: handled automatically by bootstrap-opensuse.sh when
+#     using this module with os_family = "opensuse". No manual workaround needed.
 
 set -euo pipefail
 
@@ -320,7 +320,6 @@ echo ""
 echo "  ── Use with this Terraform module ───────────────────────────────"
 echo ""
 echo "  # Add to terraform.tfvars:"
+echo "  os_family   = \"opensuse\""
 echo "  os_image_id = \"${IMAGE_ID}\""
-echo "  # NOTE: cloud-init scripts in this module are Ubuntu-specific."
-echo "  # A custom fork is required to use openSUSE with the full stack."
 echo ""

@@ -569,7 +569,7 @@ The module supports two OS families, selected via `os_family`:
 | `os_family` | Image | Auto-resolved | SSH user | Auto-updates |
 |---|---|---|---|---|
 | `"ubuntu"` (default) | Ubuntu 24.04 LTS (Noble) aarch64 | ✅ Yes — latest OCI-native image | `ubuntu` | `unattended-upgrades` + `needrestart` |
-| `"opensuse"` | openSUSE Leap 16.0 Minimal VM aarch64 | ❌ — must import and set `os_image_id` | `opensuse` | `zypper patch` systemd timers |
+| `"opensuse"` | openSUSE Leap 16.0 Minimal VM aarch64 | ❌ — must import and set `os_image_id` | `sles` | `zypper patch` systemd timers |
 
 #### Ubuntu (default)
 

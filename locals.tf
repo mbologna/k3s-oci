@@ -13,7 +13,7 @@ locals {
   # try() guards against os_family = "opensuse" where the data source count = 0.
   os_image_id = var.os_image_id != null ? var.os_image_id : try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
   # Default SSH user for the selected OS family.
-  os_user = var.os_family == "opensuse" ? "opensuse" : "ubuntu"
+  os_user = var.os_family == "opensuse" ? "sles" : "ubuntu"
 
   # Applied to every OCI resource for consistent identification and cost tracking.
   # `clustername` (no hyphens) is used in the IAM dynamic group matching_rule because
@@ -68,7 +68,7 @@ locals {
   k3s_common_cloud_init_vars = {
     k3s_version               = local.k3s_version
     k3s_subnet                = var.k3s_subnet
-    k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
+    k3s_token                 = random_password.k3s_token.result
     k3s_url                   = local.k3s_internal_lb_ip
     kube_api_port             = var.kube_api_port
     vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.cluster["k3s_token"].id : ""

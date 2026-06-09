@@ -55,7 +55,7 @@ output "bastion_ocid" {
 
 output "ssh_command" {
   description = "SSH command to connect to a cluster node via the public NLB (null if expose_ssh = false). Routes to any available server."
-  value       = var.expose_ssh ? "ssh -i ~/.ssh/id_ed25519 ubuntu@${try(local.public_lb_ip[0], "<public-nlb-ip>")}" : null
+  value       = var.expose_ssh ? "ssh -i ~/.ssh/id_ed25519 ${local.os_user}@${try(local.public_lb_ip[0], "<public-nlb-ip>")}" : null
 }
 
 output "ssh_host_public_key" {
