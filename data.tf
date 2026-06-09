@@ -135,6 +135,13 @@ locals {
     trace_enabled = var.trace_enabled
   }
 
+  # OS family vars: controls bootstrap script selection and SSH user.
+  _server_os_vars = {
+    os_family      = var.os_family
+    os_user        = local.os_user
+    ssh_public_key = local.ssh_public_key
+  }
+
   # Final merged map passed to the server templatefile
   k3s_server_cloud_init_vars = merge(
     local.k3s_common_cloud_init_vars,
@@ -146,6 +153,7 @@ locals {
     local._server_optional_vars,
     local._server_hostname_vars,
     local._server_debug_vars,
+    local._server_os_vars,
   )
 }
 
@@ -157,6 +165,7 @@ data "cloudinit_config" "k3s_server" {
     content_type = "text/x-shellscript"
     content = join("\n", [
       templatefile("${path.module}/files/server-vars.sh.tpl", local.k3s_server_cloud_init_vars),
+      var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-secrets.sh"),
       file("${path.module}/files/lib/k3s-cert-manager.sh"),
@@ -176,8 +185,12 @@ data "cloudinit_config" "k3s_worker" {
     content_type = "text/x-shellscript"
     content = join("\n", [
       templatefile("${path.module}/files/agent-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
-        trace_enabled = var.trace_enabled
+        trace_enabled  = var.trace_enabled
+        os_family      = var.os_family
+        os_user        = local.os_user
+        ssh_public_key = local.ssh_public_key
       })),
+      var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"),
       file("${path.module}/files/lib/common.sh"),
       file("${path.module}/files/lib/k3s-agent.sh"),
     ])
@@ -208,9 +221,10 @@ data "oci_core_instance" "k3s_workers" {
 }
 
 # ── k3s node image (Ubuntu 24.04 aarch64 — A1.Flex) ──────────────────────────
-# Auto-resolved from tenancy when os_image_id is not set explicitly.
+# Auto-resolved from tenancy when os_family = "ubuntu" and os_image_id is not set.
+# For os_family = "opensuse", set os_image_id explicitly (use scripts/import-opensuse-aarch64.sh).
 data "oci_core_images" "k3s_nodes" {
-  count                    = var.os_image_id == null ? 1 : 0
+  count                    = var.os_family == "ubuntu" && var.os_image_id == null ? 1 : 0
   compartment_id           = var.tenancy_ocid
   operating_system         = "Canonical Ubuntu"
   operating_system_version = "24.04"

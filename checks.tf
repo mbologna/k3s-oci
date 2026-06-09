@@ -3,6 +3,13 @@
 # invalid variable combinations at plan time with clear error messages,
 # before any OCI API call is made.
 
+check "opensuse_requires_os_image_id" {
+  assert {
+    condition     = var.os_family != "opensuse" || var.os_image_id != null
+    error_message = "os_family = \"opensuse\" requires os_image_id to be set. Run scripts/import-opensuse-aarch64.sh to import the image and capture its OCID."
+  }
+}
+
 check "external_secrets_requires_vault" {
   assert {
     condition     = !var.enable_external_secrets || var.enable_vault

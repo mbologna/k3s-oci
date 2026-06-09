@@ -10,7 +10,8 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
 - **Envoy Gateway ingress (Gateway API)**: DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
-- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention
+- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
+- **Configurable OS** (`os_family`): Ubuntu 24.04 LTS (default, OCI-native image auto-resolved) or openSUSE Leap 16.0 (custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`)
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
 - **Cluster-scoped IAM**: dynamic group and policy scoped to nodes tagged with the cluster name, not every instance in the compartment
 - **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
@@ -559,31 +560,81 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
 | Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
-| openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image or Marketplace listing. The cloud-init scripts (`files/lib/common.sh`) are deeply Ubuntu-specific (`apt`, `unattended-upgrades`, `needrestart`). See below for the custom image import path. |
+| openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image. **openSUSE Leap 16.0 is now supported** via `os_family = "opensuse"` + a custom-imported UEFI image. See [Choosing an OS](#choosing-an-os) below. Other distros remain unsupported. |
 
-### Using a custom OS image (advanced)
+### Choosing an OS
 
-The `os_image_id` variable accepts any OCI image OCID, including custom-imported images.
-**All cloud-init scripts assume Ubuntu 24.04 and will fail on any other OS** unless you fork
-and rewrite `files/lib/common.sh` (and the unattended-upgrades logic). This is unsupported.
+The module supports two OS families, selected via `os_family`:
 
-If you specifically want openSUSE, the closest viable path is:
+| `os_family` | Image | Auto-resolved | SSH user | Auto-updates |
+|---|---|---|---|---|
+| `"ubuntu"` (default) | Ubuntu 24.04 LTS (Noble) aarch64 | ✅ Yes — latest OCI-native image | `ubuntu` | `unattended-upgrades` + `needrestart` |
+| `"opensuse"` | openSUSE Leap 16.0 Minimal VM aarch64 | ❌ — must import and set `os_image_id` | `opensuse` | `zypper patch` systemd timers |
 
-1. Download the JeOS EFI QCOW2 for aarch64 (~927 MiB):
-   ```
-   https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-ARM-JeOS-efi.aarch64.qcow2
-   ```
-2. Upload to OCI Object Storage, then import via Console:
-   **Compute → Custom Images → Import Image** — type `QCOW2`, mode `Paravirtualized`
-3. Edit image capabilities: set Firmware to `UEFI_64` and all attachment types to `PARAVIRTUALIZED`
-4. Add shape compatibility: `VM.Standard.A1.Flex`
-5. Pass the resulting OCID as `os_image_id` in your `terraform.tfvars`
+#### Ubuntu (default)
 
-Caveats to be aware of:
-- The OCI metadata datasource (`Oracle`) may need to be added to `/etc/cloud/cloud.cfg`'s `datasource_list` manually before the image is imported, otherwise cloud-init will not inject SSH keys
-- Oracle Cloud Agent (OCA) is unavailable — no native OCI monitoring or patch management
-- All cluster bootstrap (`k3s`, `cert-manager`, Helm, etc.) must be installed manually; the cloud-init user-data will not work as-is
-- No community reports of this specific combination (openSUSE Leap 15.6 + OCI A1.Flex) have been verified
+No extra steps needed. The latest Ubuntu 24.04 LTS image for `VM.Standard.A1.Flex` is resolved automatically at plan time from the tenancy.
+
+#### openSUSE Leap 16.0
+
+OCI has no native openSUSE image. Use the included script to import one before running `tofu apply`:
+
+```bash
+./scripts/import-opensuse-aarch64.sh
+```
+
+The script:
+1. Resolves the latest openSUSE Leap 16.0 Minimal VM Cloud aarch64 QCOW2 from `download.opensuse.org`
+2. Streams the image (~271 MiB) directly into a temporary OCI Object Storage bucket — no local disk required
+3. Imports via the OCI REST API with `firmware: UEFI_64` and `launchMode: CUSTOM`
+   (the OCI CLI's `oci compute image import` always defaults to BIOS; `UEFI_64` is required for `VM.Standard.A1.Flex`)
+4. Adds `VM.Standard.A1.Flex` shape compatibility
+5. Cleans up the temp Object Storage object
+6. Prints the image OCID
+
+Then set in `terraform.tfvars`:
+
+```hcl
+os_family   = "opensuse"
+os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
+```
+
+**Script options:**
+
+```
+--compartment-id OCID   Compartment OCID (default: tenancy root)
+--region REGION         OCI region (default: from ~/.oci/config)
+--leap-version VERSION  openSUSE Leap version (default: 16.0)
+--bucket-name NAME      Temp bucket name (default: opensuse-image-import-tmp)
+--keep-bucket           Do not delete the QCOW2 object after import
+--image-name NAME       Custom display name for the imported image
+```
+
+**Prerequisites:** OCI CLI configured (`~/.oci/config`), `curl`, `python3`.
+
+**Known caveats (verified with Leap 16.0 + VM.Standard.A1.Flex):**
+
+| Caveat | Detail |
+|---|---|
+| **Image must be re-imported on new Leap releases** | No auto-update path for the base OS image; re-run the script and update `os_image_id` when a new build is published |
+| **UEFI_64 required at import time** | OCI's `oci compute image import` CLI hard-codes `firmware: BIOS`. The script works around this via a direct REST API call |
+| **Shape compatibility not auto-detected** | OCI does not auto-detect the architecture of imported QCOW2 images; the script adds `VM.Standard.A1.Flex` explicitly |
+| **Oracle Cloud Agent (OCA) unavailable** | No OCI-native monitoring agent on custom images |
+
+#### Can openSUSE Leap be published on the OCI Marketplace?
+
+Short answer: **not by individuals** — the openSUSE project is the right upstream to drive this.
+
+The OCI Marketplace requires Oracle Partner Network (OPN) membership and Oracle's image certification process. openSUSE already publishes official cloud images for AWS, Azure, and Google Cloud via [openSUSE-release-process](https://github.com/SUSE-Enceladus/openSUSE-release-process) and the [Open Build Service](https://build.opensuse.org). OCI is a natural next target.
+
+**What you can do:**
+- 👍 Upvote / comment on [openSUSE's cloud request tracker](https://bugzilla.opensuse.org) — search for "OCI" or "Oracle Cloud"
+- 📬 Raise the request on the [opensuse-cloud mailing list](https://lists.opensuse.org/archives/list/cloud@lists.opensuse.org/)
+- 🔀 The import script in this repo is a self-service workaround until official OCI images are published
+
+#### Using any other OS image
+
+Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
 ## License
 
@@ -595,7 +646,7 @@ MIT. See [LICENSE](LICENSE).
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_alertmanager_email"></a> [alertmanager\_email](#input\_alertmanager\_email) | Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email. | `string` | `null` | no |
 | <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"9.5.17"` | no |
 | <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP. | `string` | `null` | no |
@@ -653,7 +704,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3svcn"` | no |
 | <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy — the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
 | <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy — the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
-| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the Ubuntu 24.04 LTS (Noble) aarch64 image for A1.Flex nodes. If null, the latest matching image is resolved automatically from the tenancy. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/ | `string` | `null` | no |
+| <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu 24.04 and auto-resolves the image. "opensuse" uses openSUSE Leap 16.0 — requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
+| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu 24.04 LTS (Noble) aarch64 image is resolved automatically. Required when os\_family = "opensuse" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
 | <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
 | <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | DNS label for the private subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3sprivate"` | no |
 | <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path —<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
@@ -675,7 +727,7 @@ MIT. See [LICENSE](LICENSE).
 ## Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
 | <a name="output_bastion_ocid"></a> [bastion\_ocid](#output\_bastion\_ocid) | OCID of the OCI Bastion Service resource (null if enable\_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh. |
 | <a name="output_grafana_admin_credentials"></a> [grafana\_admin\_credentials](#output\_grafana\_admin\_credentials) | Grafana admin credentials (only available after cluster bootstrap) |

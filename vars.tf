@@ -101,9 +101,20 @@ variable "my_public_ip_cidr" {
 
 # ── Compute ───────────────────────────────────────────────────────────────────
 
+variable "os_family" {
+  type        = string
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu 24.04 and auto-resolves the image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
+  default     = "ubuntu"
+
+  validation {
+    condition     = contains(["ubuntu", "opensuse"], var.os_family)
+    error_message = "os_family must be \"ubuntu\" or \"opensuse\"."
+  }
+}
+
 variable "os_image_id" {
   type        = string
-  description = "OCID of the Ubuntu 24.04 LTS (Noble) aarch64 image for A1.Flex nodes. If null, the latest matching image is resolved automatically from the tenancy. Find OCIDs at https://docs.oracle.com/en-us/iaas/images/"
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu 24.04 LTS (Noble) aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
   default     = null
 
   validation {

@@ -9,8 +9,11 @@ locals {
     var.github_ssh_keys_username != "" ? [for k in split("\n", trimspace(data.http.github_ssh_keys[0].response_body)) : k if k != ""] : []
   )))
 
-  # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy
-  os_image_id = var.os_image_id != null ? var.os_image_id : data.oci_core_images.k3s_nodes[0].images[0].id
+  # Resolved OS image IDs: explicit variable wins; for Ubuntu, auto-detected from tenancy.
+  # try() guards against os_family = "opensuse" where the data source count = 0.
+  os_image_id = var.os_image_id != null ? var.os_image_id : try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
+  # Default SSH user for the selected OS family.
+  os_user = var.os_family == "opensuse" ? "opensuse" : "ubuntu"
 
   # Applied to every OCI resource for consistent identification and cost tracking.
   # `clustername` (no hyphens) is used in the IAM dynamic group matching_rule because
@@ -81,6 +84,7 @@ locals {
     server_ip     = try(data.oci_core_instance.k3s_servers[0].private_ip, "<server-ip>")
     public_nlb_ip = try(local.public_lb_ip[0], "<public-nlb-ip>")
     kube_api_port = var.kube_api_port
+    os_user       = local.os_user
   })
 
   _kubeconfig_hint_no_bastion = templatefile("${path.module}/files/kubeconfig-hint-no-bastion.tpl", {

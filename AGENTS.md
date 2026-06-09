@@ -85,7 +85,9 @@ files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file w
 files/agent-vars.sh.tpl           — cloud-init header for agents: ONLY file with Terraform ${var} syntax
 files/kubeconfig-hint-bastion.tpl     — kubeconfig retrieval instructions when bastion is enabled
 files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when bastion is disabled
-files/lib/common.sh               — pure bash: OS bootstrap, unattended-upgrades, OCI CLI, Helm, resolve_flannel_params()
+files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs(), install_oci_cli(), install_helm(), resolve_flannel_params()
+files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
+files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
 files/lib/k3s-server.sh           — pure bash: first-server election, k3s install, main entry point
 files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_gateway_api_crds() then run_bootstrap()
 files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, Grafana, Alertmanager, MySQL, Cloudflare secrets
@@ -205,6 +207,8 @@ tofu init -backend=false && tofu validate
 tflint --init && tflint --recursive
 shellcheck --severity=warning \
   files/lib/common.sh \
+  files/lib/bootstrap-ubuntu.sh \
+  files/lib/bootstrap-opensuse.sh \
   files/lib/k3s-server.sh \
   files/lib/k3s-bootstrap.sh \
   files/lib/k3s-secrets.sh \
@@ -290,8 +294,8 @@ terraform-docs .
 ### Cloud-init structure (`files/`)
 - **Separation of concerns**: `server-vars.sh.tpl` and `agent-vars.sh.tpl` are the ONLY files
   with Terraform `${var}` interpolation. All `files/lib/*.sh` are pure bash.
-- **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), file(lib/common.sh), ...])` to
-  produce a single cloud-init script. The rendered vars header is prepended, making all
+- **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), bootstrap-{ubuntu,opensuse}.sh, file(lib/common.sh), ...])` to
+  produce a single cloud-init script. The OS-specific bootstrap file is selected by `var.os_family`. The rendered vars header is prepended, making all
   `export KEY="value"` statements available to the lib scripts at runtime.
 - **Bootstrap script split**: `k3s-bootstrap.sh` is now a ~45-line orchestrator. Concerns live in
   focused sub-scripts (all pure bash, concatenated in order before `k3s-bootstrap.sh` in `data.tf`):
