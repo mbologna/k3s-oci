@@ -211,8 +211,8 @@ variable "enable_bastion" {
 
 variable "k3s_version" {
   type        = string
-  description = "k3s version to install. 'latest' resolves the current stable release at plan time via the GitHub API."
-  default     = "latest"
+  description = "k3s version to install. Use 'stable' to track the k3s stable channel."
+  default     = "stable"
 }
 
 variable "k3s_subnet" {
