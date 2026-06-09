@@ -40,16 +40,15 @@ SystemMaxFileSize=100M
 JEOF
   systemctl restart systemd-journald
 
-  # openSUSE Minimal Cloud images: cloud-init does not read OCI metadata
-  # ssh_authorized_keys (the OpenStack datasource is not configured by default).
-  # Inject the SSH public key directly from the Terraform-rendered variable so
-  # that the default cloud user can log in after first boot.
-  local ssh_dir="/home/opensuse/.ssh"
+  # Belt-and-suspenders SSH key injection: ensure the key is present even if
+  # cloud-init's Oracle datasource doesn't inject it into the default user's
+  # authorized_keys (behaviour differs across image versions).
+  local ssh_dir="/home/${OS_USER}/.ssh"
   mkdir -p "${ssh_dir}"
   echo "${SSH_PUBLIC_KEY}" > "${ssh_dir}/authorized_keys"
   chmod 700 "${ssh_dir}"
   chmod 600 "${ssh_dir}/authorized_keys"
-  chown -R opensuse:users "${ssh_dir}"
+  chown -R "${OS_USER}:users" "${ssh_dir}"
 
   setup_shared_ssh_host_key
 }
