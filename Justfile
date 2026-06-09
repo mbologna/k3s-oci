@@ -5,6 +5,9 @@
 default:
     just --list
 
+# OCI Go SDK has a TLS/HTTP2 bug — GODEBUG=http2client=0 is required for all tofu operations.
+export GODEBUG := "http2client=0"
+
 # Initialize Terraform/OpenTofu providers
 init:
     cd example && tofu init
@@ -21,7 +24,13 @@ apply:
 destroy:
     cd example && tofu destroy
 
-# Fetch kubeconfig via OCI Bastion (requires example/get-kubeconfig.sh)
+# Full deploy: init → apply → kubeconfig (idempotent)
+deploy:
+    just init
+    just apply
+    just kubeconfig
+
+# Fetch kubeconfig via OCI Bastion or direct NLB SSH (auto-detected)
 kubeconfig:
     ./example/get-kubeconfig.sh
 
@@ -49,6 +58,10 @@ outputs:
 # Show kubeconfig hint
 kubeconfig-hint:
     cd example && tofu output kubeconfig_hint
+
+# Generate docs (alias)
+readme:
+    just docs
 
 # Run ShellCheck on all cloud-init lib scripts
 shellcheck:
