@@ -79,3 +79,10 @@ export DOCKERHUB_PASSWORD="${dockerhub_password}"
 # -- Shared SSH host key (base64-encoded to survive multi-line export) ----------
 export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
 export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
+
+# -- OS family and default SSH user --------------------------------------------
+export OS_FAMILY="${os_family}"
+export OS_USER="${os_user}"
+# SSH_PUBLIC_KEY is used by bootstrap-opensuse.sh to inject the key directly,
+# because openSUSE cloud-init does not read OCI metadata ssh_authorized_keys.
+export SSH_PUBLIC_KEY="${ssh_public_key}"

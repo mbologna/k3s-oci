@@ -28,6 +28,10 @@ environment   = "staging"
 # Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
 # os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
 
+# OS family — "ubuntu" (default, auto-resolves OCI-native image) or "opensuse"
+# For openSUSE, run scripts/import-opensuse-aarch64.sh first and set os_image_id above.
+# os_family = "ubuntu"
+
 # Your workstation IP — restricts OCI Bastion Service session creation (enable_bastion=true),
 # kubeapi access (expose_kubeapi=true), and direct SSH access (expose_ssh=true).
 my_public_ip_cidr = "1.2.3.4/32"
