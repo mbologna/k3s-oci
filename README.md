@@ -79,7 +79,7 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 **Longhorn** runs on all four nodes with `defaultReplicaCount=3`; each PVC is replicated across three nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
 
-> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** — the hard limit of a 4-node Always Free topology.
+> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure**, the hard limit of a 4-node Always Free topology.
 
 ## Quickstart
 
@@ -623,7 +623,7 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 
 #### Can openSUSE Leap be published on the OCI Marketplace?
 
-Short answer: **not by individuals** — the openSUSE project is the right upstream to drive this.
+Short answer: **not by individuals**. The openSUSE project is the right upstream to drive this.
 
 The OCI Marketplace requires Oracle Partner Network (OPN) membership and Oracle's image certification process. openSUSE already publishes official cloud images for AWS, Azure, and Google Cloud via [openSUSE-release-process](https://github.com/SUSE-Enceladus/openSUSE-release-process) and the [Open Build Service](https://build.opensuse.org). OCI is a natural next target.
 
@@ -702,8 +702,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_mysql_shape"></a> [mysql\_shape](#input\_mysql\_shape) | MySQL HeatWave shape. 'MySQL.Free' is the Always Free shape. | `string` | `"MySQL.Free"` | no |
 | <a name="input_oci_core_vcn_cidr"></a> [oci\_core\_vcn\_cidr](#input\_oci\_core\_vcn\_cidr) | CIDR block for the VCN | `string` | `"10.0.0.0/16"` | no |
 | <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3svcn"` | no |
-| <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy — the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
-| <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy — the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
+| <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy; the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
+| <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy; the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
 | <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu 24.04 and auto-resolves the image. "opensuse" uses openSUSE Leap 16.0 — requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
 | <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu 24.04 LTS (Noble) aarch64 image is resolved automatically. Required when os\_family = "opensuse" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
 | <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
