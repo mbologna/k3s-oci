@@ -40,6 +40,16 @@ install_k3s_agent() {
     echo "  retrying (${attempt}/${max_attempts}) ..."
     sleep 15
   done
+  # The k3s installer persists all K3S_* env vars (including the inline K3S_URL="")
+  # into /etc/systemd/system/k3s-agent.service.env. On any subsequent service restart,
+  # K3S_URL='' in the env file wins over --server in ExecStart, causing the agent to
+  # lose its server connection. Patch the env file to restore the correct URL.
+  if [[ -f /etc/systemd/system/k3s-agent.service.env ]]; then
+    sed -i "s|^K3S_URL=.*|K3S_URL='https://${K3S_URL}:${api_port}'|" \
+        /etc/systemd/system/k3s-agent.service.env
+    echo "==> Patched K3S_URL in k3s-agent.service.env → https://${K3S_URL}:${api_port}"
+    systemctl daemon-reload
+  fi
 }
 
 # -- Main ----------------------------------------------------------------------
