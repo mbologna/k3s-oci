@@ -193,7 +193,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | Terraform validate (example) | same, in `example/` |
 | OpenTofu validate (root + example) | same as above but with `tofu` |
 | tflint | `tflint --init && tflint --recursive` (pinned version, Renovate-managed; auto-discovers `.tflint.hcl`) |
-| ShellCheck | `shellcheck --severity=warning files/*.sh` |
+| ShellCheck | `shellcheck --severity=warning files/*.sh scripts/*.sh` |
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
@@ -215,12 +215,54 @@ shellcheck --severity=warning \
   files/lib/k3s-cert-manager.sh \
   files/lib/k3s-external-secrets.sh \
   files/lib/k3s-argocd.sh \
-  files/lib/k3s-agent.sh
+  files/lib/k3s-agent.sh \
+  scripts/clean-oci-resources.sh \
+  scripts/cancel-vault-deletions.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
 terraform-docs .
 ```
+
+## Troubleshooting scripts
+
+Two helper scripts in `scripts/` address common failure modes. Both require `COMPARTMENT_OCID`
+(your OCI tenancy or compartment OCID) and accept an optional `CLUSTER_NAME` override (default: `k3s-oci`).
+
+### `scripts/clean-oci-resources.sh` — orphaned networking after a failed destroy
+
+**When to use:** `tofu destroy` failed mid-way, or Terraform state was wiped while OCI resources
+still exist. A subsequent `tofu apply` fails because `${CLUSTER}-vcn` already exists.
+
+**What it does:** Deletes subnets → route tables → NAT gateway → internet gateway → security lists
+→ VCN in the correct dependency order. Retries subnet deletion up to 3× (60 s apart) to allow OCI
+to release VNICs after instance termination.
+
+```bash
+COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
+  ./scripts/clean-oci-resources.sh
+# or via just:
+COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-resources
+```
+
+### `scripts/cancel-vault-deletions.sh` — vault quota exhaustion after multiple deploys
+
+**When to use:** `tofu apply` fails with "maximum number of vaults reached". OCI DEFAULT vaults
+enter `PENDING_DELETION` after destroy (minimum 7-day grace period) and count against the
+per-compartment limit (~5 vaults). Multiple deploy/destroy cycles accumulate these entries.
+
+**What it does:** Lists all vaults matching `CLUSTER_NAME` in `PENDING_DELETION` state and cancels
+their scheduled deletion, returning them to `ACTIVE`. The new apply then creates a fresh vault
+alongside them. Old vaults can be manually re-scheduled for deletion after a successful deploy.
+
+```bash
+COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
+  ./scripts/cancel-vault-deletions.sh
+# or via just:
+COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just cancel-vault-deletions
+```
+
+---
 
 ## What NOT to do
 
