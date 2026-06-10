@@ -42,6 +42,16 @@ ssh node="worker":
 update-gitops-url url:
     ./gitops/update-repo-url.sh {{url}}
 
+# Delete orphaned OCI networking resources after a failed/partial destroy
+# Requires COMPARTMENT_OCID env var; CLUSTER_NAME defaults to k3s-oci
+clean-oci-resources:
+    ./scripts/clean-oci-resources.sh
+
+# Cancel PENDING_DELETION vaults to fix vault quota after multiple deploys
+# Requires COMPARTMENT_OCID env var; CLUSTER_NAME defaults to k3s-oci
+cancel-vault-deletions:
+    ./scripts/cancel-vault-deletions.sh
+
 # Format all Terraform files
 fmt:
     tofu fmt -recursive .
@@ -63,7 +73,7 @@ kubeconfig-hint:
 readme:
     just docs
 
-# Run ShellCheck on all cloud-init lib scripts
+# Run ShellCheck on all cloud-init lib scripts and helper scripts
 shellcheck:
     shellcheck --severity=warning \
         files/lib/common.sh \
@@ -73,7 +83,9 @@ shellcheck:
         files/lib/k3s-cert-manager.sh \
         files/lib/k3s-external-secrets.sh \
         files/lib/k3s-argocd.sh \
-        files/lib/k3s-agent.sh
+        files/lib/k3s-agent.sh \
+        scripts/clean-oci-resources.sh \
+        scripts/cancel-vault-deletions.sh
 
 # Run YAML lint on gitops/ and .github/workflows/
 yamllint:
