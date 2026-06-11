@@ -96,8 +96,6 @@ $EDITOR example/terraform.tfvars
 cd example && tofu init && tofu apply
 ```
 
-> **Real-world example:** The [infra](https://github.com/your-org/your-gitops-repo) homelab monorepo uses this module with `gitops_repo_url = "https://github.com/your-org/your-gitops-repo.git"` and `gitops_path = "clusters/your-cluster"`, deploying the ArgoCD application stack defined in `clusters/your-cluster/` and `platform/your-cluster/`. Hotel-specific operational runbooks are in `infra/docs/platform/your-cluster-k3s-oci-deployment.md`.
-
 A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
 
 ```bash
@@ -621,17 +619,6 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 | **Shape compatibility not auto-detected** | OCI does not auto-detect the architecture of imported QCOW2 images; the script adds `VM.Standard.A1.Flex` explicitly |
 | **Oracle Cloud Agent (OCA) unavailable** | No OCI-native monitoring agent on custom images |
 
-#### Can openSUSE Leap be published on the OCI Marketplace?
-
-Short answer: **not by individuals**. The openSUSE project is the right upstream to drive this.
-
-The OCI Marketplace requires Oracle Partner Network (OPN) membership and Oracle's image certification process. openSUSE already publishes official cloud images for AWS, Azure, and Google Cloud via [openSUSE-release-process](https://github.com/SUSE-Enceladus/openSUSE-release-process) and the [Open Build Service](https://build.opensuse.org). OCI is a natural next target.
-
-**What you can do:**
-- 👍 Upvote / comment on [openSUSE's cloud request tracker](https://bugzilla.opensuse.org) — search for "OCI" or "Oracle Cloud"
-- 📬 Raise the request on the [opensuse-cloud mailing list](https://lists.opensuse.org/archives/list/cloud@lists.opensuse.org/)
-- 🔀 The import script in this repo is a self-service workaround until official OCI images are published
-
 #### Using any other OS image
 
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
@@ -681,7 +668,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
 | <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config. | `string` | `"v1.5.1"` | no |
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
-| <a name="input_gitops_path"></a> [gitops\_path](#input\_gitops\_path) | Path within gitops\_repo\_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Set to 'clusters/your-cluster' when using the mbologna/infra repo as the GitOps source. | `string` | `"gitops/apps"` | no |
+| <a name="input_gitops_path"></a> [gitops\_path](#input\_gitops\_path) | Path within gitops\_repo\_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Override when your GitOps repo uses a different directory structure. | `string` | `"gitops/apps"` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
 | <a name="input_gitops_ssh_private_key"></a> [gitops\_ssh\_private\_key](#input\_gitops\_ssh\_private\_key) | SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty only when gitops\_repo\_url is a public HTTPS repo. | `string` | `""` | no |
 | <a name="input_grafana_hostname"></a> [grafana\_hostname](#input\_grafana\_hostname) | Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/. | `string` | `null` | no |
