@@ -414,7 +414,7 @@ variable "gitops_repo_url" {
 
 variable "gitops_path" {
   type        = string
-  description = "Path within gitops_repo_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Set to 'clusters/your-cluster' when using the mbologna/infra repo as the GitOps source."
+  description = "Path within gitops_repo_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Override when your GitOps repo uses a different directory structure."
   default     = "gitops/apps"
 }
 
