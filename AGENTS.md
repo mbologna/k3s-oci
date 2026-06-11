@@ -10,19 +10,6 @@ Terraform module that deploys a production-ready [k3s](https://k3s.io) cluster o
 resources. All compute, networking, and storage must fit within the Always Free budget —
 do not introduce resources that incur cost.
 
-## Primary consumer
-
-The [`infra`](https://github.com/your-org/your-gitops-repo) homelab monorepo is the primary real-world consumer of this module. It provisions the **hotel** cluster with:
-
-```hcl
-gitops_repo_url = "https://github.com/your-org/your-gitops-repo.git"
-gitops_path     = "clusters/your-cluster"
-```
-
-Hotel-specific operational runbooks (deploy, kubeconfig retrieval, teardown) live in `infra/docs/platform/your-cluster-k3s-oci-deployment.md`. The infra repo's `clusters/your-cluster/` and `platform/your-cluster/` directories are the GitOps source of truth for the hotel cluster.
-
----
-
 ## Tech stack
 
 | Layer | Technology |
@@ -391,6 +378,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just cancel-vault
 - `tailscale_vault_secret_names` output shows the generated secret names; reference these in `platform/<cluster>/tailscale-operator/oauth-secret.yaml` ExternalSecret.
 - The Tailscale operator Helm chart + RBAC is NOT bootstrapped by cloud-init — it is deployed by ArgoCD using the manifests in the consumer repo (`clusters/<cluster>/tailscale-operator.yaml`).
 - Using Tailscale LoadBalancer Services: add `loadBalancerClass: tailscale` + `tailscale.com/hostname: <name>` annotation; the operator creates a proxy pod and registers `<name>.<tailnet>.ts.net`.
+- **Tailscale VIP IPs are dynamic** — the IP assigned to a Tailscale LoadBalancer Service changes on every cluster rebuild (new proxy pod, new Tailscale identity). Consumer repos must not hardcode these IPs in DNS or config. Instead, read the IP after deploy (`kubectl get svc -o jsonpath='{.status.loadBalancer.ingress[*].ip}'`) and update DNS records programmatically as a post-deploy step.
 
 ### OCI Vault (`vault.tf`)
 - Controlled by `enable_vault` variable (default: `true`).
