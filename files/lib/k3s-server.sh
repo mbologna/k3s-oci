@@ -136,15 +136,30 @@ install_k3s_server() {
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
-    # The k3s installer persists all K3S_* env vars (including the inline K3S_URL="")
-    # into /etc/systemd/system/k3s.service.env. On any subsequent service restart,
-    # K3S_URL='' in the env file wins over --server in ExecStart, causing a split-brain.
-    # Patch the env file to restore the correct URL.
+    # The k3s installer persists K3S_* env vars (including the inline K3S_URL="")
+    # into /etc/systemd/system/k3s.service.env. Two problems:
+    #   1. K3S_URL='' overrides --server in ExecStart → k3s starts standalone
+    #   2. K3S_TOKEN is NOT persisted (security) → after restart k3s can't authenticate
+    # Fix: patch K3S_URL, add K3S_TOKEN, wipe standalone state, and restart.
     if [[ -f /etc/systemd/system/k3s.service.env ]]; then
       sed -i "s|^K3S_URL=.*|K3S_URL='https://${K3S_URL}:${KUBE_API_PORT:-6443}'|" \
           /etc/systemd/system/k3s.service.env
-      echo "==> Patched K3S_URL in k3s.service.env → https://${K3S_URL}:${KUBE_API_PORT:-6443}"
+      # Add K3S_TOKEN if not already present (installer doesn't persist it)
+      if ! grep -q '^K3S_TOKEN=' /etc/systemd/system/k3s.service.env; then
+        echo "K3S_TOKEN='${K3S_TOKEN}'" >> /etc/systemd/system/k3s.service.env
+      fi
+      echo "==> Patched k3s.service.env: K3S_URL + K3S_TOKEN → https://${K3S_URL}:${KUBE_API_PORT:-6443}"
       systemctl daemon-reload
+      echo "==> Restarting k3s to join cluster with correct URL..."
+      systemctl stop k3s
+      # Remove ALL standalone server state created during the initial start with
+      # empty K3S_URL. Must include tls/cred/token (not just db) so k3s fetches
+      # fresh CA and credentials from the first server after restart.
+      rm -rf /var/lib/rancher/k3s/server/db \
+             /var/lib/rancher/k3s/server/tls \
+             /var/lib/rancher/k3s/server/cred \
+             /var/lib/rancher/k3s/server/token
+      systemctl start k3s
     fi
   fi
 }
