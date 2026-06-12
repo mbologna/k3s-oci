@@ -49,6 +49,30 @@ EOF
     --set "configs.params.server\.insecure=true" \
     --atomic --wait --timeout 5m
 
+  # Add gitops repo host keys to ArgoCD known hosts so ArgoCD can clone
+  # immediately. The Helm chart only includes GitHub/GitLab/Bitbucket by default.
+  # Once ArgoCD self-manages via the app-of-apps, configs.ssh.extraHosts in the
+  # ArgoCD Application takes over (but we need this to reach that point).
+  local repo_host
+  repo_host=$(printf '%s' "${GITOPS_REPO_URL}" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+  if [[ -n "${repo_host}" ]]; then
+    local known_hosts
+    known_hosts=$(ssh-keyscan "${repo_host}" 2>/dev/null | grep -v '^#')
+    if [[ -n "${known_hosts}" ]]; then
+      local existing
+      existing=$(kubectl get configmap argocd-ssh-known-hosts-cm -n argocd \
+        -o jsonpath='{.data.ssh_known_hosts}' 2>/dev/null || true)
+      if ! printf '%s' "${existing}" | grep -q "${repo_host}"; then
+        printf '%s\n%s\n' "${existing}" "${known_hosts}" > /tmp/argocd-known-hosts.txt
+        kubectl create configmap argocd-ssh-known-hosts-cm -n argocd \
+          --from-file=ssh_known_hosts=/tmp/argocd-known-hosts.txt \
+          --dry-run=client -o yaml | kubectl apply -f -
+        rm -f /tmp/argocd-known-hosts.txt
+        echo "Added ${repo_host} to ArgoCD SSH known hosts."
+      fi
+    fi
+  fi
+
   # Bootstrap the App of Apps so ArgoCD self-manages gitops/
   kubectl apply -n argocd -f - <<EOF
 apiVersion: argoproj.io/v1alpha1
