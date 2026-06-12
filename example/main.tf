@@ -95,6 +95,11 @@ variable "enable_notifications" {
   default = false
 }
 
+variable "enable_oci_logging" {
+  type    = bool
+  default = false
+}
+
 variable "alertmanager_email" {
   type    = string
   default = null
@@ -423,6 +428,7 @@ module "k3s_cluster" {
   external_dns_domain_filter        = var.external_dns_domain_filter
   enable_external_secrets           = var.enable_external_secrets
   enable_dns01_challenge            = var.enable_dns01_challenge
+  enable_oci_logging                = var.enable_oci_logging
   compute_shape                     = var.compute_shape
   server_ocpus                      = var.server_ocpus
   server_memory_in_gbs              = var.server_memory_in_gbs
