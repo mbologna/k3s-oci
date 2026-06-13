@@ -127,40 +127,34 @@ install_k3s_server() {
   else
     echo "==> Joining existing cluster"
     wait_for_kubeapi
+    # Install k3s WITHOUT starting it. The installer writes K3S_URL='' (from the
+    # inline env override) into k3s.service.env. If k3s starts with that empty
+    # value it ignores --server in ExecStart and bootstraps a standalone sqlite3
+    # cluster. INSTALL_K3S_SKIP_START=true prevents this — we patch the env file
+    # first, then start k3s so it joins the existing cluster on first boot.
     # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${K3S_URL} in arg uses outer scope (intentional)
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
+        INSTALL_K3S_SKIP_START=true \
         sh -s - --server "https://${K3S_URL}:${KUBE_API_PORT:-6443}" "${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
-      [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s join failed after ${max_attempts} attempts."; exit 1; }
+      [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s install failed after ${max_attempts} attempts."; exit 1; }
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
-    # The k3s installer persists K3S_* env vars (including the inline K3S_URL="")
-    # into /etc/systemd/system/k3s.service.env. Two problems:
-    #   1. K3S_URL='' overrides --server in ExecStart → k3s starts standalone
-    #   2. K3S_TOKEN is NOT persisted (security) → after restart k3s can't authenticate
-    # Fix: patch K3S_URL, add K3S_TOKEN, wipe standalone state, and restart.
+    # Patch the env file before first start: set correct K3S_URL and add K3S_TOKEN
+    # (the installer doesn't persist K3S_TOKEN for security reasons).
     if [[ -f /etc/systemd/system/k3s.service.env ]]; then
       sed -i "s|^K3S_URL=.*|K3S_URL='https://${K3S_URL}:${KUBE_API_PORT:-6443}'|" \
           /etc/systemd/system/k3s.service.env
-      # Add K3S_TOKEN if not already present (installer doesn't persist it)
       if ! grep -q '^K3S_TOKEN=' /etc/systemd/system/k3s.service.env; then
         echo "K3S_TOKEN='${K3S_TOKEN}'" >> /etc/systemd/system/k3s.service.env
       fi
       echo "==> Patched k3s.service.env: K3S_URL + K3S_TOKEN → https://${K3S_URL}:${KUBE_API_PORT:-6443}"
-      systemctl daemon-reload
-      echo "==> Restarting k3s to join cluster with correct URL..."
-      systemctl stop k3s
-      # Remove ALL standalone server state created during the initial start with
-      # empty K3S_URL. Must include tls/cred/token (not just db) so k3s fetches
-      # fresh CA and credentials from the first server after restart.
-      rm -rf /var/lib/rancher/k3s/server/db \
-             /var/lib/rancher/k3s/server/tls \
-             /var/lib/rancher/k3s/server/cred \
-             /var/lib/rancher/k3s/server/token
-      systemctl start k3s
     fi
+    systemctl daemon-reload
+    echo "==> Starting k3s to join cluster..."
+    systemctl start k3s
   fi
 }
 

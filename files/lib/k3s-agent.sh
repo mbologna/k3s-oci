@@ -31,32 +31,30 @@ install_k3s_agent() {
   done
 
   attempt=0
+  # Install agent WITHOUT starting it. Same issue as k3s-server.sh: the installer
+  # writes K3S_URL='' to the env file, which overrides --server in ExecStart.
   # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${K3S_URL} in arg uses outer scope (intentional)
   until curl -sfL https://get.k3s.io | \
       INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
+      INSTALL_K3S_SKIP_START=true \
       sh -s - agent --server "https://${K3S_URL}:${api_port}" "${install_params[@]}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s agent install failed after ${max_attempts} attempts."; exit 1; }
     echo "  retrying (${attempt}/${max_attempts}) ..."
     sleep 15
   done
-  # The k3s installer persists K3S_* env vars (including the inline K3S_URL="")
-  # into /etc/systemd/system/k3s-agent.service.env. Two problems:
-  #   1. K3S_URL='' overrides --server in ExecStart → agent loses server connection
-  #   2. K3S_TOKEN is NOT persisted (security) → after reboot agent can't authenticate
-  # Fix: patch K3S_URL, add K3S_TOKEN, and restart.
+  # Patch env file before first start: set correct K3S_URL and add K3S_TOKEN.
   if [[ -f /etc/systemd/system/k3s-agent.service.env ]]; then
     sed -i "s|^K3S_URL=.*|K3S_URL='https://${K3S_URL}:${api_port}'|" \
         /etc/systemd/system/k3s-agent.service.env
-    # Add K3S_TOKEN if not already present (installer doesn't persist it)
     if ! grep -q '^K3S_TOKEN=' /etc/systemd/system/k3s-agent.service.env; then
       echo "K3S_TOKEN='${K3S_TOKEN}'" >> /etc/systemd/system/k3s-agent.service.env
     fi
     echo "==> Patched k3s-agent.service.env: K3S_URL + K3S_TOKEN → https://${K3S_URL}:${api_port}"
-    systemctl daemon-reload
-    echo "==> Restarting k3s-agent to connect with correct URL..."
-    systemctl restart k3s-agent
   fi
+  systemctl daemon-reload
+  echo "==> Starting k3s-agent..."
+  systemctl start k3s-agent
 }
 
 # -- Main ----------------------------------------------------------------------
