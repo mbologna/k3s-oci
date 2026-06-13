@@ -203,8 +203,7 @@ shellcheck --severity=warning \
   files/lib/k3s-external-secrets.sh \
   files/lib/k3s-argocd.sh \
   files/lib/k3s-agent.sh \
-  scripts/clean-oci-resources.sh \
-  scripts/cancel-vault-deletions.sh
+  scripts/clean-oci-resources.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
@@ -213,17 +212,19 @@ terraform-docs .
 
 ## Troubleshooting scripts
 
-Two helper scripts in `scripts/` address common failure modes. Both require `COMPARTMENT_OCID`
-(your OCI tenancy or compartment OCID) and accept an optional `CLUSTER_NAME` override (default: `k3s-oci`).
+A helper script in `scripts/` addresses common failure modes. It requires `COMPARTMENT_OCID`
+(your OCI tenancy or compartment OCID) and accepts an optional `CLUSTER_NAME` override (default: `k3s-oci`).
 
-### `scripts/clean-oci-resources.sh` — orphaned networking after a failed destroy
+### `scripts/clean-oci-resources.sh` — full OCI resource cleanup
 
-**When to use:** `tofu destroy` failed mid-way, or Terraform state was wiped while OCI resources
-still exist. A subsequent `tofu apply` fails because `${CLUSTER}-vcn` already exists.
+**When to use:** Before every rebuild. Also after a failed `tofu destroy` or when Terraform state
+was wiped while OCI resources still exist.
 
-**What it does:** Deletes subnets → route tables → NAT gateway → internet gateway → security lists
-→ VCN in the correct dependency order. Retries subnet deletion up to 3× (60 s apart) to allow OCI
-to release VNICs after instance termination.
+**What it does:** Removes ALL OCI resources created by the module: logging agents/logs/groups,
+MySQL, vaults (schedules all for deletion — 7-day grace period), object storage buckets, compute
+instances/pools/configs, bastions, IAM dynamic groups/policies, and networking (subnets → route
+tables → gateways → security lists → VCN). Retries subnet deletion up to 3× (60 s apart) to
+allow OCI to release VNICs after instance termination.
 
 ```bash
 COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
@@ -232,22 +233,9 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
 COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-resources
 ```
 
-### `scripts/cancel-vault-deletions.sh` — vault quota exhaustion after multiple deploys
-
-**When to use:** `tofu apply` fails with "maximum number of vaults reached". OCI DEFAULT vaults
-enter `PENDING_DELETION` after destroy (minimum 7-day grace period) and count against the
-per-compartment limit (~5 vaults). Multiple deploy/destroy cycles accumulate these entries.
-
-**What it does:** Lists all vaults matching `CLUSTER_NAME` in `PENDING_DELETION` state and cancels
-their scheduled deletion, returning them to `ACTIVE`. The new apply then creates a fresh vault
-alongside them. Old vaults can be manually re-scheduled for deletion after a successful deploy.
-
-```bash
-COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
-  ./scripts/cancel-vault-deletions.sh
-# or via just:
-COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just cancel-vault-deletions
-```
+> **Vault quota:** OCI vaults have a 7-day minimum deletion grace period and count against the
+> ~5-vault compartment limit even while `PENDING_DELETION`. If `tofu apply` fails with a vault
+> quota error, wait for old vaults to fully delete or request a service limit increase.
 
 ---
 
