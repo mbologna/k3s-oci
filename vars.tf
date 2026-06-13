@@ -222,7 +222,7 @@ variable "enable_bastion" {
 
 variable "k3s_version" {
   type        = string
-  description = "k3s version to install. Use 'stable' to track the k3s stable channel."
+  description = "k3s version to install. Use 'stable' or 'latest' to resolve from the k3s channel API at plan-time, or pin to a specific release (e.g. 'v1.35.5+k3s1')."
   default     = "stable"
 }
 
