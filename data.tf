@@ -1,15 +1,15 @@
-data "http" "k3s_latest_release" {
-  count = var.k3s_version == "latest" ? 1 : 0
-  url   = "https://api.github.com/repos/k3s-io/k3s/releases/latest"
+data "http" "k3s_channel" {
+  count = contains(["stable", "latest"], var.k3s_version) ? 1 : 0
+  url   = "https://update.k3s.io/v1-release/channels/${var.k3s_version}"
 
   request_headers = {
-    Accept = "application/vnd.github+json"
+    Accept = "application/json"
   }
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub API returned ${self.status_code} when resolving latest k3s version."
+      error_message = "k3s channel API returned ${self.status_code} when resolving '${var.k3s_version}' channel."
     }
   }
 }

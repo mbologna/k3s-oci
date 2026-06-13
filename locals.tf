@@ -1,6 +1,6 @@
 locals {
-  # Resolved k3s version: fetched from GitHub at plan-time when var.k3s_version == "latest"
-  k3s_version = var.k3s_version == "latest" ? jsondecode(data.http.k3s_latest_release[0].response_body).name : var.k3s_version
+  # Resolved k3s version: fetched from k3s channel API at plan-time when "stable" or "latest"
+  k3s_version = contains(["stable", "latest"], var.k3s_version) ? jsondecode(data.http.k3s_channel[0].response_body).tag_name : var.k3s_version
 
   # SSH public key: prefer the string value; fall back to reading the file path.
   # GitHub keys (github_ssh_keys_username) are appended when set.

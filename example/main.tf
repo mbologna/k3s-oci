@@ -280,7 +280,7 @@ variable "k3s_subnet" {
 
 variable "k3s_version" {
   type    = string
-  default = "latest"
+  default = "stable"
 }
 
 # ── IAM ───────────────────────────────────────────────────────────────────────

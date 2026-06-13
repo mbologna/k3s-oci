@@ -32,9 +32,10 @@ environment   = "staging"
 # For openSUSE, run scripts/import-opensuse-aarch64.sh first and set os_image_id above.
 # os_family = "ubuntu"
 
-# Your workstation IP — restricts OCI Bastion Service session creation (enable_bastion=true),
-# kubeapi access (expose_kubeapi=true), and direct SSH access (expose_ssh=true).
-my_public_ip_cidr = "1.2.3.4/32"
+# Your workstation IP — restricts kubeapi access (expose_kubeapi=true) and
+# direct SSH access (expose_ssh=true). Use /16 for dynamic ISP ranges
+# (a /32 breaks access if your IP changes within the session).
+my_public_ip_cidr = "1.2.3.0/16"
 
 # cert-manager — must be a real email for Let's Encrypt
 certmanager_email_address = "you@example.com"
@@ -62,25 +63,25 @@ k3s_standalone_worker = true
 # boot_volume_size_in_gbs = 50                   # Must be exactly 50 — 4×50 GB = 200 GB Always Free limit
 
 # ── k3s ───────────────────────────────────────────────────────────────────────
-# k3s_version = "latest"   # Pin to a specific release, e.g. "v1.32.4+k3s1"
+# k3s_version defaults to "stable" (resolved at plan-time via k3s channel API).
+# Use "latest" for bleeding-edge, or pin to a specific release e.g. "v1.35.5+k3s1".
+# k3s_version = "stable"
 
-# ── Optional features ─────────────────────────────────────────────────────────
-# expose_kubeapi = false             # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
-# expose_ssh     = false             # Expose SSH via public NLB (restricted to my_public_ip_cidr); see ssh_command output
-#                                    # When true, set enable_bastion = false — OCI Bastion becomes redundant
+# ── Access ────────────────────────────────────────────────────────────────────
+expose_kubeapi = true              # Expose kubeapi via public NLB (restricted to my_public_ip_cidr)
+expose_ssh     = true              # Expose SSH via public NLB (restricted to my_public_ip_cidr); see ssh_command output
+enable_bastion = false             # Not needed when expose_ssh=true (avoids lingering-VNIC delay on destroy)
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
-# enable_bastion              = true   # OCI Bastion Service — default access method when expose_ssh=false
-#                                      # Set to false if expose_ssh=true (avoids lingering-VNIC delay on destroy)
 # enable_vault                = true   # Store k3s_token/longhorn/grafana passwords in OCI Vault (software keys, free)
 # enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
 # enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
 # enable_longhorn_backup      = true   # Dedicated Object Storage bucket for Longhorn PVC backups (see longhorn_backup_setup output)
 
-# ── Opt-in features (disabled by default) ─────────────────────────────────────
-# enable_notifications = false          # OCI Notifications topic wired to Alertmanager webhook (1M HTTPS/month free)
-# alertmanager_email   = "you@example.com"  # Optional email subscription for the Notifications topic
-# enable_mysql         = false          # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
+# ── Always Free opt-in features ────────────────────────────────────────────────
+enable_notifications = true           # OCI Notifications topic wired to Alertmanager webhook (1M HTTPS/month free)
+alertmanager_email   = "you@example.com"  # Optional email subscription for the Notifications topic
+enable_mysql         = true           # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 # mysql_shape          = "MySQL.Free"   # Do not change — MySQL.Free is the Always Free shape
 
