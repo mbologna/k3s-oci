@@ -64,36 +64,30 @@ for mysql_id in $(oci mysql db-system list --compartment-id "$COMPARTMENT" \
   done
 done
 
-# 0-vault. Schedule old vaults for deletion (keep only the newest ACTIVE one)
+# 0-vault. Schedule ALL vaults for deletion
+# OCI vaults have a 7-day minimum grace period — they cannot be instantly deleted.
+# tofu apply creates a fresh vault; if the quota (~5) is hit, wait for old ones
+# to fully delete or request a service limit increase.
 log "0-vault. OCI Vaults..."
-# Get all ACTIVE vaults for this cluster, sorted newest first
 VAULT_IDS=$(oci kms management vault list --compartment-id "$COMPARTMENT" \
-  --query "data[?\"display-name\"=='${CLUSTER}-vault' && \"lifecycle-state\"=='ACTIVE'] | sort_by(@, &\"time-created\") | reverse(@) | [].id" \
+  --query "data[?\"display-name\"=='${CLUSTER}-vault' && \"lifecycle-state\"=='ACTIVE'] | [].id" \
   --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null || true)
 VAULT_COUNT=0
 for vault_id in $VAULT_IDS; do
   VAULT_COUNT=$((VAULT_COUNT + 1))
-  if [ "$VAULT_COUNT" -eq 1 ]; then
-    log "  Keeping newest vault: $vault_id"
-    continue
-  fi
-  log "  Scheduling old vault for deletion: $vault_id"
+  log "  Scheduling vault for deletion: $vault_id"
   # Delete all secrets in the vault first
-  VAULT_ENDPOINT=$(oci kms management vault get --vault-id "$vault_id" \
-    --query 'data."management-endpoint"' --raw-output 2>/dev/null || true)
-  if [ -n "$VAULT_ENDPOINT" ] && [ "$VAULT_ENDPOINT" != "null" ]; then
-    for secret_id in $(oci vault secret list --compartment-id "$COMPARTMENT" \
-      --vault-id "$vault_id" \
-      --query "data[?\"lifecycle-state\"!='DELETED' && \"lifecycle-state\"!='PENDING_DELETION'].id" \
-      --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
-      log "    Scheduling secret for deletion: $secret_id"
-      oci vault secret schedule-secret-deletion --secret-id "$secret_id" 2>/dev/null || true
-    done
-  fi
+  for secret_id in $(oci vault secret list --compartment-id "$COMPARTMENT" \
+    --vault-id "$vault_id" \
+    --query "data[?\"lifecycle-state\"!='DELETED' && \"lifecycle-state\"!='PENDING_DELETION'].id" \
+    --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+    log "    Scheduling secret for deletion: $secret_id"
+    oci vault secret schedule-secret-deletion --secret-id "$secret_id" 2>/dev/null || true
+  done
   oci kms management vault schedule-deletion --vault-id "$vault_id" 2>/dev/null || true
 done
-if [ "$VAULT_COUNT" -le 1 ]; then
-  log "  No old vaults to clean up"
+if [ "$VAULT_COUNT" -eq 0 ]; then
+  log "  No vaults to clean up"
 fi
 
 # 0-bucket. Delete orphaned object storage buckets
