@@ -47,6 +47,8 @@ jobs:
       enable_terraform_docs: true
       enable_shellcheck: true
       shellcheck_files: >-
+        files/lib/bootstrap-ubuntu.sh
+        files/lib/bootstrap-opensuse.sh
         files/lib/common.sh
         files/lib/k3s-server.sh
         files/lib/k3s-bootstrap.sh
