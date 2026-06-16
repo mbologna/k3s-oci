@@ -28,8 +28,11 @@ resource "oci_load_balancer_backend_set" "k3s_kubeapi" {
   policy           = "ROUND_ROBIN"
 
   health_checker {
-    protocol = "TCP"
-    port     = var.kube_api_port
+    protocol          = "TCP"
+    port              = var.kube_api_port
+    interval_ms       = 5000 # 5 s — default 10 s; reduces UNKNOWN→UNHEALTHY window
+    retries           = 2    # 2 failures → UNHEALTHY (default 3); 2×5 s = 10 s vs 30 s
+    timeout_in_millis = 3000
   }
 }
 

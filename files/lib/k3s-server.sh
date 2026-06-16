@@ -54,7 +54,10 @@ detect_first_server() {
          | .id' 2>/dev/null || echo "")
 
   if [[ -n "${pool_id}" ]]; then
-    first_server=$(oci compute-management instance-pool list-instances \
+    # Capture both display-name and OCID in a single API call so we can resolve
+    # the first server's private IP without a second list-instances call.
+    local first_server_json
+    first_server_json=$(oci compute-management instance-pool list-instances \
       --instance-pool-id "${pool_id}" \
       --compartment-id "${COMPARTMENT_OCID}" \
       --sort-by TIMECREATED \
@@ -62,14 +65,28 @@ detect_first_server() {
       | jq -re \
           '.data
            | map(select(.state == "Running"))
-           | first
-           | .["display-name"]' 2>/dev/null || echo "")
+           | first' 2>/dev/null || echo "null")
+
+    first_server=$(echo "${first_server_json}" | jq -re '.["display-name"]' 2>/dev/null || echo "")
+
+    # Resolve the first server's private IP so joining nodes can connect directly,
+    # bypassing the internal LB (which round-robins to UNKNOWN/unready backends).
+    local first_server_ocid
+    first_server_ocid=$(echo "${first_server_json}" | jq -re '.id' 2>/dev/null || echo "")
+    if [[ -n "${first_server_ocid}" ]]; then
+      FIRST_SERVER_IP=$(oci compute instance list-vnics \
+        --instance-id "${first_server_ocid}" \
+        --compartment-id "${COMPARTMENT_OCID}" 2>/dev/null \
+        | jq -re '.data[0]["private-ip"]' 2>/dev/null || echo "")
+      echo "First server OCID: ${first_server_ocid}  IP: ${FIRST_SERVER_IP}"
+    fi
   fi
 
   # Fallback: compartment-wide list (handles edge case where pool lookup fails)
   if [[ -z "${first_server}" ]]; then
     echo "Warning: pool lookup failed, falling back to compartment instance list"
-    first_server=$(oci compute instance list \
+    local fallback_json
+    fallback_json=$(oci compute instance list \
       --compartment-id "${COMPARTMENT_OCID}" \
       --availability-domain "${AVAILABILITY_DOMAIN}" \
       --sort-by TIMECREATED \
@@ -81,9 +98,21 @@ detect_first_server() {
                .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
                (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
              ))
-           | first
-           | .["display-name"]' \
-      2>/dev/null || echo "")
+           | first' \
+      2>/dev/null || echo "null")
+
+    first_server=$(echo "${fallback_json}" | jq -re '.["display-name"]' 2>/dev/null || echo "")
+
+    # Also resolve IP from fallback path
+    local fallback_ocid
+    fallback_ocid=$(echo "${fallback_json}" | jq -re '.id' 2>/dev/null || echo "")
+    if [[ -n "${fallback_ocid}" && -z "${FIRST_SERVER_IP:-}" ]]; then
+      FIRST_SERVER_IP=$(oci compute instance list-vnics \
+        --instance-id "${fallback_ocid}" \
+        --compartment-id "${COMPARTMENT_OCID}" 2>/dev/null \
+        | jq -re '.data[0]["private-ip"]' 2>/dev/null || echo "")
+      echo "First server (fallback) OCID: ${fallback_ocid}  IP: ${FIRST_SERVER_IP}"
+    fi
   fi
 
   echo "Election: FIRST_SERVER='${first_server}'  SELF='${instance_display_name}'"
@@ -91,8 +120,9 @@ detect_first_server() {
   IS_FIRST_SERVER="false"
   [[ "${first_server}" == "${instance_display_name}" ]] && IS_FIRST_SERVER="true"
   export IS_FIRST_SERVER
+  export FIRST_SERVER_IP
 
-  echo "Instance: ${instance_display_name}  First: ${IS_FIRST_SERVER}"
+  echo "Instance: ${instance_display_name}  First: ${IS_FIRST_SERVER}  First IP: ${FIRST_SERVER_IP:-unknown}"
 }
 
 # -- k3s server install --------------------------------------------------------
@@ -126,31 +156,61 @@ install_k3s_server() {
     done
   else
     echo "==> Joining existing cluster"
-    wait_for_kubeapi
+
+    # Connect directly to the first server's private IP, bypassing the internal LB.
+    # OCI Flex LB includes UNKNOWN-state backends in ROUND_ROBIN rotation for up to
+    # ~30 s after creation — long enough to route a joining server's bootstrap
+    # request to another joining server (which has nothing on :6443), causing k3s
+    # to create a standalone etcd cluster (split-brain). The first server's direct
+    # IP is always the right target during bootstrap: it's the only node with k3s
+    # running. Fall back to K3S_URL (LB) if IP resolution failed.
+    local join_url="${FIRST_SERVER_IP:-${K3S_URL}}"
+    echo "  Joining via: https://${join_url}:${KUBE_API_PORT:-6443}  (LB fallback: ${K3S_URL})"
+
+    # Wait for the first server's API directly (bypassing the LB).
+    local max_wait=180 wait_attempt=0
+    echo "Waiting for first server API at ${join_url}:${KUBE_API_PORT:-6443} ..."
+    until curl --output /dev/null --silent --insecure \
+        "https://${join_url}:${KUBE_API_PORT:-6443}"; do
+      wait_attempt=$(( wait_attempt + 1 ))
+      [[ ${wait_attempt} -ge ${max_wait} ]] && {
+        echo "ERROR: First server API not reachable after ${max_wait} attempts."
+        exit 1
+      }
+      echo "  attempt ${wait_attempt}/${max_wait} -- sleeping 10s"
+      sleep 10
+    done
+    echo "First server API is reachable."
+
     # Install k3s WITHOUT starting it. The installer writes K3S_URL='' (from the
     # inline env override) into k3s.service.env. If k3s starts with that empty
     # value it ignores --server in ExecStart and bootstraps a standalone sqlite3
     # cluster. INSTALL_K3S_SKIP_START=true prevents this — we patch the env file
     # first, then start k3s so it joins the existing cluster on first boot.
-    # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${K3S_URL} in arg uses outer scope (intentional)
+    # shellcheck disable=SC2097,SC2098  # K3S_URL="" clears env for installer; ${join_url} in arg uses outer scope (intentional)
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
         INSTALL_K3S_SKIP_START=true \
-        sh -s - --server "https://${K3S_URL}:${KUBE_API_PORT:-6443}" "${install_params[@]}"; do
+        sh -s - --server "https://${join_url}:${KUBE_API_PORT:-6443}" "${install_params[@]}"; do
       attempt=$(( attempt + 1 ))
       [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s install failed after ${max_attempts} attempts."; exit 1; }
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
-    # Patch the env file before first start: set correct K3S_URL and add K3S_TOKEN
-    # (the installer doesn't persist K3S_TOKEN for security reasons).
+
+    # Patch the env file before first start.
+    # K3S_URL: use first server's direct IP so the runtime join goes to the right
+    # node (same reasoning as above — bypasses LB UNKNOWN-state routing).
+    # Server nodes use local etcd on subsequent restarts and don't require K3S_URL
+    # to be reachable, so keeping the direct IP permanently is safe.
+    # K3S_TOKEN: the installer doesn't persist it for security reasons.
     if [[ -f /etc/systemd/system/k3s.service.env ]]; then
-      sed -i "s|^K3S_URL=.*|K3S_URL='https://${K3S_URL}:${KUBE_API_PORT:-6443}'|" \
+      sed -i "s|^K3S_URL=.*|K3S_URL='https://${join_url}:${KUBE_API_PORT:-6443}'|" \
           /etc/systemd/system/k3s.service.env
       if ! grep -q '^K3S_TOKEN=' /etc/systemd/system/k3s.service.env; then
         echo "K3S_TOKEN='${K3S_TOKEN}'" >> /etc/systemd/system/k3s.service.env
       fi
-      echo "==> Patched k3s.service.env: K3S_URL + K3S_TOKEN → https://${K3S_URL}:${KUBE_API_PORT:-6443}"
+      echo "==> Patched k3s.service.env: K3S_URL → https://${join_url}:${KUBE_API_PORT:-6443}"
     fi
     systemctl daemon-reload
     echo "==> Starting k3s to join cluster..."
