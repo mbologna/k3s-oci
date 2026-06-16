@@ -111,3 +111,20 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: kube-state-metrics
+---
+# PodDisruptionBudget for Longhorn manager
+# longhorn-manager runs as a DaemonSet (one pod per node). If kured evicts a node
+# while a volume rebuild is in progress, losing another manager pod can leave a
+# Longhorn volume with only 1 replica — below the 2-of-3 safe threshold.
+# minAvailable: 2 ensures at most 1 node can be drained at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: longhorn-manager
+  namespace: longhorn-system
+spec:
+  minAvailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app: longhorn-manager

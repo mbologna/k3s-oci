@@ -3,6 +3,10 @@ kind: Application
 metadata:
   name: gateway-config
   namespace: argocd
+  annotations:
+    # Wave 2: runs after envoy-gateway (wave 1) is Healthy.
+    # Requires envoy-gateway CRDs and controller running to process GatewayClass/Gateway.
+    argocd.argoproj.io/sync-wave: "2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
