@@ -63,25 +63,9 @@ bootstrap
 configure_unattended_upgrades
 configure_longhorn_prereqs
 
-# Resolve k3s token: OCI Vault when enabled, else from user-data header.
-# Falls back to K3S_TOKEN_PLAIN when vault fetch fails (handles IAM propagation
-# delays that can exceed the retry window on newly created instances).
-if [[ -n "${VAULT_SECRET_ID_K3S_TOKEN}" ]]; then
-  export OCI_CLI_AUTH=instance_principal
-  export PATH="/root/bin:$PATH"
-  install_oci_cli
-  echo "Fetching k3s token from OCI Vault..."
-  if K3S_TOKEN=$(fetch_from_vault "${VAULT_SECRET_ID_K3S_TOKEN}"); then
-    echo "Vault fetch successful."
-  else
-    echo "WARNING: Vault fetch failed — falling back to plaintext token from user-data." >&2
-    K3S_TOKEN="${K3S_TOKEN_PLAIN}"
-    [[ -z "${K3S_TOKEN}" ]] && { echo "ERROR: K3S_TOKEN_PLAIN is empty — cannot continue." >&2; exit 1; }
-  fi
-else
-  K3S_TOKEN="${K3S_TOKEN_PLAIN}"
-fi
-export K3S_TOKEN
+# Resolve K3S_TOKEN from OCI Vault or plaintext fallback.
+# "needs_oci_cli" installs OCI CLI only when vault is enabled (agents don't install it unconditionally).
+resolve_k3s_token needs_oci_cli
 
 install_k3s_agent
 

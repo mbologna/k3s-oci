@@ -25,7 +25,6 @@
 # The Envoy Gateway Helm chart does not bundle these upstream CRDs.
 
 install_gateway_api_crds() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   # Use experimental channel: superset of standard, includes GRPCRoute/TCPRoute/TLSRoute
   # required by Envoy Gateway. Server-side apply avoids annotation size limit on large CRDs.
   kubectl apply --server-side --force-conflicts \
@@ -36,6 +35,8 @@ install_gateway_api_crds() {
 # Called by k3s-server.sh after cluster is Ready and taints are removed.
 
 run_bootstrap() {
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
   install_gateway_api_crds
   pre_create_secrets
   install_certmanager
@@ -43,8 +44,15 @@ run_bootstrap() {
   install_argocd
   create_dockerhub_secret
   create_optional_apps
-  configure_grafana_ingress || { echo "ERROR: configure_grafana_ingress failed - aborting bootstrap."; exit 1; }
-  configure_longhorn_ingress || { echo "ERROR: configure_longhorn_ingress failed - aborting bootstrap."; exit 1; }
-  configure_argocd_ingress   || { echo "ERROR: configure_argocd_ingress failed - aborting bootstrap."; exit 1; }
+
+  # Ingress configuration waits for Gateway eg (created by gateway-config ArgoCD app,
+  # which depends on envoy-gateway — see sync waves in gitops/apps/). This can take
+  # up to 30 minutes on a fresh deploy. Failures are non-fatal: ArgoCD is already
+  # running and the cluster is functional. Re-run hotel-post-deploy.sh to configure
+  # ingress if cloud-init times out here.
+  configure_grafana_ingress  || echo "WARNING: configure_grafana_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
+  configure_longhorn_ingress || echo "WARNING: configure_longhorn_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
+  configure_argocd_ingress   || echo "WARNING: configure_argocd_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
+
   echo "==> Bootstrap complete. ArgoCD will reconcile remaining stack via gitops/."
 }

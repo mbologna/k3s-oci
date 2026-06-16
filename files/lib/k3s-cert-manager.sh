@@ -31,10 +31,9 @@ EOF
 }
 
 install_certmanager() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
 
-  helm repo add jetstack https://charts.jetstack.io
+  helm repo add jetstack https://charts.jetstack.io || { echo "ERROR: helm repo add jetstack failed."; exit 1; }
   helm repo update
 
   helm upgrade --install cert-manager jetstack/cert-manager \

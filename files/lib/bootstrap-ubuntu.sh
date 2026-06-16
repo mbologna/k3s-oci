@@ -2,9 +2,8 @@
 # lib/bootstrap-ubuntu.sh -- Ubuntu-specific OS bootstrap for k3s server and agent nodes.
 # Pure bash -- no Terraform interpolation. Prepended to cloud-init scripts by data.tf.
 # Variables (SSH_PUBLIC_KEY, etc.) are exported by the Terraform-rendered vars header.
+# set -euo pipefail is set by server-vars.sh.tpl / agent-vars.sh.tpl (always prepended first).
 # shellcheck disable=SC2154
-
-set -euo pipefail
 
 # Wait for apt/dpkg locks so our apt calls never race with apt-daily or
 # unattended-upgrades that Ubuntu starts automatically on first boot.
@@ -37,8 +36,10 @@ bootstrap() {
   systemctl stop    netfilter-persistent.service || true
   systemctl disable netfilter-persistent.service || true
 
-  # Stop Ubuntu's apt-daily timer so it doesn't race with our apt calls.
-  # configure_unattended_upgrades() will re-enable it after we're done.
+  # Stop Ubuntu's apt-daily timers AND services so they don't race with our apt calls.
+  # Stopping only services is insufficient — timers would re-trigger them immediately.
+  # configure_unattended_upgrades() re-enables the timers after we're done.
+  systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
   systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
   wait_apt_lock
 
