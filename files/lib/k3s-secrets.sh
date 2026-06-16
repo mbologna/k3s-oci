@@ -7,23 +7,23 @@
 # shellcheck disable=SC2154
 
 pre_create_secrets() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-  # Resolve passwords from OCI Vault or from plain-text user-data header
+  # Resolve passwords from OCI Vault or from plain-text user-data header.
+  # fetch_from_vault() retries 20×30s to handle IAM propagation delays on new instances.
   if [[ -n "${VAULT_SECRET_ID_LONGHORN_PASSWORD}" ]]; then
     echo "Fetching Longhorn UI password from OCI Vault..."
-    LONGHORN_UI_PASSWORD=$(oci secrets secret-bundle get \
-      --secret-id "${VAULT_SECRET_ID_LONGHORN_PASSWORD}" \
-      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    if ! LONGHORN_UI_PASSWORD=$(fetch_from_vault "${VAULT_SECRET_ID_LONGHORN_PASSWORD}"); then
+      echo "ERROR: Failed to fetch Longhorn UI password from OCI Vault." >&2; exit 1
+    fi
   else
     LONGHORN_UI_PASSWORD="${LONGHORN_UI_PASSWORD_PLAIN}"
   fi
 
   if [[ -n "${VAULT_SECRET_ID_GRAFANA_PASSWORD}" ]]; then
     echo "Fetching Grafana admin password from OCI Vault..."
-    GRAFANA_ADMIN_PASSWORD=$(oci secrets secret-bundle get \
-      --secret-id "${VAULT_SECRET_ID_GRAFANA_PASSWORD}" \
-      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    if ! GRAFANA_ADMIN_PASSWORD=$(fetch_from_vault "${VAULT_SECRET_ID_GRAFANA_PASSWORD}"); then
+      echo "ERROR: Failed to fetch Grafana admin password from OCI Vault." >&2; exit 1
+    fi
+    [[ -z "${GRAFANA_ADMIN_PASSWORD}" ]] && { echo "ERROR: GRAFANA_ADMIN_PASSWORD is empty after Vault fetch." >&2; exit 1; }
   else
     GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_PLAIN}"
   fi
@@ -32,9 +32,10 @@ pre_create_secrets() {
   # value embedded in user-data (CLOUDFLARE_API_TOKEN is empty when vault is enabled).
   if [[ -n "${VAULT_SECRET_ID_CLOUDFLARE:-}" ]]; then
     echo "Fetching Cloudflare API token from OCI Vault..."
-    CLOUDFLARE_API_TOKEN=$(oci secrets secret-bundle get \
-      --secret-id "${VAULT_SECRET_ID_CLOUDFLARE}" \
-      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    if ! CLOUDFLARE_API_TOKEN=$(fetch_from_vault "${VAULT_SECRET_ID_CLOUDFLARE}"); then
+      echo "ERROR: Failed to fetch Cloudflare API token from OCI Vault." >&2; exit 1
+    fi
+    [[ -z "${CLOUDFLARE_API_TOKEN}" ]] && { echo "ERROR: CLOUDFLARE_API_TOKEN is empty after Vault fetch." >&2; exit 1; }
     export CLOUDFLARE_API_TOKEN
   fi
   # When vault is not used, CLOUDFLARE_API_TOKEN is already exported from server-vars.sh.tpl
@@ -42,8 +43,10 @@ pre_create_secrets() {
   # Longhorn BasicAuth -- htpasswd hash generated here because openssl apr1 hashing
   # is not possible inside static gitops YAML. Secret is referenced by
   # gitops/longhorn/ingress.yaml (user-configured HTTPRoute + SecurityPolicy).
+  [[ -z "${LONGHORN_UI_USERNAME}" ]] && { echo "ERROR: LONGHORN_UI_USERNAME is empty — cannot create Longhorn auth secret."; exit 1; }
+  [[ -z "${LONGHORN_UI_PASSWORD}" ]] && { echo "ERROR: LONGHORN_UI_PASSWORD is empty — cannot create Longhorn auth secret."; exit 1; }
   local longhorn_hash
-  longhorn_hash=$(openssl passwd -apr1 "${LONGHORN_UI_PASSWORD}")
+  longhorn_hash=$(openssl passwd -apr1 "${LONGHORN_UI_PASSWORD}") || { echo "ERROR: openssl passwd failed."; exit 1; }
   kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -n longhorn-system -f - <<EOF
 apiVersion: v1

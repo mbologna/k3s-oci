@@ -35,9 +35,12 @@ detect_first_server() {
   export PATH="/root/bin:$PATH"
 
   local instance_display_name="" first_server="" pool_id=""
-  instance_display_name=$(curl -sfL \
+  instance_display_name=$(curl -sfL --max-time 10 \
     -H "Authorization: Bearer Oracle" \
-    http://169.254.169.254/opc/v2/instance | jq -r '.displayName')
+    http://169.254.169.254/opc/v2/instance | jq -r '.displayName') || {
+    echo "ERROR: IMDS fetch failed — cannot determine instance display name for first-server election."
+    exit 1
+  }
 
   # Find the server pool by cluster tags -- pool membership only includes current
   # members, so replaced/stale instances from previous applies are excluded.
@@ -245,22 +248,9 @@ install_oci_cli
 
 detect_first_server
 
-# Resolve cluster secrets: OCI Vault when enabled, else from user-data header.
-# Falls back to K3S_TOKEN_PLAIN when vault fetch fails (handles IAM propagation
-# delays that can exceed the retry window on newly created instances).
-if [[ -n "${VAULT_SECRET_ID_K3S_TOKEN}" ]]; then
-  echo "Fetching k3s token from OCI Vault..."
-  if K3S_TOKEN=$(fetch_from_vault "${VAULT_SECRET_ID_K3S_TOKEN}"); then
-    echo "Vault fetch successful."
-  else
-    echo "WARNING: Vault fetch failed — falling back to plaintext token from user-data." >&2
-    K3S_TOKEN="${K3S_TOKEN_PLAIN}"
-    [[ -z "${K3S_TOKEN}" ]] && { echo "ERROR: K3S_TOKEN_PLAIN is empty — cannot continue." >&2; exit 1; }
-  fi
-else
-  K3S_TOKEN="${K3S_TOKEN_PLAIN}"
-fi
-export K3S_TOKEN
+# Resolve K3S_TOKEN from OCI Vault or plaintext fallback.
+# OCI CLI is already installed above; OCI_CLI_AUTH is already set by detect_first_server().
+resolve_k3s_token
 
 install_k3s_server
 

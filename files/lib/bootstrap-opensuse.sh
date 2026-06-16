@@ -2,9 +2,8 @@
 # lib/bootstrap-opensuse.sh -- openSUSE-specific OS bootstrap for k3s server and agent nodes.
 # Pure bash -- no Terraform interpolation. Prepended to cloud-init scripts by data.tf.
 # Variables (SSH_PUBLIC_KEY, etc.) are exported by the Terraform-rendered vars header.
+# set -euo pipefail is set by server-vars.sh.tpl / agent-vars.sh.tpl (always prepended first).
 # shellcheck disable=SC2154
-
-set -euo pipefail
 
 bootstrap() {
   # Stop and permanently disable firewalld — k3s manages iptables/nftables directly

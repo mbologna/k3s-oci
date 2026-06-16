@@ -8,7 +8,6 @@
 # shellcheck disable=SC2154
 
 install_external_secrets() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
 
   if [[ -z "${VAULT_OCID:-}" || -z "${OCI_REGION:-}" ]]; then
@@ -17,7 +16,7 @@ install_external_secrets() {
     exit 1
   fi
 
-  helm repo add external-secrets https://charts.external-secrets.io
+  helm repo add external-secrets https://charts.external-secrets.io || { echo "ERROR: helm repo add external-secrets failed."; exit 1; }
   helm repo update
 
   helm upgrade --install external-secrets external-secrets/external-secrets \

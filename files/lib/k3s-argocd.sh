@@ -8,7 +8,6 @@
 # shellcheck disable=SC2154
 
 install_argocd() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   install_helm
 
   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
@@ -18,9 +17,11 @@ install_argocd() {
   if [[ -n "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" ]]; then
     echo "Fetching gitops SSH deploy key from OCI Vault..."
     local ssh_key
-    ssh_key=$(oci secrets secret-bundle get \
-      --secret-id "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" \
-      --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+    if ! ssh_key=$(fetch_from_vault "${VAULT_SECRET_ID_GITOPS_SSH_KEY}"); then
+      echo "ERROR: Failed to fetch gitops SSH deploy key from OCI Vault." >&2
+      exit 1
+    fi
+    [[ -z "${ssh_key}" ]] && { echo "ERROR: gitops SSH deploy key is empty after Vault fetch." >&2; exit 1; }
     kubectl apply -n argocd -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -57,7 +58,7 @@ EOF
   repo_host=$(printf '%s' "${GITOPS_REPO_URL}" | sed -n 's|.*@\([^:/]*\).*|\1|p')
   if [[ -n "${repo_host}" ]]; then
     local known_hosts
-    known_hosts=$(ssh-keyscan "${repo_host}" 2>/dev/null | grep -v '^#')
+    known_hosts=$(ssh-keyscan -T 10 "${repo_host}" 2>/dev/null | grep -v '^#')
     if [[ -n "${known_hosts}" ]]; then
       local existing
       existing=$(kubectl get configmap argocd-ssh-known-hosts-cm -n argocd \
@@ -108,7 +109,6 @@ EOF
 # Only created when DOCKERHUB_USERNAME is non-empty.
 
 create_dockerhub_secret() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   [[ -z "${DOCKERHUB_USERNAME}" ]] && return 0
 
   kubectl apply -n argocd -f - <<EOF
@@ -179,8 +179,6 @@ EOF
 }
 
 create_optional_apps() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
   [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]] && create_external_dns_app
 
   [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]] && \
@@ -278,11 +276,13 @@ configure_app_ingress() {
 
   echo "Configuring ${service} ingress for ${hostname} (listener=${listener_name}, route=${route_name})..."
 
+  # ArgoCD must complete wave-0 apps, then envoy-gateway (wave 1), then
+  # gateway-config (wave 2) before Gateway eg exists. Allow up to 30 minutes.
   local attempts=0
   until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
     attempts=$((attempts + 1))
-    [[ ${attempts} -ge 60 ]] && echo "Timeout waiting for Gateway eg" && return 1
-    echo "  waiting for Gateway eg... (${attempts}/60)"
+    [[ ${attempts} -ge 180 ]] && echo "Timeout waiting for Gateway eg" && return 1
+    echo "  waiting for Gateway eg... (${attempts}/180)"
     sleep 10
   done
 
@@ -356,7 +356,6 @@ EOF
 # rest of the manifest. monitoring-extras app ignoreDifferences covers /spec/hostnames.
 
 configure_grafana_ingress() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   configure_app_ingress \
     "${GRAFANA_HOSTNAME}" \
     "monitoring" \
@@ -373,7 +372,6 @@ configure_grafana_ingress() {
 
 # -- ArgoCD ingress -------------------------------------------------------------
 configure_argocd_ingress() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   configure_app_ingress \
     "${ARGOCD_HOSTNAME}" \
     "argocd" \
@@ -384,7 +382,6 @@ configure_argocd_ingress() {
 
 # -- Longhorn ingress -----------------------------------------------------------
 configure_longhorn_ingress() {
-  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   [[ -z "${LONGHORN_HOSTNAME}" ]] && return 0
 
   configure_app_ingress \
