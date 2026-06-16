@@ -18,7 +18,9 @@ spec:
             # 3 replicas: any single node can be lost without PVC data loss
             defaultReplicaCount: 3
           persistence:
-            defaultClassReplicaCount: 3
+            # Make longhorn the default StorageClass so PVCs without explicit
+            # storageClassName are satisfied automatically.
+            defaultClass: true
           # Disable pre-upgrade job: ArgoCD runs it on every sync (including
           # fresh installs) where longhorn-manager isn't running yet, causing
           # the job to fail and block the sync.
