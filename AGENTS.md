@@ -16,7 +16,7 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu 24.04 LTS (aarch64) only |
+| OS | Ubuntu 24.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Envoy Gateway (Gateway API) |
 | Observability | kube-prometheus-stack (via GitOps) |
@@ -92,7 +92,7 @@ gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/Nod
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just fmt, just validate
-.github/workflows/terraform.yml  — CI: fmt, validate, tflint, ShellCheck, terraform-docs
+.github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
 renovate.json    — Automated dependency updates
 ```
@@ -126,7 +126,7 @@ renovate.json    — Automated dependency updates
   ShellCheck runs on these files without workarounds (`# shellcheck disable=SC2154` is the
   only suppression, covering vars exported by the prepended template header).
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
-- Ubuntu 24.04 only. No Oracle Linux, no multi-distro branches.
+- Ubuntu 24.04 is the default OS (`var.os_family = "ubuntu"`). openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support.
 - Always use `set -euo pipefail` at the top of each file.
 
 ### Adding a new stack component
@@ -242,7 +242,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 ## What NOT to do
 
 - Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
-- Do not add Oracle Linux support — Ubuntu 24.04 LTS only
+- Do not add Oracle Linux support — Ubuntu 24.04 LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
 - Do not remove `lifecycle { prevent_destroy = true }` from load balancers
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables

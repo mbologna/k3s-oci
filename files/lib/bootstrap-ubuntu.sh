@@ -38,7 +38,7 @@ bootstrap() {
 
   # Stop Ubuntu's apt-daily timers AND services so they don't race with our apt calls.
   # Stopping only services is insufficient — timers would re-trigger them immediately.
-  # configure_unattended_upgrades() re-enables the timers after we're done.
+  # configure_unattended_upgrades() re-enables ALL three timers after we're done.
   systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
   systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
   wait_apt_lock
@@ -81,11 +81,14 @@ JEOF
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
   wait_apt_lock
-  # Note: apt-get update already ran in bootstrap(); this second run ensures
-  # unattended-upgrades and needrestart are always installable even on slow mirrors.
+  # Refresh package indices before installing — bootstrap() deleted them at the end
+  # to save boot-volume space. Re-fetch now so this function is self-contained and
+  # does not depend on the base image having the packages pre-installed.
+  apt-get update -q || apt-get update -q || true
   apt-get install -y -q --no-install-recommends unattended-upgrades needrestart
   apt-get clean
-  rm -rf /var/lib/apt/lists/*
+  # Do NOT delete indices here — leave them populated so that apt-daily.timer (restarted
+  # below) finds them fresh on its first run and security upgrades can apply immediately.
 
   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'UUEOF'
 Unattended-Upgrade::Allowed-Origins {
@@ -131,6 +134,9 @@ Unattended-Upgrade::Allowed-Origins {
 SECEOF
 
   # Daily security-only upgrade service + timer at 00:30 UTC (+/-30 min jitter).
+  # ExecStartPre refreshes apt indices so the service is self-contained — it does
+  # not depend on apt-daily.timer having run first (important on fresh nodes and
+  # after apt-daily.timer is restarted below).
   cat > /etc/systemd/system/apt-security-upgrade.service << 'SVCEOF'
 [Unit]
 Description=Daily security-only unattended upgrades
@@ -139,6 +145,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+ExecStartPre=/usr/bin/apt-get update -q
 ExecStart=/usr/bin/unattended-upgrade --apt-conf /etc/apt/apt.conf.d/52security-only.conf
 SVCEOF
 
@@ -167,7 +174,7 @@ TIMEREOF
 
   systemctl daemon-reload
   systemctl enable --now apt-security-upgrade.timer
-  systemctl restart apt-daily-upgrade.timer
+  systemctl restart apt-daily.timer apt-daily-upgrade.timer
 
   systemctl enable --now unattended-upgrades
 }

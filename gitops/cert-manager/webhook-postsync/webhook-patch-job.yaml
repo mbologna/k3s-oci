@@ -12,9 +12,12 @@
 # This hook runs after each cert-manager sync to re-apply the patch,
 # since the Helm chart resets failurePolicy:Fail on every sync.
 #
-# The cert-manager-webhook ValidatingWebhookConfiguration and (if present)
-# MutatingWebhookConfiguration are both patched. || true on the mutating
-# patch tolerates versions where only the validating config exists.
+# The cert-manager-webhook ValidatingWebhookConfiguration and MutatingWebhookConfiguration
+# are both patched. Both exist in cert-manager v1.20.2 (and all recent versions) with
+# exactly one webhook at index 0. If a future version removes the MutatingWebhookConfiguration,
+# the patch-mutating-webhook init container will fail → Job exhausts backoffLimit → ArgoCD
+# shows Degraded. Renovate bumps cert-manager automatically — verify the configs exist when
+# reviewing a cert-manager bump PR.
 #
 # Implementation note: rancher/kubectl is distroless (no sh/bash).
 # Two init containers call kubectl directly without a shell wrapper.
