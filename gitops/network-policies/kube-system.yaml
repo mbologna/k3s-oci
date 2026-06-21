@@ -44,9 +44,10 @@ spec:
   egress:
     - {}  # CoreDNS needs to forward to upstream resolvers
 ---
-# metrics-server: accept scrape from apiserver, expose :4443 for kubectl top.
-# Egress includes port 53 for DNS resolution (in case kubelet/apiserver hostnames
-# are used by future chart versions instead of direct IPs).
+# metrics-server: k3s bundles metrics-server with label k8s-app:metrics-server
+# (not app.kubernetes.io/name). It serves on --secure-port=10250 (the k3s default).
+# Egress needs 6443 (apiserver endpoint post-DNAT) in addition to 10250 (kubelets)
+# and 443/53 for fallback resolution.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -55,19 +56,21 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: metrics-server
+      k8s-app: metrics-server   # k3s-bundled label (was app.kubernetes.io/name: metrics-server)
   policyTypes:
     - Ingress
     - Egress
   ingress:
     - ports:
-        - port: 4443
+        - port: 10250             # serving port (was 4443 — incorrect)
           protocol: TCP
   egress:
     - ports:
+        - port: 6443              # apiserver endpoint (post-DNAT) — was missing
+          protocol: TCP
         - port: 443
           protocol: TCP
-        - port: 10250
+        - port: 10250             # kubelet metrics scrape
           protocol: TCP
         - port: 53
           protocol: UDP
@@ -75,6 +78,8 @@ spec:
           protocol: TCP
 ---
 # kured: needs apiserver to acquire/release lock and to drain nodes.
+# kubereboot Helm chart 6.0.0 labels pods with app.kubernetes.io/name:kured
+# (was name:kured — the legacy weaveworks label, no longer set by the chart).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -83,7 +88,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      name: kured
+      app.kubernetes.io/name: kured   # was name: kured (legacy label, chart 6.0.0 dropped it)
   policyTypes:
     - Egress
   egress:

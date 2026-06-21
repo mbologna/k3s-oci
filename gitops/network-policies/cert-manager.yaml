@@ -74,9 +74,11 @@ spec:
           protocol: TCP
 
 ---
-# Allow Kubernetes API server to reach cert-manager webhook (port 9443).
-# k3s uses 10250 for kubelet/konnectivity-server — cert-manager webhook must use 9443
-# to avoid conflict. The API server IP is not predictable so we allow from any source.
+# Allow Kubernetes API server to reach cert-manager webhook.
+# cert-manager webhook serves on port 10250 (chart default: webhook.securePort=10250).
+# There is no conflict with kubelet's 10250 because the webhook pod is NOT host-networked
+# (hostNetwork: false is the chart default). The apiserver connects to the pod IP post-DNAT.
+# The API server IP is not predictable so we allow ingress from any source on that port.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -91,7 +93,7 @@ spec:
     - Ingress
   ingress:
     - ports:
-        - port: 9443
+        - port: 10250   # cert-manager webhook.securePort default (was 9443 — incorrect)
           protocol: TCP
 ---
 # Allow cert-manager controller to reach ACME HTTP-01 challenge endpoints (port 80 self-check)
