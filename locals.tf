@@ -66,9 +66,16 @@ locals {
   # Shared cloud-init vars passed to both server and agent template files.
   # Server-specific vars are merged on top in data.tf.
   k3s_common_cloud_init_vars = {
-    k3s_version               = local.k3s_version
-    k3s_subnet                = var.k3s_subnet
-    k3s_token                 = random_password.k3s_token.result
+    k3s_version = local.k3s_version
+    k3s_subnet  = var.k3s_subnet
+    # Blanked when vault is enabled so the cluster join token is NOT embedded in
+    # plaintext instance user-data (readable via IMDS and the GetInstance API by any
+    # principal with read instance-family in the compartment). Cloud-init fetches it
+    # from OCI Vault via vault_secret_id_k3s_token instead. Mirrors the longhorn/grafana
+    # password blanking in data.tf:_server_secret_vars and the vault.tf design goal
+    # ("removes plaintext secrets from instance user-data"). When enable_vault = false
+    # the plaintext value remains the only delivery mechanism for the token.
+    k3s_token                 = var.enable_vault ? "" : random_password.k3s_token.result
     k3s_url                   = local.k3s_internal_lb_ip
     kube_api_port             = var.kube_api_port
     vault_secret_id_k3s_token = var.enable_vault ? oci_vault_secret.cluster["k3s_token"].id : ""
