@@ -36,6 +36,8 @@ spec:
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000   # rancher/kubectl image uses non-numeric USER "kubectl" (UID 1000 via useradd);
+        runAsGroup: 1000  # kubelet requires a numeric UID to verify non-root when runAsNonRoot:true is set
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -62,6 +64,7 @@ spec:
             - -p
             - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
         - name: patch-mutating-webhook
+          # renovate: datasource=docker depName=rancher/kubectl
           image: rancher/kubectl:v1.31.5
           resources:
             requests:
@@ -84,6 +87,7 @@ spec:
             - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
       containers:
         - name: done
+          # renovate: datasource=docker depName=rancher/kubectl
           image: rancher/kubectl:v1.31.5
           resources:
             requests:

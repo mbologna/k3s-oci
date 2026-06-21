@@ -147,6 +147,20 @@ spec:
 
     - name: etcd.backup
       rules:
+        - alert: EtcdSnapshotMissing
+          expr: absent(etcd_snapshot_last_success_timestamp_seconds)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No etcd snapshot metric on any k3s server"
+            description: >
+              etcd_snapshot_last_success_timestamp_seconds is absent from all servers —
+              no snapshot upload has ever been recorded. EtcdSnapshotStale cannot fire
+              without this series, so this is the only signal that snapshots are broken
+              from the start. Check IAM (manage objects in the bucket), the bucket name,
+              and /var/log/etcd-snapshot-upload.log on each control-plane node.
+
         - alert: EtcdSnapshotStale
           expr: |
             (time() - etcd_snapshot_last_success_timestamp_seconds) > 25200

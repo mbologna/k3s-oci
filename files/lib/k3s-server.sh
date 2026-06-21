@@ -448,15 +448,17 @@ setup_etcd_snapshot_upload
 if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
   wait_for_cluster_ready
 
-  # Remove the control-plane and etcd NoSchedule taints that k3s >= 1.24 adds
-  # automatically to server nodes. With only one worker, keeping these taints
-  # makes the worker a single-node SPOF for user workloads. All four A1.Flex
-  # nodes are identically sized, so co-locating etcd and user workloads is safe.
+  # Defensive: k3s does NOT add control-plane or etcd NoSchedule taints by default
+  # (unlike kubeadm). This command is a no-op on a standard k3s install, guarded by
+  # || true. It exists as a safety net in case a future k3s version or a user-supplied
+  # flag introduces these taints. With only one worker, keeping them would make the
+  # worker a single-node SPOF for user workloads. All four A1.Flex nodes are
+  # identically sized, so co-locating etcd and user workloads is safe.
   kubectl taint nodes -l node-role.kubernetes.io/control-plane \
     node-role.kubernetes.io/control-plane:NoSchedule- \
     node-role.kubernetes.io/etcd:NoSchedule- \
     2>/dev/null || true
-  echo "Control-plane NoSchedule taints removed -- all 4 nodes schedulable."
+  echo "Control-plane NoSchedule taints removed (if any) -- all 4 nodes schedulable."
 
   # Source bootstrap functions (defined in k3s-bootstrap.sh, prepended by data.tf)
   export PATH="/root/bin:${PATH}"

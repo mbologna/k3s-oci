@@ -112,6 +112,14 @@ spec:
             passwordKey: "admin-password"
           grafana.ini:
             server:
+              # root_url uses %(domain)s which defaults to 'localhost' since domain is not
+              # set here — the actual hostname (grafana.<nlb-ip>.sslip.io) is a runtime value
+              # injected by configure_grafana_ingress() in k3s-argocd.sh at bootstrap time
+              # and is not available as a static gitops value. This means Grafana-generated
+              # absolute URLs (alert notification links, "share/copy link") embed localhost.
+              # UI access, login, and all dashboards are fully functional — only generated
+              # links are affected. To fix: set GF_SERVER_DOMAIN/GF_SERVER_ROOT_URL via a
+              # cloud-init kubectl patch after configure_grafana_ingress() has the hostname.
               root_url: "%(protocol)s://%(domain)s/"
 
         # Alertmanager — minimal

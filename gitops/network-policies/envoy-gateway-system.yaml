@@ -38,6 +38,29 @@ spec:
         - protocol: TCP
           port: 10443
 ---
+# Allow intra-namespace traffic: Envoy proxy DaemonSet pods connect to the Envoy Gateway
+# controller on port 18000 (xDS gRPC) for all configuration (listeners, routes, clusters,
+# TLS secrets via SDS). Without this policy, default-deny blocks that channel and Envoy
+# never loads any config — all HTTP/HTTPS ingress is silently dead.
+# This policy also covers cert-manager HTTP-01 ACME solver pods (port 8089) that
+# configure_app_ingress() creates in this namespace (Certificate in envoy-gateway-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: envoy-gateway-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
 # Allow Envoy Gateway control-plane and proxy pods to reach the Kubernetes API (kubeapi).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -77,6 +100,9 @@ spec:
           port: 3000
         - protocol: TCP
           port: 8000
+        # cert-manager HTTP-01 ACME solver pods (cross-namespace, i.e. solver in app namespace)
+        - protocol: TCP
+          port: 8089
 ---
 # Allow DNS resolution for all pods in the namespace.
 apiVersion: networking.k8s.io/v1
