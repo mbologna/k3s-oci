@@ -550,3 +550,43 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - Benefits: supports wildcard certs (`*.example.com`), no inbound port 80 required.
 - See `gitops/cert-manager/cluster-issuers.yaml` for the commented DNS-01 ClusterIssuer variants
   to use when adopting cert-manager into ArgoCD.
+
+### etcd Snapshots (`enable_etcd_snapshots`)
+- Controlled by `enable_etcd_snapshots` variable (default: `true`). Requires `enable_object_storage_state = true`.
+- Cloud-init installs `/usr/local/bin/etcd-snapshot-upload.sh` + cron job on the first server (every 6h).
+- Snapshots are uploaded to `${cluster_name}-terraform-state` bucket under `etcd-snapshots/${CLUSTER_NAME}/` using OCI CLI instance_principal auth — **no Customer Secret Keys required**.
+- IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
+- Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
+- These snapshots are the primary recovery path for split-brain and etcd quorum loss. See `README.md#split-brain-recovery`.
+
+### Atomic leader lock (`--cluster-init` safety)
+- `claim_first_server_lock()` in `files/lib/k3s-server.sh` uses a conditional PUT (`--if-none-match "*"`) to OCI Object Storage before running `--cluster-init`.
+- Lock object: `cluster-init-lock` in the `${cluster_name}-terraform-state` bucket.
+- If the lock already exists and the holder's instance is still RUNNING, the node aborts rather than creating a second etcd cluster.
+- Stale locks (different cluster name, or holder instance terminated) are automatically overwritten.
+- On a deliberate full rebuild (destroy + apply), delete the stale lock: `oci os object delete --bucket-name ${cluster_name}-terraform-state --name cluster-init-lock --force`.
+- When Object Storage is not configured (`ETCD_SNAPSHOT_BUCKET` empty), the lock is skipped and the TIMECREATED election alone determines the first server.
+
+### etcd Monitoring
+- `kube-prometheus-stack.yaml` has `defaultRules.rules.etcd: true` — **do not disable**. These rules (EtcdNoLeader, EtcdInsufficientMembers, EtcdMembersDown, EtcdHighFsyncDurations) are the primary signals for split-brain.
+- etcd metrics are exposed on `:2381` via `--etcd-expose-metrics` (added to `install_k3s_server()` in `k3s-server.sh`).
+- `additionalScrapeConfigs` in `kube-prometheus-stack.yaml` uses `kubernetes_sd_configs` to discover control-plane nodes and scrape `:2381/metrics` automatically.
+- NSG rule `servers_allow_etcd_metrics` in `nsg.tf` opens TCP 2381 from `private_subnet_cidr` for in-cluster Prometheus scraping.
+
+### Fail-closed split-brain fallback
+- `install_k3s_server()` in `k3s-server.sh`: when `IS_FIRST_SERVER=false`, joining nodes **abort** if `FIRST_SERVER_IP` is empty (OCI API failure during election), instead of falling back to `K3S_URL` (the internal LB).
+- **Do NOT reintroduce `${FIRST_SERVER_IP:-${K3S_URL}}`** — that fallback is the exact path that caused the documented split-brain issues. The internal LB routes to UNKNOWN-state backends for ~30s after creation, which can route a joining server's bootstrap to another uninitialised node.
+
+### Longhorn replica count
+- Default replica count is **2** (down from 3). With 50 GB boot-only volumes (~30 GB usable after OS/images/etcd), 3 replicas leaves only ~20-30 GB cluster-wide PVC capacity.
+- Use `storageClassName: longhorn-replicated-3` (defined in `gitops/longhorn/storageclasses/`) for explicitly critical PVCs requiring 3-replica protection.
+- **Do not increase the default back to 3** without acknowledging the storage budget impact.
+
+### Longhorn sync-wave
+- `gitops/apps/longhorn.yaml` has `argocd.argoproj.io/sync-wave: "-1"` — **do not remove**. This ensures Longhorn converges and its StorageClass is ready before `kube-prometheus-stack` (wave 0) creates PVCs. Without it, Prometheus PVCs sit Pending for 10-30 minutes on first boot.
+
+### Upgrade plan PDB behaviour
+- `gitops/system-upgrade/plans.yaml` does NOT use `disableEviction: true` — **do not add it back**. With `disableEviction`, the server and agent upgrade plans can drain nodes simultaneously, reducing Longhorn to 1 replica during rebuild. Without it, the `longhorn-manager minAvailable: 2` PDB prevents concurrent drains.
+
+### Internal LB health check
+- `lb.tf` uses HTTP health check on `/readyz` (not TCP). A server with dead etcd fails `/readyz` but passes TCP. **Do not revert to TCP** — it would keep dead-etcd servers in the backend rotation.

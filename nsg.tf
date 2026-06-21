@@ -156,6 +156,23 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
   }
 }
 
+resource "oci_core_network_security_group_security_rule" "servers_allow_etcd_metrics" {
+  network_security_group_id = oci_core_network_security_group.servers.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  description               = "etcd metrics scrape from in-cluster Prometheus (:2381)"
+  source                    = var.private_subnet_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = 2381
+      max = 2381
+    }
+  }
+}
+
 resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_public" {
   count                     = var.expose_kubeapi ? 1 : 0
   network_security_group_id = oci_core_network_security_group.servers.id

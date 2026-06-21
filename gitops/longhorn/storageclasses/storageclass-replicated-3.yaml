@@ -1,0 +1,20 @@
+---
+# Optional 3-replica StorageClass for explicitly critical PVCs.
+# Reference with: storageClassName: longhorn-replicated-3
+# Tolerates 1-node loss without data loss (same guarantee as the old default).
+# Use sparingly — 3 replicas triples write amplification on shared 50 GB boot volumes.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-replicated-3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "3"
+  staleReplicaTimeout: "2880"
+  fromBackup: ""
+  fsType: "ext4"

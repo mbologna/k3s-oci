@@ -3,6 +3,10 @@ kind: Application
 metadata:
   name: longhorn
   namespace: argocd
+  annotations:
+    # Deploy before storage consumers (kube-prometheus-stack PVCs, alertmanager PVC).
+    # Wave -1 ensures Longhorn converges and StorageClass is ready before wave 0 apps.
+    argocd.argoproj.io/sync-wave: "-1"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -15,12 +19,21 @@ spec:
       helm:
         valuesObject:
           defaultSettings:
-            # 3 replicas: any single node can be lost without PVC data loss
-            defaultReplicaCount: 3
+            # 2 replicas: tolerates 1-node loss with ~33% less write amplification than 3.
+            # With 50 GB boot-only volumes (~30 GB usable after OS/images), 3 replicas
+            # leaves only ~20-30 GB cluster-wide PVC capacity. 2 replicas recovers usable
+            # storage while still surviving a single node failure.
+            # Use the longhorn-replicated-3 StorageClass for explicitly critical PVCs.
+            defaultReplicaCount: 2
+            # Ensure Longhorn instance-managers are not evicted under memory pressure
+            # ahead of lower-priority user workloads. An evicted instance-manager
+            # during a replica rebuild risks data loss.
+            priorityClass: system-cluster-critical
           persistence:
             # Make longhorn the default StorageClass so PVCs without explicit
             # storageClassName are satisfied automatically.
             defaultClass: true
+            defaultClassReplicaCount: 2
           # Disable pre-upgrade job: ArgoCD runs it on every sync (including
           # fresh installs) where longhorn-manager isn't running yet, causing
           # the job to fail and block the sync.
@@ -32,6 +45,11 @@ spec:
     - repoURL: https://github.com/mbologna/k3s-oci.git
       targetRevision: HEAD
       path: gitops/longhorn/webhook-postsync
+    # Extra StorageClass for explicitly critical PVCs requiring 3-replica protection.
+    # Reference with storageClassName: longhorn-replicated-3 on high-value PVCs.
+    - repoURL: https://github.com/mbologna/k3s-oci.git
+      targetRevision: HEAD
+      path: gitops/longhorn/storageclasses
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system

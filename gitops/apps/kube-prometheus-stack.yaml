@@ -11,21 +11,26 @@ spec:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
     # renovate: datasource=helm depName=kube-prometheus-stack registryUrl=https://prometheus-community.github.io/helm-charts
-    targetRevision: "85.4.0"
+    targetRevision: "86.3.2"
     helm:
       valuesObject:
         # Minimal footprint for 4-node A1.Flex cluster (ARM64, 6 GB RAM per node)
         defaultRules:
           create: true
           rules:
-            etcd: false        # k3s embeds etcd; external scraping not needed
+            # k3s exposes embedded etcd metrics on :2381 (--etcd-expose-metrics).
+            # EtcdInsufficientMembers / EtcdNoLeader / EtcdMembersDown are the
+            # primary signals for split-brain and quorum loss — must be enabled.
+            etcd: true
             kubeScheduler: false
 
         # Prometheus — small retention, low memory
         prometheus:
           prometheusSpec:
-            retention: 7d
-            retentionSize: "8GB"
+            # 3d retention (down from 7d): halves disk + memory pressure with
+            # negligible operational loss on a 4-node home cluster.
+            retention: 3d
+            retentionSize: "4GB"
             # ARM64 (A1.Flex) startup is slower — relax liveness probe to avoid false restarts
             livenessProbeFailureThreshold: 30
             livenessProbeTimeout: 10
@@ -34,7 +39,7 @@ spec:
                 memory: 512Mi
                 cpu: 100m
               limits:
-                memory: 2Gi   # 1Gi OOMKills on ARM64 with 7d retention; 2Gi is stable
+                memory: 1500Mi  # 1Gi OOMKilled on ARM64; 1500Mi stable with 3d retention
                 cpu: 500m
             storageSpec:
               volumeClaimTemplate:
@@ -43,7 +48,28 @@ spec:
                   accessModes: [ReadWriteOnce]
                   resources:
                     requests:
-                      storage: 10Gi
+                      storage: 5Gi  # halved from 10Gi to match 3d retention
+            # Scrape k3s embedded etcd metrics (exposed on :2381 via --etcd-expose-metrics).
+            # Uses kubernetes_sd_configs to dynamically discover control-plane node IPs,
+            # so no static IP configuration is needed.
+            additionalScrapeConfigs:
+              - job_name: k3s-etcd
+                scheme: http
+                kubernetes_sd_configs:
+                  - role: node
+                relabel_configs:
+                  # Only scrape control-plane nodes
+                  - source_labels: [__meta_kubernetes_node_label_node_role_kubernetes_io_control_plane]
+                    action: keep
+                    regex: "true"
+                  # Replace port with 2381
+                  - source_labels: [__address__]
+                    regex: '(.+?)(?::\d+)?$'
+                    replacement: '$1:2381'
+                    target_label: __address__
+                  - source_labels: [__meta_kubernetes_node_name]
+                    target_label: node
+                metrics_path: /metrics
 
         # Grafana — minimal, no persistence (dashboards via ConfigMaps)
         grafana:

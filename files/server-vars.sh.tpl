@@ -76,6 +76,25 @@ export OCI_REGION="${oci_region}"
 export DOCKERHUB_USERNAME="${dockerhub_username}"
 export DOCKERHUB_PASSWORD="${dockerhub_password}"
 
+# -- etcd snapshot upload (requires enable_etcd_snapshots + enable_object_storage_state) ----
+# Enables a cron job that uploads k3s etcd snapshots to OCI Object Storage every 6h.
+# Uses OCI CLI instance_principal auth — no Customer Secret Keys required.
+# ETCD_SNAPSHOT_BUCKET is empty when enable_etcd_snapshots = false.
+export ENABLE_ETCD_SNAPSHOTS="${enable_etcd_snapshots ? "true" : "false"}"
+export ETCD_SNAPSHOT_BUCKET="${etcd_snapshot_bucket}"
+export ETCD_SNAPSHOT_RETENTION="${etcd_snapshot_retention}"
+export OCI_OBJECT_NAMESPACE="${oci_object_namespace}"
+
+# -- Longhorn backup target (requires enable_longhorn_backup + user_ocid set) -----
+# When user_ocid is set, Terraform creates a Customer Secret Key and cloud-init
+# auto-wires the Longhorn BackupTarget. LONGHORN_BACKUP_* vars are empty when
+# enable_longhorn_backup = false or user_ocid is not set (manual wiring required).
+export ENABLE_LONGHORN_BACKUP="${enable_longhorn_backup ? "true" : "false"}"
+export LONGHORN_BACKUP_BUCKET="${longhorn_backup_bucket}"
+export LONGHORN_BACKUP_ENDPOINT="${longhorn_backup_endpoint}"
+export LONGHORN_BACKUP_ACCESS_KEY="${longhorn_backup_access_key}"
+export LONGHORN_BACKUP_SECRET_KEY="${longhorn_backup_secret_key}"
+
 # -- Shared SSH host key (base64-encoded to survive multi-line export) ----------
 export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
 export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"

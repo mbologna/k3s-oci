@@ -103,3 +103,10 @@ check "expose_ssh_makes_bastion_redundant" {
     error_message = "expose_ssh = true makes OCI Bastion Service redundant (set enable_bastion = false). Keeping both enabled wastes a Bastion resource and causes 15–30 min VNIC cleanup delays on destroy."
   }
 }
+
+check "etcd_snapshots_requires_object_storage" {
+  assert {
+    condition     = !var.enable_etcd_snapshots || var.enable_object_storage_state
+    error_message = "enable_etcd_snapshots = true requires enable_object_storage_state = true (the state bucket is used for etcd snapshot uploads via OCI CLI instance_principal)."
+  }
+}

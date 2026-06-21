@@ -1,5 +1,6 @@
 ---
-# PrometheusRule: alerts for node disk pressure and Longhorn volume health
+# PrometheusRule: alerts for node disk pressure, Longhorn health, etcd quorum,
+# node readiness, API server latency, and certificate expiry.
 # Managed by ArgoCD via monitoring-extras Application.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -82,3 +83,75 @@ spec:
           annotations:
             summary: "Longhorn node {{ $labels.node }} storage usage above 80%"
             description: "Longhorn node {{ $labels.node }} is using {{ $value | humanize }}% of its storage capacity."
+
+    - name: node.availability
+      interval: 1m
+      rules:
+        - alert: NodeNotReady
+          expr: |
+            kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.node }} is not Ready"
+            description: "Node {{ $labels.node }} has been in NotReady state for more than 5 minutes. This may indicate a kubelet crash, OOM, or etcd quorum loss."
+
+        - alert: NodeMemoryPressure
+          expr: |
+            kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.node }} is under memory pressure"
+            description: "Node {{ $labels.node }} is under memory pressure. Pods may be evicted. Check for OOM candidates with: kubectl describe node {{ $labels.node }}"
+
+    - name: apiserver.latency
+      interval: 1m
+      rules:
+        - alert: APIServerHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(apiserver_request_duration_seconds_bucket{
+                verb!~"WATCH|CONNECT",
+                subresource!="log"
+              }[5m])) by (le, verb, resource)
+            ) > 4
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API server p99 latency high for {{ $labels.verb }} {{ $labels.resource }}"
+            description: >
+              API server 99th-percentile latency for {{ $labels.verb }} {{ $labels.resource }}
+              exceeds 4s for 10 minutes. Possible etcd pressure or node resource exhaustion.
+
+    - name: certificates
+      interval: 1m
+      rules:
+        - alert: CertManagerCertificateExpiringSoon
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds - time() < 604800
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "cert-manager certificate {{ $labels.name }} expires in less than 7 days"
+            description: >
+              Certificate {{ $labels.namespace }}/{{ $labels.name }} will expire in
+              {{ $value | humanizeDuration }}. cert-manager should auto-renew;
+              check cert-manager logs if this persists.
+
+        - alert: CertManagerCertificateExpiredOrMissing
+          expr: |
+            certmanager_certificate_ready_status{condition="False"} == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "cert-manager certificate {{ $labels.name }} is not Ready"
+            description: >
+              Certificate {{ $labels.namespace }}/{{ $labels.name }} has condition Ready=False
+              for 10 minutes. TLS may be broken.
+              Check: kubectl describe certificate -n {{ $labels.namespace }} {{ $labels.name }}

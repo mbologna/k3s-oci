@@ -84,13 +84,19 @@ output "terraform_state_backend" {
 }
 
 output "longhorn_backup_setup" {
-  description = "Instructions to connect Longhorn to the OCI Object Storage backup bucket. Null if enable_longhorn_backup = false."
+  description = "Longhorn backup bucket info and wiring status. Null if enable_longhorn_backup = false."
   value = var.enable_longhorn_backup ? {
     bucket    = oci_objectstorage_bucket.longhorn_backup[0].name
     namespace = data.oci_objectstorage_namespace.k3s[0].namespace
-    step_1    = "Create OCI Customer Secret Key: Console → Identity → Users → <user> → Customer Secret Keys → Generate"
-    step_2    = "kubectl create secret generic longhorn-backup-secret --from-literal=AWS_ACCESS_KEY_ID='<key-id>' --from-literal=AWS_SECRET_ACCESS_KEY='<secret>' -n longhorn-system"
-    step_3    = "Uncomment and fill gitops/longhorn/backup-target.yaml with bucket '${oci_objectstorage_bucket.longhorn_backup[0].name}', namespace '${data.oci_objectstorage_namespace.k3s[0].namespace}'"
+    automated = var.user_ocid != null
+    note = var.user_ocid != null ? (
+      "Automated: cloud-init will create the longhorn-backup-secret and wire the BackupTarget."
+      ) : (
+      "Manual wiring required: set user_ocid in tfvars for full automation, or follow steps 1-3 below."
+    )
+    step_1 = var.user_ocid == null ? "Create OCI Customer Secret Key: Console → Identity → Users → <user> → Customer Secret Keys → Generate" : null
+    step_2 = var.user_ocid == null ? "kubectl create secret generic longhorn-backup-secret --from-literal=AWS_ACCESS_KEY_ID='<key-id>' --from-literal=AWS_SECRET_ACCESS_KEY='<secret>' -n longhorn-system" : null
+    step_3 = var.user_ocid == null ? "Uncomment and fill gitops/longhorn/backup-target.yaml with bucket '${oci_objectstorage_bucket.longhorn_backup[0].name}', namespace '${data.oci_objectstorage_namespace.k3s[0].namespace}'" : null
   } : null
 }
 

@@ -123,6 +123,20 @@ locals {
     dockerhub_password          = var.dockerhub_password
   }
 
+  # etcd snapshot upload and Longhorn backup target vars
+  _server_backup_vars = {
+    enable_etcd_snapshots   = var.enable_etcd_snapshots
+    etcd_snapshot_bucket    = var.enable_etcd_snapshots && var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
+    etcd_snapshot_retention = var.etcd_snapshot_retention
+    oci_object_namespace    = local.oci_object_namespace
+    enable_longhorn_backup  = var.enable_longhorn_backup
+    longhorn_backup_bucket  = var.enable_longhorn_backup ? "${var.cluster_name}-longhorn-backup" : ""
+    # S3-compatible endpoint for Longhorn backup: auto-set when user_ocid is provided.
+    longhorn_backup_endpoint   = var.enable_longhorn_backup && var.user_ocid != null ? "https://${local.oci_object_namespace}.compat.objectstorage.${coalesce(var.region, "us-ashburn-1")}.oraclecloud.com" : ""
+    longhorn_backup_access_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].id, "") : ""
+    longhorn_backup_secret_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].key, "") : ""
+  }
+
   # Hostname vars: IP-specific, derived at plan time from the NLB IP
   _server_hostname_vars = {
     grafana_hostname  = local.grafana_hostname
@@ -151,6 +165,7 @@ locals {
     local._server_secret_vars,
     local._server_feature_vars,
     local._server_optional_vars,
+    local._server_backup_vars,
     local._server_hostname_vars,
     local._server_debug_vars,
     local._server_os_vars,

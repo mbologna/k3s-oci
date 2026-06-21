@@ -436,8 +436,33 @@ variable "enable_object_storage_state" {
 
 variable "enable_longhorn_backup" {
   type        = bool
-  description = "Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups (S3-compatible). See longhorn_backup_setup output for connection instructions. Shares the 20 GB free allowance with the Terraform state bucket."
+  description = "Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups. Cloud-init automatically creates the backup credentials secret and wires the Longhorn BackupTarget when enable_longhorn_backup = true AND user_ocid is set. Shares the 20 GB free allowance with the Terraform state bucket."
   default     = true
+}
+
+variable "enable_etcd_snapshots" {
+  type        = bool
+  description = "Upload etcd snapshots to the OCI Object Storage state bucket every 6 hours using OCI CLI instance_principal auth (no Customer Secret Keys required). Requires enable_object_storage_state = true. Provides off-node etcd backup for split-brain recovery."
+  default     = true
+}
+
+variable "etcd_snapshot_retention" {
+  type        = number
+  description = "Number of etcd snapshots to retain in OCI Object Storage. Older snapshots are pruned automatically by the cron job."
+  default     = 5
+}
+
+variable "user_ocid" {
+  type        = string
+  description = <<-EOT
+    OCID of the OCI user running Terraform (format: ocid1.user.oc1..xxx).
+    Required when enable_longhorn_backup = true to automatically create a Customer
+    Secret Key for S3-compatible access, wire the Longhorn backup credentials
+    Kubernetes Secret, and apply the Longhorn BackupTarget in cloud-init.
+    When null, the Longhorn backup bucket is still created but wiring is manual
+    (follow the longhorn_backup_setup output instructions).
+  EOT
+  default     = null
 }
 
 # ── Notifications ─────────────────────────────────────────────────────────────

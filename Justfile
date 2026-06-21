@@ -47,6 +47,13 @@ update-gitops-url url:
 clean-oci-resources:
     ./scripts/clean-oci-resources.sh
 
+# Wire Longhorn backups to OCI Object Storage (interactive).
+# Use when user_ocid is not set in tfvars — creates Customer Secret Key, K8s Secret,
+# and applies the Longhorn BackupTarget. Requires kubectl + oci CLI configured.
+# Optional: CLUSTER_NAME env var (defaults to k3s-oci).
+setup-longhorn-backup:
+    ./scripts/setup-longhorn-backup.sh
+
 # Format all Terraform files
 fmt:
     tofu fmt -recursive .

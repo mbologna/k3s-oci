@@ -7,6 +7,7 @@ data "oci_objectstorage_namespace" "k3s" {
 }
 
 # Versioned bucket for Terraform/OpenTofu remote state (S3-compatible API).
+# Also used for etcd snapshot uploads (via OCI CLI instance_principal, no S3 creds needed).
 resource "oci_objectstorage_bucket" "terraform_state" {
   count          = var.enable_object_storage_state ? 1 : 0
   compartment_id = var.compartment_ocid
@@ -18,7 +19,6 @@ resource "oci_objectstorage_bucket" "terraform_state" {
 }
 
 # Dedicated bucket for Longhorn PVC backups (S3-compatible Longhorn backup target).
-# After apply, create an OCI Customer Secret Key and follow the longhorn_backup_setup output.
 resource "oci_objectstorage_bucket" "longhorn_backup" {
   count          = var.enable_longhorn_backup ? 1 : 0
   compartment_id = var.compartment_ocid
@@ -27,4 +27,14 @@ resource "oci_objectstorage_bucket" "longhorn_backup" {
   access_type    = "NoPublicAccess"
   versioning     = "Enabled"
   freeform_tags  = local.common_tags
+}
+
+# Customer Secret Key for Longhorn S3-compatible backup access.
+# Created automatically when user_ocid is provided; allows cloud-init to wire
+# the Longhorn BackupTarget without manual Console steps.
+# The secret key is stored in Terraform state (encrypted when using the S3 backend).
+resource "oci_identity_customer_secret_key" "longhorn_backup" {
+  count        = var.enable_longhorn_backup && var.user_ocid != null ? 1 : 0
+  display_name = "${var.cluster_name}-longhorn-backup"
+  user_id      = var.user_ocid
 }

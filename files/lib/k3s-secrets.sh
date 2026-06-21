@@ -160,4 +160,76 @@ stringData:
 EOF
     echo "Cloudflare credentials secret created for external-dns."
   fi
+
+  # Longhorn backup credentials -- pre-created when Terraform has provisioned a
+  # Customer Secret Key (LONGHORN_BACKUP_ACCESS_KEY is non-empty).
+  # The Longhorn BackupTarget is applied later in setup_longhorn_backup_target()
+  # after Longhorn CRDs are available.
+  if [[ "${ENABLE_LONGHORN_BACKUP:-false}" == "true" ]] && [[ -n "${LONGHORN_BACKUP_ACCESS_KEY:-}" ]]; then
+    kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -n longhorn-system -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: longhorn-backup-secret
+  namespace: longhorn-system
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "${LONGHORN_BACKUP_ACCESS_KEY}"
+  AWS_SECRET_ACCESS_KEY: "${LONGHORN_BACKUP_SECRET_KEY}"
+EOF
+    echo "Longhorn backup credentials secret pre-created (longhorn-backup-secret)."
+  fi
+}
+
+# setup_longhorn_backup_target
+# Applies the Longhorn BackupTarget, credential secret reference, and S3 endpoint settings.
+# Must be called AFTER Longhorn CRDs are available (i.e. after ArgoCD syncs longhorn app).
+# Called from run_bootstrap() alongside ingress configuration (both wait for ArgoCD convergence).
+
+setup_longhorn_backup_target() {
+  if [[ "${ENABLE_LONGHORN_BACKUP:-false}" != "true" ]] \
+     || [[ -z "${LONGHORN_BACKUP_BUCKET:-}" ]] \
+     || [[ -z "${LONGHORN_BACKUP_ACCESS_KEY:-}" ]]; then
+    echo "INFO: Longhorn backup target automation skipped (ENABLE_LONGHORN_BACKUP=${ENABLE_LONGHORN_BACKUP:-false} or missing credentials)."
+    return 0
+  fi
+
+  # Wait for Longhorn CRDs to be available (Longhorn is deployed by ArgoCD)
+  local max_wait=60 attempt=0
+  echo "Waiting for Longhorn CRDs (longhorn-system) ..."
+  until kubectl get crd settings.longhorn.io &>/dev/null 2>&1; do
+    attempt=$(( attempt + 1 ))
+    if [[ ${attempt} -ge ${max_wait} ]]; then
+      echo "WARNING: Longhorn CRDs not ready after ${max_wait} attempts — backup target setup deferred."
+      echo "  Run: kubectl apply -f gitops/longhorn/backup-target.yaml (after filling in values)"
+      return 0
+    fi
+    sleep 15
+  done
+
+  echo "Applying Longhorn BackupTarget settings..."
+  kubectl apply -f - <<EOF
+apiVersion: longhorn.io/v1beta2
+kind: Setting
+metadata:
+  name: backup-target
+  namespace: longhorn-system
+value: "s3://${LONGHORN_BACKUP_BUCKET}@${OCI_REGION:-${OCI_OBJECT_NAMESPACE}}/"
+---
+apiVersion: longhorn.io/v1beta2
+kind: Setting
+metadata:
+  name: backup-target-credential-secret
+  namespace: longhorn-system
+value: "longhorn-backup-secret"
+---
+apiVersion: longhorn.io/v1beta2
+kind: Setting
+metadata:
+  name: s3-compatible-endpoint
+  namespace: longhorn-system
+value: "${LONGHORN_BACKUP_ENDPOINT}"
+EOF
+  echo "Longhorn BackupTarget configured: s3://${LONGHORN_BACKUP_BUCKET} via ${LONGHORN_BACKUP_ENDPOINT}"
 }

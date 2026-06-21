@@ -54,5 +54,9 @@ run_bootstrap() {
   configure_longhorn_ingress || echo "WARNING: configure_longhorn_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
   configure_argocd_ingress   || echo "WARNING: configure_argocd_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
 
+  # Longhorn backup target: applied here (alongside ingress config) because both
+  # wait for ArgoCD to sync the longhorn app and CRDs to be available.
+  setup_longhorn_backup_target || echo "WARNING: setup_longhorn_backup_target failed — see logs for details."
+
   echo "==> Bootstrap complete. ArgoCD will reconcile remaining stack via gitops/."
 }

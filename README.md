@@ -494,9 +494,9 @@ terraform {
 
 | Component | Tolerance | What happens on failure |
 |---|---|---|
-| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (3 replicas) keeps storage up; Envoy Gateway DaemonSet keeps ingress up on remaining nodes |
+| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (2 replicas) keeps storage up; Envoy Gateway DaemonSet keeps ingress up on remaining nodes |
 | **2 nodes simultaneously** | ⚠️ Partial | Workloads and ingress continue on 2 surviving nodes; **if both failed nodes are control-planes**, etcd quorum is lost and the API server stops accepting writes (running pods keep running, no new scheduling) |
-| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore |
+| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore — see [Split-Brain Recovery](#split-brain-recovery) |
 | **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
 | **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
 | **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
@@ -622,6 +622,111 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 #### Using any other OS image
 
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
+
+
+## Split-Brain Recovery
+
+A **split-brain** occurs when multiple k3s server nodes each bootstrap an independent etcd cluster (`--cluster-init`) instead of joining a single shared one. Symptoms: `kubectl get nodes` shows only 1 node (not 3), or etcd member IDs differ across servers, or the cluster survives a reboot but each server has different state.
+
+### Detection
+
+```bash
+# On each server node (via SSH):
+sudo k3s kubectl get nodes          # should show all 3 servers
+sudo k3s etcd-snapshot ls           # should show same snapshots on all servers
+/usr/local/bin/k3s etcd-snapshot ls 2>&1 | grep -E "^etcd"
+
+# Check etcd member list (run on each server):
+sudo ETCDCTL_API=3 \
+  ETCDCTL_CACERT=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
+  ETCDCTL_CERT=/var/lib/rancher/k3s/server/tls/etcd/server-client.crt \
+  ETCDCTL_KEY=/var/lib/rancher/k3s/server/tls/etcd/server-client.key \
+  etcdctl member list
+# If IDs differ between servers → split-brain confirmed
+```
+
+### Recovery from etcd snapshot (recommended)
+
+```bash
+# 1. Identify the best snapshot. List snapshots in OCI Object Storage:
+#    (if enable_etcd_snapshots = true, snapshots are uploaded every 6h)
+oci os object list \
+  --namespace <your-namespace> \
+  --bucket-name <cluster-name>-terraform-state \
+  --prefix "etcd-snapshots/<cluster-name>/" \
+  --query 'sort_by(data, &"time-created")[-1]."name"' --raw-output
+
+# 2. Download the best snapshot to the elected first server:
+oci os object get \
+  --namespace <your-namespace> \
+  --bucket-name <cluster-name>-terraform-state \
+  --name etcd-snapshots/<cluster-name>/<snapshot-file> \
+  --file /tmp/etcd-restore.db
+
+# 3. Stop k3s on ALL server nodes:
+sudo systemctl stop k3s
+
+# 4. On the first server: reset etcd and restore from snapshot.
+#    WARNING: this wipes all current etcd state on this node.
+sudo k3s server --cluster-reset \
+  --cluster-reset-restore-path=/tmp/etcd-restore.db &
+# Wait for the reset to complete (watch journalctl -u k3s), then stop it:
+sudo pkill -f "k3s server --cluster-reset"
+
+# 5. On the REMAINING server nodes: wipe local etcd data and re-join.
+#    WARNING: this wipes all etcd state on these nodes (they will re-sync from step 4).
+sudo rm -rf /var/lib/rancher/k3s/server/db/
+sudo rm -f  /var/lib/rancher/k3s/server/token
+
+# 6. Start k3s on the first server first:
+sudo systemctl start k3s
+sleep 30  # wait for it to become the etcd leader
+
+# 7. Start k3s on the remaining servers (they will join the restored cluster):
+sudo systemctl start k3s  # (on each remaining server)
+
+# 8. Verify all members rejoined:
+sudo k3s kubectl get nodes
+```
+
+### Recovery without snapshot (last resort)
+
+```bash
+# 1. Stop k3s on ALL server nodes.
+# 2. On the intended first server ONLY, reset with no snapshot:
+sudo k3s server --cluster-reset &
+# Wait, then stop it.
+# 3. Wipe db/ and token on remaining servers (same as step 5 above).
+# 4. Start the first server, wait 30s, then start the others.
+# Note: without a snapshot you lose all etcd state from the previous cluster.
+```
+
+### Deleting a stale leader lock (after full rebuild)
+
+```bash
+# If cloud-init aborts with "leader lock held by running instance" after a
+# tofu destroy + tofu apply, the old lock is still in Object Storage.
+# Delete it before re-applying, or it will be cleared automatically if the
+# holder instance is no longer RUNNING.
+oci os object delete \
+  --namespace <your-namespace> \
+  --bucket-name <cluster-name>-terraform-state \
+  --name cluster-init-lock \
+  --force
+```
+
+## NLB IP stability
+
+The public NLB has `prevent_destroy = true` so its IP is stable across `tofu apply` runs.
+However, if the NLB is **ever recreated** (e.g. after `tofu state rm` + re-apply):
+
+- All `sslip.io` hostnames change (e.g. `grafana.<old-ip>.sslip.io` → `grafana.<new-ip>.sslip.io`)
+- Let's Encrypt certificates are invalid for the new hostnames and must be reissued
+- With a custom domain + `enable_external_dns = true`, ExternalDNS updates DNS automatically and cert-manager auto-renews
+
+**If using sslip.io defaults**, run `tofu apply` again after NLB recreation — `local.grafana_hostname`, `local.argocd_hostname` recompute automatically from the new IP, cloud-init re-creates the Gateway listeners and certificates, and cert-manager reissues via Let's Encrypt.
+
+> The first-server TIMECREATED election is stable in practice but not contractually guaranteed when pool instances share the same creation timestamp. In the rare case of a timestamp tie, `jq | first` returns a stable (but undefined) ordering based on API response. The atomic leader lock (`cluster-init-lock` in the state bucket) provides the final safety guarantee independent of election ordering.
 
 ## License
 

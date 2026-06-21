@@ -24,7 +24,9 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    disableEviction: true
+    # disableEviction removed: PDBs must be respected so the longhorn-manager
+    # minAvailable:2 PDB prevents draining a second control-plane node while
+    # another is already upgrading (which would drop Longhorn to 1 replica).
     skipWaitForDeleteTimeout: 60
   upgrade:
     image: rancher/k3s-upgrade
@@ -44,7 +46,7 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    disableEviction: true
+    # disableEviction removed: same reasoning as server plan — respect PDBs.
     skipWaitForDeleteTimeout: 60
   prepare:
     image: rancher/k3s-upgrade

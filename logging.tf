@@ -35,11 +35,22 @@ resource "oci_logging_log" "cloud_init" {
   retention_duration = 30
 }
 
+resource "oci_logging_log" "k3s_runtime" {
+  count         = var.enable_oci_logging ? 1 : 0
+  display_name  = "${var.cluster_name}-k3s-runtime"
+  log_group_id  = oci_logging_log_group.k3s[0].id
+  log_type      = "CUSTOM"
+  freeform_tags = local.common_tags
+
+  is_enabled         = true
+  retention_duration = 30
+}
+
 resource "oci_logging_unified_agent_configuration" "k3s_cloud_init" {
   count          = var.enable_oci_logging ? 1 : 0
   compartment_id = var.compartment_ocid
   display_name   = "${var.cluster_name}-cloud-init-agent-config"
-  description    = "Ship k3s cloud-init logs to OCI Logging"
+  description    = "Ship k3s cloud-init and runtime logs to OCI Logging"
   is_enabled     = true
   freeform_tags  = local.common_tags
 
@@ -58,6 +69,39 @@ resource "oci_logging_unified_agent_configuration" "k3s_cloud_init" {
       source_type = "LOG_TAIL"
       name        = "k3s-cloud-init"
       paths       = ["/var/log/k3s-cloud-init.log"]
+      parser {
+        parser_type = "NONE"
+      }
+    }
+  }
+}
+
+# Separate agent config for k3s runtime logs (journald / service log).
+# Runtime crashes, etcd panics, and OOM events are captured here and survive
+# even if the boot volume is lost (logs are already in OCI Logging at that point).
+resource "oci_logging_unified_agent_configuration" "k3s_runtime" {
+  count          = var.enable_oci_logging ? 1 : 0
+  compartment_id = var.compartment_ocid
+  display_name   = "${var.cluster_name}-k3s-runtime-agent-config"
+  description    = "Ship k3s service runtime logs to OCI Logging"
+  is_enabled     = true
+  freeform_tags  = local.common_tags
+
+  group_association {
+    group_list = [oci_identity_dynamic_group.k3s.id]
+  }
+
+  service_configuration {
+    configuration_type = "LOGGING"
+
+    destination {
+      log_object_id = oci_logging_log.k3s_runtime[0].id
+    }
+
+    sources {
+      source_type = "LOG_TAIL"
+      name        = "k3s-service"
+      paths       = ["/var/log/k3s*.log", "/var/log/syslog"]
       parser {
         parser_type = "NONE"
       }

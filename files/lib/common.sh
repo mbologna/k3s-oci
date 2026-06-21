@@ -93,7 +93,100 @@ resolve_flannel_params() {
   fi
 }
 
-# fetch_from_vault <secret_ocid>
+# setup_etcd_snapshot_upload
+# Installs a cron job that takes a k3s etcd snapshot and uploads it to OCI Object
+# Storage every 6 hours using OCI CLI instance_principal auth (no S3 credentials).
+# Requires ETCD_SNAPSHOT_BUCKET and OCI_OBJECT_NAMESPACE to be non-empty.
+# Only called on the first (elected) server node.
+
+setup_etcd_snapshot_upload() {
+  if [[ "${ENABLE_ETCD_SNAPSHOTS:-false}" != "true" ]] \
+     || [[ -z "${ETCD_SNAPSHOT_BUCKET:-}" ]] \
+     || [[ -z "${OCI_OBJECT_NAMESPACE:-}" ]]; then
+    echo "INFO: etcd snapshot upload not configured (ENABLE_ETCD_SNAPSHOTS=${ENABLE_ETCD_SNAPSHOTS:-false})."
+    return 0
+  fi
+
+  local upload_script="/usr/local/bin/etcd-snapshot-upload.sh"
+  local retain="${ETCD_SNAPSHOT_RETENTION:-5}"
+
+  cat > "${upload_script}" << 'ETCD_SCRIPT'
+#!/usr/bin/env bash
+# Cron-managed etcd snapshot upload to OCI Object Storage via instance_principal.
+# Installed by cloud-init; edit /etc/cron.d/etcd-snapshot-upload to reschedule.
+set -euo pipefail
+
+export OCI_CLI_AUTH=instance_principal
+export PATH="/root/bin:$PATH"
+
+SNAPSHOT_DIR="/var/lib/rancher/k3s/server/db/snapshots"
+BUCKET="__ETCD_BUCKET__"
+NAMESPACE="__OCI_NAMESPACE__"
+CLUSTER="__CLUSTER_NAME__"
+RETAIN=__RETAIN__
+
+SNAPSHOT_NAME="etcd-snapshot-${CLUSTER}-$(date -u +%Y%m%d-%H%M%S)"
+echo "[$(date -u)] Creating etcd snapshot: ${SNAPSHOT_NAME}"
+
+k3s etcd-snapshot save --name "${SNAPSHOT_NAME}" 2>&1 || {
+  echo "[$(date -u)] ERROR: k3s etcd-snapshot save failed." >&2
+  exit 1
+}
+
+SNAPSHOT_FILE=$(find "${SNAPSHOT_DIR}" -name "${SNAPSHOT_NAME}*" -type f | head -1)
+if [[ -z "${SNAPSHOT_FILE}" ]]; then
+  echo "[$(date -u)] ERROR: Snapshot file not found for ${SNAPSHOT_NAME}" >&2
+  exit 1
+fi
+
+echo "[$(date -u)] Uploading $(basename "${SNAPSHOT_FILE}") to oci://${BUCKET}/etcd-snapshots/${CLUSTER}/"
+oci os object put \
+  --namespace "${NAMESPACE}" \
+  --bucket-name "${BUCKET}" \
+  --name "etcd-snapshots/${CLUSTER}/$(basename "${SNAPSHOT_FILE}")" \
+  --file "${SNAPSHOT_FILE}" \
+  --no-multipart
+
+echo "[$(date -u)] Pruning old snapshots (keeping last ${RETAIN})..."
+oci os object list \
+  --namespace "${NAMESPACE}" \
+  --bucket-name "${BUCKET}" \
+  --prefix "etcd-snapshots/${CLUSTER}/" \
+  --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \
+  --raw-output 2>/dev/null \
+  | python3 -c "import sys,json; [print(x) for x in (json.load(sys.stdin) or [])]" 2>/dev/null \
+  | while IFS= read -r old_obj; do
+      [[ -z "${old_obj}" ]] && continue
+      echo "[$(date -u)]   Deleting: ${old_obj}"
+      oci os object delete \
+        --namespace "${NAMESPACE}" \
+        --bucket-name "${BUCKET}" \
+        --object-name "${old_obj}" \
+        --force 2>/dev/null || true
+    done
+
+echo "[$(date -u)] etcd snapshot upload complete."
+ETCD_SCRIPT
+
+  # Substitute placeholders with actual values
+  sed -i "s|__ETCD_BUCKET__|${ETCD_SNAPSHOT_BUCKET}|g" "${upload_script}"
+  sed -i "s|__OCI_NAMESPACE__|${OCI_OBJECT_NAMESPACE}|g" "${upload_script}"
+  sed -i "s|__CLUSTER_NAME__|${CLUSTER_NAME}|g" "${upload_script}"
+  sed -i "s|__RETAIN__|${retain}|g" "${upload_script}"
+  chmod +x "${upload_script}"
+
+  # Schedule: every 6 hours at minute 0
+  echo "0 */6 * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
+    > /etc/cron.d/etcd-snapshot-upload
+
+  # Run initial snapshot immediately to verify the path works
+  echo "Running initial etcd snapshot upload..."
+  "${upload_script}" || echo "WARNING: Initial snapshot upload failed — check /var/log/etcd-snapshot-upload.log"
+
+  echo "etcd snapshot cron job installed (every 6 hours; retaining last ${retain} snapshots)."
+}
+
+
 # Retries up to 20 times (30s gap = ~10 min) to handle IAM dynamic-group
 # propagation delay on newly launched instances.
 # Diagnostic output goes to stderr so it appears in the log even when this
