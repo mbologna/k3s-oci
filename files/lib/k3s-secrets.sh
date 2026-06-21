@@ -141,7 +141,7 @@ EOF
   #   CREATE DATABASE \`${CLUSTER_NAME}\`;
   #
   # IMPORTANT: This secret is placed in the 'default' namespace, which has a default-deny
-  # egress NetworkPolicy (gitops/network-policies/default.yaml). Apps consuming this secret
+  # egress NetworkPolicy (gitops/network-policies/default-deny.yaml). Apps consuming this secret
   # that need to reach MySQL on port 3306 MUST add their own NetworkPolicy, for example:
   #
   #   apiVersion: networking.k8s.io/v1

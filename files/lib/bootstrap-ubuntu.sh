@@ -123,7 +123,7 @@ $nrconf{restart} = 'a';
 $nrconf{blacklist_rc} = [qr(^k3s)];
 NREOF
 
-  # Override apt-daily-upgrade.timer to run daily at 01:00 UTC (+/-10 min jitter).
+  # Override apt-daily-upgrade.timer to run daily at 01:00 UTC (0–30 min jitter; RandomizedDelaySec=1800).
   # unattended-upgrade uses 50unattended-upgrades (all security + stable origins).
   # apt.conf.d/ lists are additive — a "security-only" override file in apt.conf.d/
   # appends to, not replaces, the existing origin list, so a separate "security-only"
