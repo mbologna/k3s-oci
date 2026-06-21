@@ -61,6 +61,7 @@ configure_unattended_upgrades() {
   #   0   = success, no reboot/restart needed
   #   100 = success, some running processes need restart (no reboot)
   #   102 = success, kernel or firmware updated — reboot required
+  #   103 = package-manager patch installed; re-run to apply remaining patches
   #   any other non-zero = error
   #
   # On exit 102: create /var/run/reboot-required so kured's default sentinel
@@ -95,7 +96,7 @@ done
 
 case "$rc" in
   0)
-    exit 0
+    # No restart or reboot needed.
     ;;
   100)
     # Restart affected userspace services (needrestart equivalent).
@@ -105,16 +106,30 @@ case "$rc" in
       | grep -v '^k3s' \
       | sort -u \
       | xargs -r systemctl try-restart 2>/dev/null || true
-    exit 0
     ;;
   102)
+    # Restart affected services first, then flag for kured reboot.
+    zypper ps 2>/dev/null \
+      | awk -F'|' 'NR>2 && $6 ~ /\.service$/ { gsub(/ /,"",$6); print $6 }' \
+      | grep -v '^k3s' \
+      | sort -u \
+      | xargs -r systemctl try-restart 2>/dev/null || true
     touch /var/run/reboot-required
-    exit 0
+    ;;
+  103)
+    # Package-manager patch was installed; re-run once to apply remaining patches.
+    # zypper exit 103 = ZYPPER_EXIT_INF_RESTART_NEEDED (not an error — informational).
+    zypper --non-interactive patch "$@" --auto-agree-with-licenses || rc=$?
+    case "$rc" in
+      0|100|102) : ;;
+      *) exit "$rc" ;;
+    esac
     ;;
   *)
     exit "$rc"
     ;;
 esac
+exit 0
 PATCHEOF
   chmod 755 /usr/local/sbin/zypper-patch-with-sentinel
 

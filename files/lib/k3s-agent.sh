@@ -64,7 +64,9 @@ configure_unattended_upgrades
 configure_longhorn_prereqs
 
 # Resolve K3S_TOKEN from OCI Vault or plaintext fallback.
-# "needs_oci_cli" installs OCI CLI only when vault is enabled (agents don't install it unconditionally).
+# "needs_oci_cli" installs OCI CLI unconditionally on agents (servers install it earlier
+# in install_k3s_server). The CLI is always available for Vault fetching and etcd snapshot
+# uploads if those features are enabled.
 resolve_k3s_token needs_oci_cli
 
 install_k3s_agent

@@ -38,7 +38,7 @@ bootstrap() {
 
   # Stop Ubuntu's apt-daily timers AND services so they don't race with our apt calls.
   # Stopping only services is insufficient — timers would re-trigger them immediately.
-  # configure_unattended_upgrades() re-enables ALL three timers after we're done.
+  # configure_unattended_upgrades() restarts both timers after we're done.
   systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
   systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
   wait_apt_lock
@@ -123,57 +123,22 @@ $nrconf{restart} = 'a';
 $nrconf{blacklist_rc} = [qr(^k3s)];
 NREOF
 
-  # Security-only origins -- used by apt-security-upgrade.timer (daily).
-  # Non-security origins are handled by apt-daily-upgrade (Tue/Wed/Thu).
-  cat > /etc/apt/apt.conf.d/52security-only.conf << 'SECEOF'
-Unattended-Upgrade::Allowed-Origins {
-    "${distro_id}:${distro_codename}-security";
-    "${distro_id}ESMApps:${distro_codename}-apps-security";
-    "${distro_id}ESM:${distro_codename}-infra-security";
-};
-SECEOF
-
-  # Daily security-only upgrade service + timer at 00:30 UTC (+/-30 min jitter).
-  # ExecStartPre refreshes apt indices so the service is self-contained — it does
-  # not depend on apt-daily.timer having run first (important on fresh nodes and
-  # after apt-daily.timer is restarted below).
-  cat > /etc/systemd/system/apt-security-upgrade.service << 'SVCEOF'
-[Unit]
-Description=Daily security-only unattended upgrades
-Documentation=man:unattended-upgrade(8)
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStartPre=/usr/bin/apt-get update -q
-ExecStart=/usr/bin/unattended-upgrade --apt-conf /etc/apt/apt.conf.d/52security-only.conf
-SVCEOF
-
-  cat > /etc/systemd/system/apt-security-upgrade.timer << 'TMREOF'
-[Unit]
-Description=Run security-only unattended upgrades daily
-
-[Timer]
-OnCalendar=*-*-* 00:30:00 UTC
-RandomizedDelaySec=1800
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-TMREOF
-
-  # Non-security upgrades: Tue/Wed/Thu at 01:00 UTC (+/-10 min jitter).
+  # Override apt-daily-upgrade.timer to run daily at 01:00 UTC (+/-10 min jitter).
+  # unattended-upgrade uses 50unattended-upgrades (all security + stable origins).
+  # apt.conf.d/ lists are additive — a "security-only" override file in apt.conf.d/
+  # appends to, not replaces, the existing origin list, so a separate "security-only"
+  # timer cannot be implemented without APT_CONFIG isolation; one daily run is correct.
+  # kured manages reboots; needrestart handles in-place daemon restarts above.
   mkdir -p /etc/systemd/system/apt-daily-upgrade.timer.d
   cat > /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf << 'TIMEREOF'
 [Timer]
 OnCalendar=
-OnCalendar=Tue,Wed,Thu *-*-* 01:00:00 UTC
-RandomizedDelaySec=600
+OnCalendar=*-*-* 01:00:00 UTC
+RandomizedDelaySec=1800
 Persistent=true
 TIMEREOF
 
   systemctl daemon-reload
-  systemctl enable --now apt-security-upgrade.timer
   systemctl restart apt-daily.timer apt-daily-upgrade.timer
 
   systemctl enable --now unattended-upgrades
