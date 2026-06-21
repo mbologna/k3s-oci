@@ -225,7 +225,16 @@ claim_first_server_lock() {
     return 0
   fi
 
-  # Same cluster — check if the lock holder's instance is still running.
+  # Same cluster — handle self-owned lock first (cloud-init re-run after failed init).
+  # If this instance holds the lock from a previous (failed) --cluster-init attempt,
+  # treat it as ours and proceed — otherwise we'd resolve FIRST_SERVER_IP to our own
+  # IP and wait 1800s for an apiserver that will never start on this node.
+  if [[ -n "${existing_ocid}" && "${existing_ocid}" == "${my_ocid}" ]]; then
+    echo "  Lock already held by THIS instance (previous failed init) — proceeding with --cluster-init."
+    return 0
+  fi
+
+  # Check if a different holder's instance is still running.
   if [[ -n "${existing_ocid}" && "${existing_ocid}" != "${my_ocid}" ]]; then
     local holder_state
     holder_state=$(oci compute instance get \

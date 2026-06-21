@@ -139,6 +139,25 @@ EOF
   # NOTE: CLUSTER_NAME is used as the db name in the JDBC URL. CLUSTER_NAME allows hyphens;
   # MySQL identifiers with hyphens must be quoted with backticks in SQL. Create the DB as:
   #   CREATE DATABASE \`${CLUSTER_NAME}\`;
+  #
+  # IMPORTANT: This secret is placed in the 'default' namespace, which has a default-deny
+  # egress NetworkPolicy (gitops/network-policies/default.yaml). Apps consuming this secret
+  # that need to reach MySQL on port 3306 MUST add their own NetworkPolicy, for example:
+  #
+  #   apiVersion: networking.k8s.io/v1
+  #   kind: NetworkPolicy
+  #   metadata:
+  #     name: allow-mysql-egress
+  #     namespace: default   # (or whichever namespace your app runs in)
+  #   spec:
+  #     podSelector: {}      # or match your specific app pods
+  #     policyTypes: [Egress]
+  #     egress:
+  #       - ports:
+  #           - port: 3306
+  #             protocol: TCP
+  #
+  # The OCI private subnet NSG already allows inbound 3306 from k3s node CIDR.
   if [[ -n "${MYSQL_ENDPOINT}" ]]; then
     kubectl apply -n default -f - <<EOF
 apiVersion: v1

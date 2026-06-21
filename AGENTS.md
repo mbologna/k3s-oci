@@ -285,9 +285,9 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
 
 ### Longhorn storage
-- Replica count is **explicitly pinned to 3** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=3` and `persistence.defaultClassReplicaCount=3`. Do not rely on the upstream chart default.
+- Replica count is **explicitly pinned to 2** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=2` and `persistence.defaultClassReplicaCount=2`. Do not rely on the upstream chart default. **Do not increase the default back to 3** — with 50 GB boot-only volumes (~30 GB usable after OS/images/etcd), 3 replicas leaves only ~20-30 GB cluster-wide PVC capacity.
 - Longhorn is managed entirely by ArgoCD (`gitops/apps/longhorn.yaml`). Cloud-init does NOT install Longhorn.
-- With 4 nodes and 3 replicas, any single node can be lost without PVC data loss.
+- With 4 nodes and 2 replicas, any single node can be lost without PVC data loss. A second concurrent node loss leaves only 1 replica (at-risk). Use `longhorn-replicated-3` StorageClass (`gitops/longhorn/storageclasses/`) for critical PVCs that must survive 2 simultaneous node losses.
 - The etcd HA ceiling applies independently: losing 2 control-plane nodes loses etcd quorum regardless of Longhorn replica count.
 
 ### Longhorn UI BasicAuth

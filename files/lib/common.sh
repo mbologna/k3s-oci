@@ -170,7 +170,7 @@ oci os object list \
   --prefix "${NODE_PREFIX}/" \
   --fields name,timeCreated \
   --all \
-  --query "sort_by(data, &\"timeCreated\")[:-${RETAIN}].name" \
+  --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \
   --raw-output 2>/dev/null \
   | python3 -c "import sys,json; [print(x) for x in (json.load(sys.stdin) or [])]" 2>/dev/null \
   | while IFS= read -r old_obj; do

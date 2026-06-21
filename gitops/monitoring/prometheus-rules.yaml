@@ -24,32 +24,8 @@ spec:
           annotations:
             summary: "Node {{ $labels.node }} is under disk pressure"
             description: "Node {{ $labels.node }} has been under disk pressure for more than 2 minutes. Free up space or expand the boot volume."
-
-        - alert: NodeDiskSpaceLow
-          expr: |
-            (
-              node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
-              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
-            ) * 100 < 15
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Node {{ $labels.instance }} disk space below 15%"
-            description: "Node {{ $labels.instance }} has less than 15% free disk space on /. Current: {{ $value | humanize }}%"
-
-        - alert: NodeDiskSpaceCritical
-          expr: |
-            (
-              node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
-              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
-            ) * 100 < 5
-          for: 2m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Node {{ $labels.instance }} disk space critically low (<5%)"
-            description: "Node {{ $labels.instance }} has less than 5% free disk space on /. Immediate action required."
+        # NodeDiskSpaceLow and NodeDiskSpaceCritical have been consolidated into
+        # NodeDiskUsageHigh and NodeDiskUsageCritical in the node.filesystem group below.
 
     - name: longhorn.volume
       interval: 1m
