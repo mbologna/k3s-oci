@@ -97,7 +97,8 @@ resolve_flannel_params() {
 # Installs a cron job that takes a k3s etcd snapshot and uploads it to OCI Object
 # Storage every 6 hours using OCI CLI instance_principal auth (no S3 credentials).
 # Requires ETCD_SNAPSHOT_BUCKET and OCI_OBJECT_NAMESPACE to be non-empty.
-# Only called on the first (elected) server node.
+# Installed on ALL server nodes. Each server stores snapshots under its own
+# hostname prefix so snapshots don't collide and prune is per-node independent.
 
 setup_etcd_snapshot_upload() {
   if [[ "${ENABLE_ETCD_SNAPSHOTS:-false}" != "true" ]] \
@@ -110,10 +111,19 @@ setup_etcd_snapshot_upload() {
   local upload_script="/usr/local/bin/etcd-snapshot-upload.sh"
   local retain="${ETCD_SNAPSHOT_RETENTION:-5}"
 
+  # Compute a stable per-node cron offset (0, 2, or 4 min) from the last octet
+  # of the primary IP to stagger all 3 server crons so they don't run at exactly
+  # the same minute. Prevents concurrent k3s etcd-snapshot save calls and prune
+  # races on the same Object Storage prefix.
+  local node_ip cron_offset
+  node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "0.0.0.0")
+  cron_offset=$(( (${node_ip##*.} % 3) * 2 ))
+
   cat > "${upload_script}" << 'ETCD_SCRIPT'
 #!/usr/bin/env bash
 # Cron-managed etcd snapshot upload to OCI Object Storage via instance_principal.
 # Installed by cloud-init; edit /etc/cron.d/etcd-snapshot-upload to reschedule.
+# Each server stores snapshots under its own hostname prefix to prevent collisions.
 set -euo pipefail
 
 export OCI_CLI_AUTH=instance_principal
@@ -124,8 +134,9 @@ BUCKET="__ETCD_BUCKET__"
 NAMESPACE="__OCI_NAMESPACE__"
 CLUSTER="__CLUSTER_NAME__"
 RETAIN=__RETAIN__
+NODE_NAME="$(hostname -s)"
 
-SNAPSHOT_NAME="etcd-snapshot-${CLUSTER}-$(date -u +%Y%m%d-%H%M%S)"
+SNAPSHOT_NAME="etcd-snapshot-${CLUSTER}-${NODE_NAME}-$(date -u +%Y%m%d-%H%M%S)"
 echo "[$(date -u)] Creating etcd snapshot: ${SNAPSHOT_NAME}"
 
 k3s etcd-snapshot save --name "${SNAPSHOT_NAME}" 2>&1 || {
@@ -139,19 +150,21 @@ if [[ -z "${SNAPSHOT_FILE}" ]]; then
   exit 1
 fi
 
-echo "[$(date -u)] Uploading $(basename "${SNAPSHOT_FILE}") to oci://${BUCKET}/etcd-snapshots/${CLUSTER}/"
+# Per-node prefix isolates each server's snapshots — prune is per-node only.
+NODE_PREFIX="etcd-snapshots/${CLUSTER}/${NODE_NAME}"
+echo "[$(date -u)] Uploading $(basename "${SNAPSHOT_FILE}") to oci://${BUCKET}/${NODE_PREFIX}/"
 oci os object put \
   --namespace "${NAMESPACE}" \
   --bucket-name "${BUCKET}" \
-  --name "etcd-snapshots/${CLUSTER}/$(basename "${SNAPSHOT_FILE}")" \
+  --name "${NODE_PREFIX}/$(basename "${SNAPSHOT_FILE}")" \
   --file "${SNAPSHOT_FILE}" \
   --no-multipart
 
-echo "[$(date -u)] Pruning old snapshots (keeping last ${RETAIN})..."
+echo "[$(date -u)] Pruning old snapshots for ${NODE_NAME} (keeping last ${RETAIN})..."
 oci os object list \
   --namespace "${NAMESPACE}" \
   --bucket-name "${BUCKET}" \
-  --prefix "etcd-snapshots/${CLUSTER}/" \
+  --prefix "${NODE_PREFIX}/" \
   --all \
   --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \
   --raw-output 2>/dev/null \
@@ -176,15 +189,15 @@ ETCD_SCRIPT
   sed -i "s|__RETAIN__|${retain}|g" "${upload_script}"
   chmod +x "${upload_script}"
 
-  # Schedule: every 6 hours at minute 0
-  echo "0 */6 * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
+  # Staggered schedule: offset 0, 2, or 4 min based on node IP last octet.
+  echo "${cron_offset} */6 * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
     > /etc/cron.d/etcd-snapshot-upload
 
   # Run initial snapshot immediately to verify the path works
   echo "Running initial etcd snapshot upload..."
   "${upload_script}" || echo "WARNING: Initial snapshot upload failed — check /var/log/etcd-snapshot-upload.log"
 
-  echo "etcd snapshot cron job installed (every 6 hours; retaining last ${retain} snapshots)."
+  echo "etcd snapshot cron job installed (every 6h at minute ${cron_offset}; retaining last ${retain} snapshots per node)."
 }
 
 

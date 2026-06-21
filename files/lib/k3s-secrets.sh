@@ -172,6 +172,9 @@ EOF
 
   # Longhorn backup credentials -- pre-created when Terraform has provisioned a
   # Customer Secret Key (LONGHORN_BACKUP_ACCESS_KEY is non-empty).
+  # AWS_ENDPOINTS is required for OCI S3-compatible storage: Longhorn reads the
+  # custom endpoint from this key in the credential secret (there is no
+  # 's3-compatible-endpoint' Setting in Longhorn — that Setting does not exist).
   # The Longhorn BackupTarget is applied later in setup_longhorn_backup_target()
   # after Longhorn CRDs are available.
   if [[ "${ENABLE_LONGHORN_BACKUP:-false}" == "true" ]] && [[ -n "${LONGHORN_BACKUP_ACCESS_KEY:-}" ]]; then
@@ -186,6 +189,7 @@ type: Opaque
 stringData:
   AWS_ACCESS_KEY_ID: "${LONGHORN_BACKUP_ACCESS_KEY}"
   AWS_SECRET_ACCESS_KEY: "${LONGHORN_BACKUP_SECRET_KEY}"
+  AWS_ENDPOINTS: "${LONGHORN_BACKUP_ENDPOINT}"
 EOF
     echo "Longhorn backup credentials secret pre-created (longhorn-backup-secret)."
   fi
@@ -218,6 +222,9 @@ setup_longhorn_backup_target() {
   done
 
   echo "Applying Longhorn BackupTarget settings..."
+  # Only backup-target and backup-target-credential-secret are valid Longhorn Settings
+  # for S3 backup. The endpoint is supplied via AWS_ENDPOINTS in the credential secret
+  # (not a separate Setting — 's3-compatible-endpoint' does not exist in Longhorn).
   kubectl apply -f - <<EOF
 apiVersion: longhorn.io/v1beta2
 kind: Setting
@@ -232,13 +239,6 @@ metadata:
   name: backup-target-credential-secret
   namespace: longhorn-system
 value: "longhorn-backup-secret"
----
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: s3-compatible-endpoint
-  namespace: longhorn-system
-value: "${LONGHORN_BACKUP_ENDPOINT}"
 EOF
-  echo "Longhorn BackupTarget configured: s3://${LONGHORN_BACKUP_BUCKET} via ${LONGHORN_BACKUP_ENDPOINT}"
+  echo "Longhorn BackupTarget configured: s3://${LONGHORN_BACKUP_BUCKET} (endpoint in secret AWS_ENDPOINTS)"
 }

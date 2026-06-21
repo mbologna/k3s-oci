@@ -69,5 +69,15 @@
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*local chart_version=\"(?<currentValue>[^\"]+)\""
       ]
     }
+    {
+      "description": "Update container image tags referenced with inline renovate comments in gitops YAML files (e.g. rancher/kubectl in webhook postsync jobs).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/.*\\.yaml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\s*\\n\\s+image:\\s*[^:]+:(?<currentValue>[^\\s]+)"
+      ]
+    }
   ]
 }

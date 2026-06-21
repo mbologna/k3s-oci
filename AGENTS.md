@@ -560,10 +560,10 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - These snapshots are the primary recovery path for split-brain and etcd quorum loss. See `README.md#split-brain-recovery`.
 
 ### Atomic leader lock (`--cluster-init` safety)
-- `claim_first_server_lock()` in `files/lib/k3s-server.sh` uses a conditional PUT (`--if-none-match "*"`) to OCI Object Storage before running `--cluster-init`.
+- `claim_first_server_lock()` in `files/lib/k3s-server.sh` uses **`oci os object put --no-overwrite`** to OCI Object Storage before running `--cluster-init`. `--no-overwrite` maps to server-side If-None-Match: * and is the correct native atomic conditional-create primitive — it exits non-zero when the object already exists. **Do NOT use `--if-none-match` (not a valid CLI flag) or `oci raw-request --request-body-file` (also not a valid flag).**
 - Lock object: `cluster-init-lock` in the `${cluster_name}-terraform-state` bucket.
-- If the lock already exists and the holder's instance is still RUNNING, the node aborts rather than creating a second etcd cluster.
-- Stale locks (different cluster name, or holder instance terminated) are automatically overwritten.
+- If the lock already exists and the holder's instance is still RUNNING, the node switches to join mode (resolving the holder's IP from `LOCK_HOLDER_OCID`) instead of aborting with exit 1 — this handles TIMECREATED-tie scenarios where two nodes elect themselves simultaneously.
+- Stale locks (different cluster name, or holder instance terminated) are automatically overwritten. A cluster-reachability probe (`_probe_existing_cluster()`) prevents re-init if a live cluster is still reachable after reclaim.
 - On a deliberate full rebuild (destroy + apply), delete the stale lock: `oci os object delete --bucket-name ${cluster_name}-terraform-state --name cluster-init-lock --force`.
 - When Object Storage is not configured (`ETCD_SNAPSHOT_BUCKET` empty), the lock is skipped and the TIMECREATED election alone determines the first server.
 

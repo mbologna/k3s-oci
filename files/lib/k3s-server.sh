@@ -133,14 +133,13 @@ detect_first_server() {
 }
 
 # -- Atomic cluster-init leader lock ------------------------------------------
-# Uses a raw HTTP conditional PUT (If-None-Match: *) to OCI Object Storage to
-# ensure only one node runs --cluster-init, preventing the two-cluster
-# split-brain scenario when multiple nodes boot simultaneously.
+# Uses 'oci os object put --no-overwrite' to claim an Object Storage object as
+# a mutex, ensuring only one node runs --cluster-init and preventing two-cluster
+# split-brain when multiple nodes boot simultaneously.
 #
-# IMPORTANT: 'oci os object put --if-none-match' is NOT a valid OCI CLI flag.
-# The OCI Object Storage API supports If-None-Match: * server-side but it is
-# only accessible via 'oci raw-request' (which signs with instance_principal).
-# A 412 response means another node won the lock.
+# --no-overwrite maps to server-side If-None-Match: * and exits non-zero when
+# the object already exists — it is the native OCI CLI atomic conditional-create
+# primitive. No explicit endpoint URL construction is needed.
 #
 # The lock is skipped (best-effort only) when the state bucket is not
 # configured (ETCD_SNAPSHOT_BUCKET empty). In that case the TIMECREATED
@@ -178,36 +177,24 @@ claim_first_server_lock() {
     http://169.254.169.254/opc/v2/instance 2>/dev/null \
     | jq -r '.id' 2>/dev/null || hostname)
 
-  # Region is required to construct the Object Storage endpoint URL.
-  local region
-  region=$(curl -sfL --max-time 10 \
-    -H "Authorization: Bearer Oracle" \
-    http://169.254.169.254/opc/v2/instance 2>/dev/null \
-    | jq -r '.regionInfo.regionIdentifier' 2>/dev/null || echo "")
-  if [[ -z "${region}" ]]; then
-    echo "WARNING: Could not resolve region from IMDS — leader lock skipped."
-    return 0
-  fi
-
   local lock_content
   lock_content=$(printf '%s:%s:%s' "${CLUSTER_NAME}" "${my_ocid}" "$(date -u +%s)")
-
-  local lock_uri
-  lock_uri="https://objectstorage.${region}.oraclecloud.com/n/${OCI_OBJECT_NAMESPACE}/b/${ETCD_SNAPSHOT_BUCKET}/o/${lock_object}"
 
   local tmp_lock
   tmp_lock=$(mktemp)
   printf '%s' "${lock_content}" > "${tmp_lock}"
 
-  echo "Attempting cluster-init leader lock (If-None-Match conditional PUT)..."
-  # 'oci os object put --if-none-match' is not a valid CLI flag; use raw-request.
-  # oci raw-request exits 0 on 2xx (lock claimed), non-zero on 412 (lost race)
-  # or any other error. Both non-zero cases are treated conservatively as "lost".
-  if oci raw-request \
-      --http-method PUT \
-      --target-uri "${lock_uri}" \
-      --request-header '{"if-none-match": "*", "content-type": "text/plain"}' \
-      --request-body-file "${tmp_lock}" 2>/dev/null; then
+  echo "Attempting cluster-init leader lock (--no-overwrite conditional PUT)..."
+  # --no-overwrite maps to server-side If-None-Match: * — exits non-zero when
+  # the object already exists. This is the correct atomic conditional-create
+  # primitive; no endpoint URL construction or raw-request is needed.
+  if oci os object put \
+      --namespace "${OCI_OBJECT_NAMESPACE}" \
+      --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+      --name "${lock_object}" \
+      --file "${tmp_lock}" \
+      --no-overwrite \
+      --no-multipart 2>/dev/null; then
     rm -f "${tmp_lock}"
     echo "Leader lock claimed successfully — proceeding with --cluster-init."
     return 0

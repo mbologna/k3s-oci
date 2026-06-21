@@ -60,15 +60,20 @@ BACKUP_TARGET="s3://${BUCKET}@${OCI_REGION}/"
 
 echo ""
 echo "Step 2: Creating Kubernetes secret (longhorn-backup-secret in longhorn-system)..."
+# AWS_ENDPOINTS is required for OCI S3-compatible storage.
+# Longhorn reads the custom endpoint from this key in the credential secret.
+# There is no 's3-compatible-endpoint' Longhorn Setting — endpoint goes in the secret.
 kubectl create secret generic longhorn-backup-secret \
   --from-literal=AWS_ACCESS_KEY_ID="${ACCESS_KEY_ID}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${SECRET_KEY}" \
+  --from-literal=AWS_ENDPOINTS="${ENDPOINT}" \
   -n longhorn-system \
   --dry-run=client -o yaml | kubectl apply -f -
-echo "  Secret created."
+echo "  Secret created (with AWS_ENDPOINTS=${ENDPOINT})."
 
 echo ""
 echo "Step 3: Applying Longhorn BackupTarget settings..."
+# Only backup-target and backup-target-credential-secret are valid Settings.
 kubectl apply -f - <<EOF
 apiVersion: longhorn.io/v1beta2
 kind: Setting
@@ -83,13 +88,6 @@ metadata:
   name: backup-target-credential-secret
   namespace: longhorn-system
 value: "longhorn-backup-secret"
----
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: s3-compatible-endpoint
-  namespace: longhorn-system
-value: "${ENDPOINT}"
 EOF
 echo "  Longhorn settings applied."
 

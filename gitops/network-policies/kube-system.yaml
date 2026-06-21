@@ -1,7 +1,8 @@
 ---
-# Default-deny for kube-system. System components (coredns, kured, metrics-server,
-# argocd-image-updater) are allowed by the targeted policies below.
+# Default-deny for kube-system. System components (coredns, kured, metrics-server)
+# are allowed by the targeted policies below.
 # This is the only namespace that previously lacked default-deny coverage.
+# NOTE: argocd-image-updater deploys to the 'argocd' namespace, not kube-system.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -82,28 +83,4 @@ spec:
         - port: 443
           protocol: TCP
         - port: 6443
-          protocol: TCP
----
-# argocd-image-updater: needs to reach container registries and the ArgoCD API.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-image-updater
-  namespace: kube-system
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: argocd-image-updater
-  policyTypes:
-    - Egress
-  egress:
-    - ports:
-        - port: 443
-          protocol: TCP
-        - port: 80
-          protocol: TCP
-    - ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
           protocol: TCP

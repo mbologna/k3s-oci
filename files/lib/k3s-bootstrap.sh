@@ -48,11 +48,12 @@ run_bootstrap() {
   # Ingress configuration waits for Gateway eg (created by gateway-config ArgoCD app,
   # which depends on envoy-gateway — see sync waves in gitops/apps/). This can take
   # up to 30 minutes on a fresh deploy. Failures are non-fatal: ArgoCD is already
-  # running and the cluster is functional. Re-run hotel-post-deploy.sh to configure
-  # ingress if cloud-init times out here.
-  configure_grafana_ingress  || echo "WARNING: configure_grafana_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
-  configure_longhorn_ingress || echo "WARNING: configure_longhorn_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
-  configure_argocd_ingress   || echo "WARNING: configure_argocd_ingress failed — re-run hotel-post-deploy.sh to configure ingress."
+  # running and the cluster is functional. To manually retry, re-run the bootstrap:
+  #   cloud-init clean --logs && cloud-init init
+  # Or re-invoke the individual function from cloud-init context on the first server.
+  configure_grafana_ingress  || echo "WARNING: configure_grafana_ingress failed — cluster is functional; ingress can be retried via cloud-init."
+  configure_longhorn_ingress || echo "WARNING: configure_longhorn_ingress failed — cluster is functional; ingress can be retried via cloud-init."
+  configure_argocd_ingress   || echo "WARNING: configure_argocd_ingress failed — cluster is functional; ingress can be retried via cloud-init."
 
   # Longhorn backup target: applied here (alongside ingress config) because both
   # wait for ArgoCD to sync the longhorn app and CRDs to be available.

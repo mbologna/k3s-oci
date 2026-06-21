@@ -24,7 +24,14 @@ spec:
             # The job name MUST remain 'k3s-etcd' (see additionalScrapeConfigs below)
             # to match the bundled etcd mixin selector: job=~".*etcd.*".
             etcd: true
+            # k3s runs these components inside the k3s binary — they are not
+            # separately addressable. Disable BOTH the ServiceMonitors (see below)
+            # AND the default alert rule groups. Without both disabled, absent() on
+            # a missing up{job="kube-controller-manager"} series evaluates to 1 and
+            # KubeControllerManagerDown / KubeProxyDown fire permanently.
             kubeScheduler: false
+            kubeControllerManager: false
+            kubeProxy: false
 
         # Disable serviceMonitors for components that k3s does not expose as
         # separate processes (they run inside k3s itself and are not reachable
