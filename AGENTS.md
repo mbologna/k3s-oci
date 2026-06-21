@@ -279,7 +279,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - `resources.requests: 100m CPU / 128Mi RAM` prevents scheduling on nodes that cannot sustain ingress load.
 - `PodDisruptionBudget maxUnavailable: 1` for the Envoy DaemonSet is NOT used — Kubernetes PDB does not support DaemonSet-controlled pods (DaemonSets do not implement the scale subresource). kured uses `--ignore-daemonsets` during drain so the one-node-at-a-time guarantee comes from kured's own distributed lock, not a PDB. Do not add a PDB for the Envoy DaemonSet pods.
 - All HTTP/HTTPS routing uses standard `HTTPRoute` resources (Gateway API v1). Proprietary `IngressRoute` CRDs are not used.
-- HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with `--feature-gates=ExperimentalGatewayAPISupport=true`.
+- HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with both `--feature-gates=ExperimentalGatewayAPISupport=true` **and** `config.enableGatewayAPI=true` (via `config.apiVersion` + `config.kind` + `config.enableGatewayAPI` Helm values). Both are required since cert-manager v1.15 — the feature gate alone is not sufficient to enable the `gatewayHTTPRoute` HTTP-01 solver.
 - TLS certificates live in the `envoy-gateway-system` namespace (same as the Gateway) so no `ReferenceGrant` is needed.
 - BasicAuth for Longhorn UI uses Envoy Gateway `SecurityPolicy` with `.htpasswd` Secret — same security, standard API.
 - Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
@@ -590,4 +590,4 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - `gitops/system-upgrade/plans.yaml` does NOT use `disableEviction: true` — **do not add it back**. With `disableEviction`, the server and agent upgrade plans can drain nodes simultaneously, reducing Longhorn to 1 replica during rebuild. Without it, the `longhorn-manager minAvailable: 2` PDB prevents concurrent drains.
 
 ### Internal LB health check
-- `lb.tf` uses HTTP health check on `/readyz` (not TCP). A server with dead etcd fails `/readyz` but passes TCP. **Do not revert to TCP** — it would keep dead-etcd servers in the backend rotation.
+- `lb.tf` uses **HTTPS** health check on `/readyz` (not HTTP, not TCP). The k3s apiserver is TLS-only (no plaintext HTTP listener since Kubernetes 1.20); a plaintext HTTP probe to port 6443 fails the TLS handshake and never returns 200, leaving all backends permanently UNHEALTHY. OCI's HTTPS health checker performs a TLS handshake then the HTTP GET without verifying the backend certificate. A server with dead etcd fails `/readyz` but passes TCP. **Do not change to HTTP or TCP** — HTTP breaks because apiserver is TLS-only; TCP would keep dead-etcd servers in the backend rotation.

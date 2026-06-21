@@ -57,5 +57,6 @@ jobs:
         files/lib/k3s-external-secrets.sh
         files/lib/k3s-argocd.sh
         files/lib/k3s-agent.sh
+        scripts/clean-oci-resources.sh
       example_dir: example
     secrets: inherit

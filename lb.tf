@@ -28,16 +28,21 @@ resource "oci_load_balancer_backend_set" "k3s_kubeapi" {
   policy           = "ROUND_ROBIN"
 
   health_checker {
-    protocol          = "HTTP"
+    protocol          = "HTTPS"
     port              = var.kube_api_port
     url_path          = "/readyz"
     return_code       = 200
     interval_ms       = 5000 # 5 s — default 10 s; reduces UNKNOWN→UNHEALTHY window
     retries           = 2    # 2 failures → UNHEALTHY (default 3); 2×5 s = 10 s vs 30 s
     timeout_in_millis = 3000
-    # HTTP health check reflects actual apiserver+etcd health (a server with dead
-    # etcd still passes TCP but fails /readyz), ensuring the LB routes kubeapi
-    # traffic only to nodes that are genuinely serving requests.
+    # HTTPS health check: OCI performs TLS handshake then HTTP GET /readyz.
+    # The backend TLS cert is NOT verified (OCI flexible LB health checker behaviour).
+    # This correctly reflects actual apiserver+etcd health — a server with dead etcd
+    # still passes TCP but fails /readyz — ensuring the LB routes kubeapi traffic only
+    # to nodes genuinely serving requests.
+    # IMPORTANT: must be HTTPS, not HTTP. The k3s apiserver is TLS-only (no plaintext
+    # HTTP listener since Kubernetes 1.20). A plaintext GET to port 6443 fails the TLS
+    # handshake and never returns 200, leaving all backends permanently UNHEALTHY.
   }
 }
 

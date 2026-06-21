@@ -54,26 +54,6 @@ spec:
     - name: longhorn.volume
       interval: 1m
       rules:
-        - alert: LonghornVolumeDegraded
-          expr: |
-            longhorn_volume_robustness == 2
-          for: 2m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Longhorn volume {{ $labels.volume }} is degraded"
-            description: "Longhorn volume {{ $labels.volume }} has been in degraded state for more than 2 minutes. Check Longhorn UI for details."
-
-        - alert: LonghornVolumeFaulted
-          expr: |
-            longhorn_volume_robustness == 3
-          for: 1m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Longhorn volume {{ $labels.volume }} is faulted"
-            description: "Longhorn volume {{ $labels.volume }} is in a faulted state. Data may be at risk. Check Longhorn UI immediately."
-
         - alert: LonghornNodeStorageWarning
           expr: |
             (longhorn_node_storage_usage_bytes / longhorn_node_storage_capacity_bytes) * 100 > 80
@@ -157,6 +137,7 @@ spec:
               Check: kubectl describe certificate -n {{ $labels.namespace }} {{ $labels.name }}
 
     - name: node.filesystem
+      interval: 1m
       rules:
         - alert: NodeDiskUsageHigh
           expr: |

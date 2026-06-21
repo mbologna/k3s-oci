@@ -41,6 +41,9 @@ install_certmanager() {
     --version "${CERTMANAGER_CHART_VERSION}" \
     --set crds.enabled=true \
     --set "extraArgs[0]=--feature-gates=ExperimentalGatewayAPISupport=true" \
+    --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
+    --set config.kind=ControllerConfiguration \
+    --set config.enableGatewayAPI=true \
     --set prometheus.servicemonitor.enabled=true \
     --set prometheus.servicemonitor.labels.release=kube-prometheus-stack \
     --atomic --wait --timeout 5m

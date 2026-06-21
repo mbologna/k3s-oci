@@ -115,9 +115,12 @@ setup_etcd_snapshot_upload() {
   # of the primary IP to stagger all 3 server crons so they don't run at exactly
   # the same minute. Prevents concurrent k3s etcd-snapshot save calls and prune
   # races on the same Object Storage prefix.
-  local node_ip cron_offset
+  local node_ip cron_offset octet
   node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "0.0.0.0")
-  cron_offset=$(( (${node_ip##*.} % 3) * 2 ))
+  # Guard against empty hostname -I at early boot: ${node_ip##*.} would be empty,
+  # causing $(( (% 3)*2 )) arithmetic syntax error → set -e abort.
+  octet="${node_ip##*.}"
+  cron_offset=$(( (${octet:-0} % 3) * 2 ))
 
   cat > "${upload_script}" << 'ETCD_SCRIPT'
 #!/usr/bin/env bash

@@ -51,6 +51,15 @@ spec:
               memory: 32Mi
             limits:
               memory: 32Mi
+        # Prometheus ServiceMonitor — enables certmanager_* metrics scraping.
+        # Must be set here (in addition to cloud-init k3s-cert-manager.sh) because ArgoCD
+        # owns this release with prune: true + selfHeal: true. Without it, ArgoCD re-renders
+        # the chart without the ServiceMonitor and prunes it, silently breaking cert expiry alerts.
+        prometheus:
+          servicemonitor:
+            enabled: true
+            labels:
+              release: kube-prometheus-stack
   # k3s HA konnectivity (EgressSelector) returns 502 for all admission webhook calls.
   # ignoreDifferences on failurePolicy prevents ArgoCD (SSA) from claiming ownership,
   # allowing a manual patch to set failurePolicy:Ignore to survive syncs.

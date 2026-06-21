@@ -135,7 +135,10 @@ EOF
   fi
   echo "Alertmanager config secret created."
 
-  # MySQL credentials -- pre-created so apps can mount this secret on first deploy
+  # MySQL credentials -- pre-created so apps can mount this secret on first deploy.
+  # NOTE: CLUSTER_NAME is used as the db name in the JDBC URL. CLUSTER_NAME allows hyphens;
+  # MySQL identifiers with hyphens must be quoted with backticks in SQL. Create the DB as:
+  #   CREATE DATABASE \`${CLUSTER_NAME}\`;
   if [[ -n "${MYSQL_ENDPOINT}" ]]; then
     kubectl apply -n default -f - <<EOF
 apiVersion: v1
