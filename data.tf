@@ -129,8 +129,11 @@ locals {
     etcd_snapshot_bucket    = var.enable_etcd_snapshots && var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
     etcd_snapshot_retention = var.etcd_snapshot_retention
     oci_object_namespace    = local.oci_object_namespace
-    enable_longhorn_backup  = var.enable_longhorn_backup
-    longhorn_backup_bucket  = var.enable_longhorn_backup ? "${var.cluster_name}-longhorn-backup" : ""
+    # Separate lock bucket: driven by enable_object_storage_state alone, independent of
+    # enable_etcd_snapshots. Disabling etcd snapshots must NOT disable split-brain protection.
+    cluster_lock_bucket    = var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
+    enable_longhorn_backup = var.enable_longhorn_backup
+    longhorn_backup_bucket = var.enable_longhorn_backup ? "${var.cluster_name}-longhorn-backup" : ""
     # S3-compatible endpoint for Longhorn backup: auto-set when user_ocid is provided.
     # region is required when enable_longhorn_backup && user_ocid != null (enforced by
     # the longhorn_backup_requires_region check block in checks.tf).

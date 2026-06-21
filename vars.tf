@@ -448,8 +448,13 @@ variable "enable_etcd_snapshots" {
 
 variable "etcd_snapshot_retention" {
   type        = number
-  description = "Number of etcd snapshots to retain in OCI Object Storage. Older snapshots are pruned automatically by the cron job."
+  description = "Number of etcd snapshots to retain in OCI Object Storage per node. Older snapshots are pruned automatically by the cron job. Must be >= 1 (0 would disable pruning and grow the bucket unbounded)."
   default     = 5
+
+  validation {
+    condition     = var.etcd_snapshot_retention >= 1
+    error_message = "etcd_snapshot_retention must be >= 1. Setting it to 0 would disable pruning (sort_by(...)[:-0] returns an empty slice, deleting nothing)."
+  }
 }
 
 variable "user_ocid" {
@@ -469,7 +474,24 @@ variable "user_ocid" {
 
 variable "enable_notifications" {
   type        = bool
-  description = "Create an OCI Notifications topic and wire it to Alertmanager as a webhook receiver (Always Free: 1M HTTPS + 3K email/month)."
+  description = <<-EOT
+    Create an OCI Notifications topic and wire the endpoint to Alertmanager as a webhook receiver
+    (Always Free: 1M HTTPS + 3K email/month).
+
+    ⚠️  IMPORTANT — ONS authentication limitation: The OCI Notifications PublishMessage REST endpoint
+    requires OCI IAM request signing. Alertmanager sends unsigned HTTP POSTs, which OCI rejects with
+    HTTP 401. Enabling this variable creates the ONS topic and records its endpoint in the
+    'notification_topic_endpoint' output, but alerts will NOT be delivered to ONS without a signing proxy.
+
+    Workarounds (choose one):
+      (a) Use Alertmanager's native 'email_configs' receiver with an SMTP relay — no proxy needed.
+      (b) Deploy a small signing proxy (e.g. an OCI Function with instance-principal auth) between
+          Alertmanager and the ONS endpoint.
+      (c) Use a third-party webhook receiver (PagerDuty, Slack, etc.) that does not require signing.
+
+    The 'alertmanager_email' variable provides a direct ONS email subscription — this works correctly
+    and is independent of the signing limitation (OCI delivers email subscriptions internally).
+  EOT
   default     = false
 }
 

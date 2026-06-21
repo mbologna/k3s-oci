@@ -140,8 +140,15 @@ spec:
             limits:
               memory: 128Mi
 
-        # node-exporter
+        # node-exporter: enable textfile collector for custom metrics (e.g. etcd_snapshot_last_success_timestamp_seconds)
         prometheus-node-exporter:
+          extraArgs:
+            - --collector.textfile.directory=/var/lib/node_exporter/textfile_collector
+          extraHostVolumeMounts:
+            - name: textfile-collector
+              hostPath: /var/lib/node_exporter/textfile_collector
+              mountPath: /var/lib/node_exporter/textfile_collector
+              readOnly: true
           resources:
             requests:
               memory: 32Mi

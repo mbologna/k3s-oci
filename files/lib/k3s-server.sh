@@ -165,7 +165,11 @@ _probe_existing_cluster() {
 }
 
 claim_first_server_lock() {
-  if [[ -z "${ETCD_SNAPSHOT_BUCKET:-}" ]] || [[ -z "${OCI_OBJECT_NAMESPACE:-}" ]]; then
+  # Use CLUSTER_LOCK_BUCKET (set when enable_object_storage_state=true, independent of
+  # enable_etcd_snapshots). Fall back to ETCD_SNAPSHOT_BUCKET for backward compatibility
+  # with existing deployments that set the bucket via the snapshots feature.
+  local lock_bucket="${CLUSTER_LOCK_BUCKET:-${ETCD_SNAPSHOT_BUCKET:-}}"
+  if [[ -z "${lock_bucket}" ]] || [[ -z "${OCI_OBJECT_NAMESPACE:-}" ]]; then
     echo "INFO: Object Storage not configured; leader lock skipped (TIMECREATED election only)."
     return 0
   fi
@@ -190,7 +194,7 @@ claim_first_server_lock() {
   # primitive; no endpoint URL construction or raw-request is needed.
   if oci os object put \
       --namespace "${OCI_OBJECT_NAMESPACE}" \
-      --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+      --bucket-name "${lock_bucket}" \
       --name "${lock_object}" \
       --file "${tmp_lock}" \
       --no-overwrite \
@@ -206,7 +210,7 @@ claim_first_server_lock() {
   local existing
   existing=$(oci os object get \
     --namespace "${OCI_OBJECT_NAMESPACE}" \
-    --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+    --bucket-name "${lock_bucket}" \
     --name "${lock_object}" \
     --file - 2>/dev/null | tr -d '\n' || echo "")
 
@@ -224,7 +228,7 @@ claim_first_server_lock() {
     printf '%s' "${lock_content}" > "${tmp_new}"
     oci os object put \
       --namespace "${OCI_OBJECT_NAMESPACE}" \
-      --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+      --bucket-name "${lock_bucket}" \
       --name "${lock_object}" \
       --file "${tmp_new}" \
       --force \
@@ -253,7 +257,7 @@ claim_first_server_lock() {
       printf '%s' "${lock_content}" > "${tmp_reclaim}"
       oci os object put \
         --namespace "${OCI_OBJECT_NAMESPACE}" \
-        --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+        --bucket-name "${lock_bucket}" \
         --name "${lock_object}" \
         --file "${tmp_reclaim}" \
         --force \
@@ -307,8 +311,11 @@ install_k3s_server() {
   if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     if ! claim_first_server_lock; then
       echo "==> Leader lock not won — downgrading to join mode."
-      # Resolve the lock holder's direct IP so the join branch bypasses the LB.
-      if [[ -n "${LOCK_HOLDER_OCID:-}" && -z "${FIRST_SERVER_IP:-}" ]]; then
+      # Always re-resolve the lock holder's direct IP, overriding any self-elected value.
+      # Without this, a node that elected itself first has FIRST_SERVER_IP set to its OWN IP;
+      # the -z guard would prevent correction and the loser would join its own (non-running)
+      # apiserver — stalling cluster formation. LOCK_HOLDER_OCID is set by claim_first_server_lock().
+      if [[ -n "${LOCK_HOLDER_OCID:-}" ]]; then
         FIRST_SERVER_IP=$(oci compute instance list-vnics \
           --instance-id "${LOCK_HOLDER_OCID}" \
           --compartment-id "${COMPARTMENT_OCID}" 2>/dev/null \

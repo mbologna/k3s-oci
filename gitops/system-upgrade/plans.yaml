@@ -3,6 +3,15 @@
 # Edit 'channel' below to switch between "stable", "latest", or "testing".
 # "stable" is the default; override in your fork if you need a different channel.
 #
+# ⚠️  CHANNEL DRIFT NOTE: channel: stable tracks the k3s stable release stream
+# independently of var.k3s_version in terraform.tfvars. After a fresh deploy, SUC
+# will upgrade the cluster beyond the Terraform-pinned version on the next upgrade
+# cycle. This is intentional — the pin in vars.tf only controls the initial install;
+# ongoing upgrades are delegated to SUC. If you need to lock the cluster at the
+# initial version, set 'version' below (and remove 'channel'):
+#   version: v1.31.4+k3s1   # renovate: datasource=github-releases depName=k3s-io/k3s
+#   channel: ""
+#
 # Pin a specific version by setting the 'version' field below (and setting
 # channel to "" or removing it). Renovate will open PRs to bump the version
 # automatically using the regex manager configured in renovate.json.

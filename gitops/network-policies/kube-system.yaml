@@ -15,6 +15,7 @@ spec:
     - Egress
 ---
 # CoreDNS: accept DNS queries from all pods, respond to cluster IPs.
+# Also accepts Prometheus scrape on :9153 from monitoring namespace.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -32,6 +33,13 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9153
           protocol: TCP
   egress:
     - {}  # CoreDNS needs to forward to upstream resolvers
@@ -83,4 +91,30 @@ spec:
         - port: 443
           protocol: TCP
         - port: 6443
+          protocol: TCP
+---
+# local-path-provisioner: needs apiserver access to manage PVCs and watch resources.
+# Without this, local-path-provisioner crashloops under the kube-system default-deny.
+# local-path is not the default StorageClass (Longhorn is), but it ships with k3s and
+# must be able to communicate with the apiserver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-local-path-provisioner
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      app: local-path-provisioner
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 6443
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+        - port: 53
           protocol: TCP

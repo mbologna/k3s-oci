@@ -398,6 +398,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - Cloud-init **always** creates the `alertmanager-oci-config` Secret in the `monitoring` namespace — with a null receiver when disabled, OCI webhook receiver when enabled.
 - `gitops/apps/kube-prometheus-stack.yaml` references this secret via `alertmanager.alertmanagerSpec.configSecret`. Do NOT remove `configSecret: alertmanager-oci-config` from that file — the secret always exists.
 - `notification_topic_endpoint` output provides the HTTPS endpoint for the Alertmanager webhook.
+- ⚠️ **ONS authentication limitation**: The OCI Notifications PublishMessage endpoint requires OCI IAM request signing. Alertmanager sends **unsigned** HTTP POSTs, which OCI rejects with HTTP 401. The OCI webhook receiver will silently fail. The `alertmanager_email` subscription works correctly (OCI delivers email internally, no signing needed). For Alertmanager webhook delivery, use a signing proxy, an OCI Function, or a third-party receiver (Slack, PagerDuty, etc.) instead.
 
 ### MySQL HeatWave (`mysql.tf`)
 - Controlled by `enable_mysql` variable (default: `false`).

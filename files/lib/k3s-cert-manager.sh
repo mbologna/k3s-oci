@@ -41,6 +41,8 @@ install_certmanager() {
     --version "${CERTMANAGER_CHART_VERSION}" \
     --set crds.enabled=true \
     --set "extraArgs[0]=--feature-gates=ExperimentalGatewayAPISupport=true" \
+    --set prometheus.servicemonitor.enabled=true \
+    --set prometheus.servicemonitor.labels.release=kube-prometheus-stack \
     --atomic --wait --timeout 5m
 
   if [[ "${ENABLE_DNS01_CHALLENGE}" == "true" ]]; then

@@ -187,3 +187,61 @@ spec:
               ({{ $value | humanizePercentage }} remaining).
               Immediate action required — kubelet may evict pods and k3s may fail.
               Run: kubectl describe node {{ $labels.instance }} to check disk pressure condition.
+
+    - name: etcd.backup
+      rules:
+        - alert: EtcdSnapshotStale
+          expr: |
+            (time() - etcd_snapshot_last_success_timestamp_seconds) > 25200
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "etcd snapshot on {{ $labels.instance }} is stale (>7h)"
+            description: >
+              No successful etcd snapshot upload has completed on {{ $labels.instance }}
+              in the last 7 hours. Check /var/log/etcd-snapshot-upload.log on the node.
+              The cron runs every 6h; a gap >7h indicates the cron or OCI CLI is broken.
+              Without fresh snapshots, cluster recovery from split-brain or quorum loss
+              is not possible.
+
+    - name: longhorn.backup
+      rules:
+        - alert: LonghornBackupFailed
+          expr: |
+            longhorn_backup_state{state="Error"} == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn backup {{ $labels.backup_name }} in error state"
+            description: >
+              Longhorn backup {{ $labels.backup_name }} (volume {{ $labels.volume_name }})
+              is in Error state. PVC data may not be protected.
+              Check: kubectl -n longhorn-system get backups.longhorn.io
+
+        - alert: LonghornVolumeRobustnessUnhealthy
+          expr: |
+            longhorn_volume_robustness == 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn volume {{ $labels.volume }} is degraded"
+            description: >
+              Longhorn volume {{ $labels.volume }} has robustness=Degraded (robustness==2).
+              With defaultReplicaCount=2 and one degraded replica, a second node loss risks
+              data loss. Check: kubectl -n longhorn-system describe volume {{ $labels.volume }}
+
+        - alert: LonghornVolumeRobustnessFaulted
+          expr: |
+            longhorn_volume_robustness == 3
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Longhorn volume {{ $labels.volume }} is faulted"
+            description: >
+              Longhorn volume {{ $labels.volume }} has robustness=Faulted (all replicas lost).
+              Data may be unrecoverable. Immediate action required.
+              Check: kubectl -n longhorn-system describe volume {{ $labels.volume }}

@@ -165,8 +165,9 @@ oci os object list \
   --namespace "${NAMESPACE}" \
   --bucket-name "${BUCKET}" \
   --prefix "${NODE_PREFIX}/" \
+  --fields name,timeCreated \
   --all \
-  --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \
+  --query "sort_by(data, &\"timeCreated\")[:-${RETAIN}].name" \
   --raw-output 2>/dev/null \
   | python3 -c "import sys,json; [print(x) for x in (json.load(sys.stdin) or [])]" 2>/dev/null \
   | while IFS= read -r old_obj; do
@@ -180,6 +181,15 @@ oci os object list \
     done
 
 echo "[$(date -u)] etcd snapshot upload complete."
+# Write a textfile-collector metric so Prometheus can alert on snapshot staleness.
+# EtcdSnapshotStale alert in prometheus-rules.yaml fires when this is older than 7h.
+TEXTFILE_DIR="/var/lib/node_exporter/textfile_collector"
+mkdir -p "${TEXTFILE_DIR}"
+cat > "${TEXTFILE_DIR}/etcd_snapshot.prom" << PROM
+# HELP etcd_snapshot_last_success_timestamp_seconds Unix timestamp of the last successful etcd snapshot upload.
+# TYPE etcd_snapshot_last_success_timestamp_seconds gauge
+etcd_snapshot_last_success_timestamp_seconds $(date -u +%s)
+PROM
 ETCD_SCRIPT
 
   # Substitute placeholders with actual values
@@ -193,9 +203,15 @@ ETCD_SCRIPT
   echo "${cron_offset} */6 * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
     > /etc/cron.d/etcd-snapshot-upload
 
-  # Run initial snapshot immediately to verify the path works
-  echo "Running initial etcd snapshot upload..."
-  "${upload_script}" || echo "WARNING: Initial snapshot upload failed — check /var/log/etcd-snapshot-upload.log"
+  # Run an initial snapshot immediately — but only if this node is the elected first server
+  # and etcd is ready. Joining servers may not have been promoted to voter status yet;
+  # running 'k3s etcd-snapshot save' on a learner produces a noisy warning and an empty snapshot.
+  if [[ "${IS_FIRST_SERVER:-false}" == "true" ]]; then
+    echo "Running initial etcd snapshot upload (first server only)..."
+    "${upload_script}" || echo "WARNING: Initial snapshot upload failed — check /var/log/etcd-snapshot-upload.log"
+  else
+    echo "Joining server — skipping immediate snapshot; cron will run within 6h."
+  fi
 
   echo "etcd snapshot cron job installed (every 6h at minute ${cron_offset}; retaining last ${retain} snapshots per node)."
 }

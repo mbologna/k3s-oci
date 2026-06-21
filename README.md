@@ -77,7 +77,7 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 **Internal Flex LB** provides a stable private VIP across all three control-plane nodes. Workers join via this VIP so the cluster survives any single control-plane loss.
 
-**Longhorn** runs on all four nodes with `defaultReplicaCount=3`; each PVC is replicated across three nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
+**Longhorn** runs on all four nodes with `defaultReplicaCount=2`; each PVC is replicated across two nodes. For critical PVCs that must survive two simultaneous node losses, use the `longhorn-replicated-3` StorageClass (`gitops/longhorn/storageclasses/`). Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
 
 > **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure**, the hard limit of a 4-node Always Free topology.
 
@@ -500,7 +500,7 @@ terraform {
 | **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
 | **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
 | **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
-| **PVC data (Longhorn)** | ✅ 1 node | 3 replicas across 4 nodes; 1 replica lost, 2 remain serving |
+| **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 4 nodes; 1 replica lost, 1 remains serving. Use `longhorn-replicated-3` StorageClass for critical PVCs to survive 2 simultaneous losses |
 | **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
 | **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
 | **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |

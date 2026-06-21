@@ -2,10 +2,16 @@
 # HTTP → HTTPS redirect: redirects plain HTTP to HTTPS for all configured HTTPS hostnames.
 # Attached to the Gateway's `http` (port 80) listener.
 #
-# The `hostnames` field is intentionally omitted here — cloud-init adds the correct
-# hostname (e.g. grafana.<nlb-ip>.sslip.io) via kubectl patch at bootstrap time.
+# The `hostnames` field is intentionally OMITTED — an empty or absent hostnames list
+# matches ALL hostnames (Gateway API spec). This is the correct behaviour: the redirect
+# applies to every host on port 80, and cert-manager's more-specific HTTP-01 challenge
+# HTTPRoute (exact path /.well-known/acme-challenge/...) takes precedence automatically.
+#
+# Do NOT add explicit hostnames here — that would break redirect for any host not listed.
+# cloud-init does NOT patch this file at bootstrap time.
+#
 # ArgoCD gateway-config has RespectIgnoreDifferences=true + ignoreDifferences on
-# http-to-https-redirect /spec/hostnames so the cloud-init patch is preserved.
+# http-to-https-redirect /spec/hostnames for forward-compatibility only.
 #
 # Priority note: cert-manager HTTP-01 ACME challenges use a separate HTTPRoute
 # with a more specific path match (/.well-known/acme-challenge/…) that takes

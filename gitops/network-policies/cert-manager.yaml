@@ -49,6 +49,31 @@ spec:
         - port: 9443
           protocol: TCP
 ---
+# Allow Prometheus to scrape cert-manager metrics on port 9402.
+# The cert-manager ServiceMonitor (enabled via prometheus.servicemonitor.enabled=true in
+# k3s-cert-manager.sh) scrapes :9402/metrics. Without this, CertExpiry alert rules are no-ops.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-ingress
+  namespace: cert-manager
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/instance: cert-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9402
+          protocol: TCP
+
+---
 # Allow Kubernetes API server to reach cert-manager webhook (port 9443).
 # k3s uses 10250 for kubelet/konnectivity-server — cert-manager webhook must use 9443
 # to avoid conflict. The API server IP is not predictable so we allow from any source.

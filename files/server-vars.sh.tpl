@@ -84,6 +84,10 @@ export ENABLE_ETCD_SNAPSHOTS="${enable_etcd_snapshots ? "true" : "false"}"
 export ETCD_SNAPSHOT_BUCKET="${etcd_snapshot_bucket}"
 export ETCD_SNAPSHOT_RETENTION="${etcd_snapshot_retention}"
 export OCI_OBJECT_NAMESPACE="${oci_object_namespace}"
+# CLUSTER_LOCK_BUCKET is set whenever enable_object_storage_state=true, independent of
+# enable_etcd_snapshots. Used by claim_first_server_lock() to ensure split-brain protection
+# is not accidentally disabled by toggling the etcd snapshots feature flag.
+export CLUSTER_LOCK_BUCKET="${cluster_lock_bucket}"
 
 # -- Longhorn backup target (requires enable_longhorn_backup + user_ocid set) -----
 # When user_ocid is set, Terraform creates a Customer Secret Key and cloud-init
