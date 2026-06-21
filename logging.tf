@@ -101,7 +101,10 @@ resource "oci_logging_unified_agent_configuration" "k3s_runtime" {
     sources {
       source_type = "LOG_TAIL"
       name        = "k3s-service"
-      paths       = ["/var/log/k3s*.log", "/var/log/syslog"]
+      # k3s logs to journald which forwards to /var/log/syslog — no separate k3s*.log file.
+      # The k3s-cloud-init.log is already shipped by the cloud_init agent config above;
+      # excluding it here avoids double-ingestion against the 10 GB/month free-tier limit.
+      paths = ["/var/log/syslog"]
       parser {
         parser_type = "NONE"
       }
