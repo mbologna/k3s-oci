@@ -79,6 +79,16 @@ configure_unattended_upgrades() {
 # Run zypper patch, create kured sentinel on reboot-required, restart services on restart-required.
 # Do NOT use set -e: zypper returns non-zero exit codes for informational states (100, 102).
 
+# Restart userspace services using deleted/updated files (needrestart equivalent),
+# excluding k3s (its lifecycle is owned by the cluster upgrade controller).
+restart_affected_services() {
+  zypper ps 2>/dev/null \
+    | awk -F'|' 'NR>2 && $6 ~ /\.service$/ { gsub(/ /,"",$6); print $6 }' \
+    | grep -v '^k3s' \
+    | sort -u \
+    | xargs -r systemctl try-restart 2>/dev/null || true
+}
+
 # Retry on zypp lock (exit 7) up to 5 minutes.
 waited=0
 while true; do
@@ -99,29 +109,33 @@ case "$rc" in
     # No restart or reboot needed.
     ;;
   100)
-    # Restart affected userspace services (needrestart equivalent).
-    # zypper ps lists processes using stale files; extract service names from the table, skip k3s.
-    zypper ps 2>/dev/null \
-      | awk -F'|' 'NR>2 && $6 ~ /\.service$/ { gsub(/ /,"",$6); print $6 }' \
-      | grep -v '^k3s' \
-      | sort -u \
-      | xargs -r systemctl try-restart 2>/dev/null || true
+    # Some running processes use stale files — restart them (needrestart equivalent).
+    restart_affected_services
     ;;
   102)
     # Restart affected services first, then flag for kured reboot.
-    zypper ps 2>/dev/null \
-      | awk -F'|' 'NR>2 && $6 ~ /\.service$/ { gsub(/ /,"",$6); print $6 }' \
-      | grep -v '^k3s' \
-      | sort -u \
-      | xargs -r systemctl try-restart 2>/dev/null || true
+    restart_affected_services
     touch /var/run/reboot-required
     ;;
   103)
-    # Package-manager patch was installed; re-run once to apply remaining patches.
-    # zypper exit 103 = ZYPPER_EXIT_INF_RESTART_NEEDED (not an error — informational).
+    # Package-manager patch was installed (ZYPPER_EXIT_INF_RESTART_NEEDED — informational,
+    # not an error). Re-run once to apply the remaining patches.
+    #
+    # Reset rc to 0 BEFORE the re-run: "|| rc=$?" only assigns on a non-zero exit, so
+    # without this reset a SUCCESSFUL re-run (exit 0) would leave rc=103 and the script
+    # would fall through to "exit 103", marking the systemd patch service failed on the
+    # common happy path. The re-run can also return 100 (restart) or 102 (reboot) — handle
+    # both, otherwise the reboot-required sentinel for a kernel/glibc patch applied during
+    # the re-run is never created and kured never reboots the node.
+    rc=0
     zypper --non-interactive patch "$@" --auto-agree-with-licenses || rc=$?
     case "$rc" in
-      0|100|102) : ;;
+      0 | 103) : ;;
+      100) restart_affected_services ;;
+      102)
+        restart_affected_services
+        touch /var/run/reboot-required
+        ;;
       *) exit "$rc" ;;
     esac
     ;;
