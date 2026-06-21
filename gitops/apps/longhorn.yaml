@@ -29,6 +29,15 @@ spec:
             # ahead of lower-priority user workloads. An evicted instance-manager
             # during a replica rebuild risks data loss.
             priorityClass: system-cluster-critical
+            # Block node drain if the drain would leave any volume with no healthy replica.
+            # With defaultReplicaCount=2, a drain could momentarily leave a volume at 1
+            # replica; this policy ensures the drain waits until Longhorn confirms safety.
+            # Explicitly pinned to avoid relying on chart default changing between versions.
+            nodeDrainPolicy: block-if-contains-last-replica
+            # Wait 10 minutes before rebuilding a replica for a missing node. This prevents
+            # thrashing on short maintenance windows or rolling upgrades: if the drained
+            # node comes back within 10 min, no extra replica rebuild IO is triggered.
+            replicaReplenishmentWaitInterval: "600"
           persistence:
             # Make longhorn the default StorageClass so PVCs without explicit
             # storageClassName are satisfied automatically.

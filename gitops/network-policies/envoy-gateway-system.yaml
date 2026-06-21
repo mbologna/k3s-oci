@@ -13,8 +13,13 @@ spec:
     - Ingress
     - Egress
 ---
-# Allow Envoy proxy pods to receive HTTP/HTTPS traffic from the NLB (NodePort 30080/30443)
-# and health-check probes from any source.
+# Allow Envoy proxy pods to receive HTTP/HTTPS traffic from the NLB.
+# IMPORTANT: NetworkPolicy ports match destination port at the pod (post-DNAT).
+# Envoy Gateway remaps listener ports <1024 by +10000 at the container level:
+#   Service port 80 → container port 10080 (nodePort 30080)
+#   Service port 443 → container port 10443 (nodePort 30443)
+# kube-router evaluates policies post-DNAT on the pod veth, so nodePort numbers
+# (30080/30443) never match — the container ports (10080/10443) must be used.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,9 +34,9 @@ spec:
   ingress:
     - ports:
         - protocol: TCP
-          port: 30080
+          port: 10080
         - protocol: TCP
-          port: 30443
+          port: 10443
 ---
 # Allow Envoy Gateway control-plane and proxy pods to reach the Kubernetes API (kubeapi).
 apiVersion: networking.k8s.io/v1

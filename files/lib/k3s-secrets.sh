@@ -123,6 +123,15 @@ stringData:
     receivers:
     - name: 'null'
 EOF
+    echo ""
+    echo "┌─────────────────────────────────────────────────────────────────┐"
+    echo "│ WARNING: Alertmanager is using the null receiver.               │"
+    echo "│ All Prometheus alerts (etcd quorum, node disk pressure, TLS     │"
+    echo "│ expiry, etc.) will fire silently with no notification delivery. │"
+    echo "│ To enable alerts: set enable_notifications=true in terraform    │"
+    echo "│ and re-apply. Optional: also set alertmanager_email.            │"
+    echo "└─────────────────────────────────────────────────────────────────┘"
+    echo ""
   fi
   echo "Alertmanager config secret created."
 

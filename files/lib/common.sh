@@ -152,6 +152,7 @@ oci os object list \
   --namespace "${NAMESPACE}" \
   --bucket-name "${BUCKET}" \
   --prefix "etcd-snapshots/${CLUSTER}/" \
+  --all \
   --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \
   --raw-output 2>/dev/null \
   | python3 -c "import sys,json; [print(x) for x in (json.load(sys.stdin) or [])]" 2>/dev/null \

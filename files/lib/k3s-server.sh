@@ -59,6 +59,8 @@ detect_first_server() {
   if [[ -n "${pool_id}" ]]; then
     # Capture both display-name and OCID in a single API call so we can resolve
     # the first server's private IP without a second list-instances call.
+    # Secondary sort by .id breaks TIMECREATED ties deterministically so two nodes
+    # with the same creation timestamp always elect the same leader.
     local first_server_json
     first_server_json=$(oci compute-management instance-pool list-instances \
       --instance-pool-id "${pool_id}" \
@@ -68,6 +70,7 @@ detect_first_server() {
       | jq -re \
           '.data
            | map(select(.state == "Running"))
+           | sort_by(["time-created", .id])
            | first' 2>/dev/null || echo "null")
 
     first_server=$(echo "${first_server_json}" | jq -re '.["display-name"]' 2>/dev/null || echo "")
@@ -101,6 +104,7 @@ detect_first_server() {
                .["freeform-tags"]["k3s-instance-type"] == "k3s-server" and
                (.["lifecycle-state"] | IN("TERMINATED","TERMINATING") | not)
              ))
+           | sort_by([."time-created", .id])
            | first' \
       2>/dev/null || echo "null")
 
@@ -129,9 +133,14 @@ detect_first_server() {
 }
 
 # -- Atomic cluster-init leader lock ------------------------------------------
-# Uses a conditional PUT (--if-none-match "*") to OCI Object Storage to
+# Uses a raw HTTP conditional PUT (If-None-Match: *) to OCI Object Storage to
 # ensure only one node runs --cluster-init, preventing the two-cluster
 # split-brain scenario when multiple nodes boot simultaneously.
+#
+# IMPORTANT: 'oci os object put --if-none-match' is NOT a valid OCI CLI flag.
+# The OCI Object Storage API supports If-None-Match: * server-side but it is
+# only accessible via 'oci raw-request' (which signs with instance_principal).
+# A 412 response means another node won the lock.
 #
 # The lock is skipped (best-effort only) when the state bucket is not
 # configured (ETCD_SNAPSHOT_BUCKET empty). In that case the TIMECREATED
@@ -140,7 +149,21 @@ detect_first_server() {
 # On a full cluster rebuild, the previous deployment's lock will exist.
 # The function detects stale locks by comparing the holder's instance OCID
 # lifecycle state — if the holder's instance is gone/terminated, the lock
-# is overwritten.
+# is overwritten. A cluster-reachability probe prevents re-init when the
+# cluster is still live after a stale-lock reclaim.
+
+_probe_existing_cluster() {
+  # Returns 0 if a k3s apiserver is already answering at the internal LB.
+  # Returns 1 if the cluster is not reachable (safe to --cluster-init).
+  local probe_url="${K3S_URL:-}"
+  [[ -z "${probe_url}" ]] && return 1
+  if curl --output /dev/null --silent --insecure --max-time 5 \
+      "https://${probe_url}:${KUBE_API_PORT:-6443}/readyz"; then
+    echo "  Cluster probe: ${probe_url}:${KUBE_API_PORT:-6443}/readyz → ALIVE (cluster already exists)"
+    return 0
+  fi
+  return 1
+}
 
 claim_first_server_lock() {
   if [[ -z "${ETCD_SNAPSHOT_BUCKET:-}" ]] || [[ -z "${OCI_OBJECT_NAMESPACE:-}" ]]; then
@@ -155,19 +178,36 @@ claim_first_server_lock() {
     http://169.254.169.254/opc/v2/instance 2>/dev/null \
     | jq -r '.id' 2>/dev/null || hostname)
 
+  # Region is required to construct the Object Storage endpoint URL.
+  local region
+  region=$(curl -sfL --max-time 10 \
+    -H "Authorization: Bearer Oracle" \
+    http://169.254.169.254/opc/v2/instance 2>/dev/null \
+    | jq -r '.regionInfo.regionIdentifier' 2>/dev/null || echo "")
+  if [[ -z "${region}" ]]; then
+    echo "WARNING: Could not resolve region from IMDS — leader lock skipped."
+    return 0
+  fi
+
+  local lock_content
+  lock_content=$(printf '%s:%s:%s' "${CLUSTER_NAME}" "${my_ocid}" "$(date -u +%s)")
+
+  local lock_uri
+  lock_uri="https://objectstorage.${region}.oraclecloud.com/n/${OCI_OBJECT_NAMESPACE}/b/${ETCD_SNAPSHOT_BUCKET}/o/${lock_object}"
+
   local tmp_lock
   tmp_lock=$(mktemp)
-  printf '%s:%s:%s' "${CLUSTER_NAME}" "${my_ocid}" "$(date -u +%s)" > "${tmp_lock}"
+  printf '%s' "${lock_content}" > "${tmp_lock}"
 
-  echo "Attempting cluster-init leader lock (conditional PUT)..."
-
-  if oci os object put \
-      --namespace "${OCI_OBJECT_NAMESPACE}" \
-      --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
-      --name "${lock_object}" \
-      --file "${tmp_lock}" \
-      --if-none-match "*" \
-      --no-multipart 2>/dev/null; then
+  echo "Attempting cluster-init leader lock (If-None-Match conditional PUT)..."
+  # 'oci os object put --if-none-match' is not a valid CLI flag; use raw-request.
+  # oci raw-request exits 0 on 2xx (lock claimed), non-zero on 412 (lost race)
+  # or any other error. Both non-zero cases are treated conservatively as "lost".
+  if oci raw-request \
+      --http-method PUT \
+      --target-uri "${lock_uri}" \
+      --request-header '{"if-none-match": "*", "content-type": "text/plain"}' \
+      --request-body-file "${tmp_lock}" 2>/dev/null; then
     rm -f "${tmp_lock}"
     echo "Leader lock claimed successfully — proceeding with --cluster-init."
     return 0
@@ -175,7 +215,7 @@ claim_first_server_lock() {
 
   rm -f "${tmp_lock}"
 
-  # Lock exists — read the holder
+  # Lock exists or request failed — read the holder to determine disposition.
   local existing
   existing=$(oci os object get \
     --namespace "${OCI_OBJECT_NAMESPACE}" \
@@ -194,7 +234,7 @@ claim_first_server_lock() {
     echo "  Stale lock from cluster '${existing_cluster}' — overwriting with current cluster."
     local tmp_new
     tmp_new=$(mktemp)
-    printf '%s:%s:%s' "${CLUSTER_NAME}" "${my_ocid}" "$(date -u +%s)" > "${tmp_new}"
+    printf '%s' "${lock_content}" > "${tmp_new}"
     oci os object put \
       --namespace "${OCI_OBJECT_NAMESPACE}" \
       --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
@@ -203,10 +243,15 @@ claim_first_server_lock() {
       --force \
       --no-multipart 2>/dev/null || true
     rm -f "${tmp_new}"
+    # Safety: don't re-init if a cluster is still reachable after stale-lock reclaim.
+    if _probe_existing_cluster; then
+      echo "  WARNING: live cluster detected after stale-lock reclaim — switching to join."
+      return 1
+    fi
     return 0
   fi
 
-  # Same cluster — check if the lock holder's instance is still running
+  # Same cluster — check if the lock holder's instance is still running.
   if [[ -n "${existing_ocid}" && "${existing_ocid}" != "${my_ocid}" ]]; then
     local holder_state
     holder_state=$(oci compute instance get \
@@ -218,7 +263,7 @@ claim_first_server_lock() {
       echo "  Lock holder instance is ${holder_state} (not running) — stale lock, overwriting."
       local tmp_reclaim
       tmp_reclaim=$(mktemp)
-      printf '%s:%s:%s' "${CLUSTER_NAME}" "${my_ocid}" "$(date -u +%s)" > "${tmp_reclaim}"
+      printf '%s' "${lock_content}" > "${tmp_reclaim}"
       oci os object put \
         --namespace "${OCI_OBJECT_NAMESPACE}" \
         --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
@@ -227,19 +272,21 @@ claim_first_server_lock() {
         --force \
         --no-multipart 2>/dev/null || true
       rm -f "${tmp_reclaim}"
+      if _probe_existing_cluster; then
+        echo "  WARNING: live cluster detected after stale-lock reclaim — switching to join."
+        return 1
+      fi
       return 0
     fi
   fi
 
-  # Valid lock held by a running instance
+  # Valid lock held by a running instance of the same cluster.
   echo ""
-  echo "ERROR: cluster-init leader lock is held by running instance '${existing_ocid}'."
-  echo "  Another node is already bootstrapping or has bootstrapped the cluster."
-  echo "  This node must NOT run --cluster-init."
-  echo ""
-  echo "  If this is after a deliberate full cluster wipe/rebuild, delete the lock:"
-  echo "    oci os object delete --namespace ${OCI_OBJECT_NAMESPACE} \\"
-  echo "      --bucket-name ${ETCD_SNAPSHOT_BUCKET} --name ${lock_object} --force"
+  echo "  Cluster-init lock is held by running instance '${existing_ocid}'."
+  echo "  This node should join the existing cluster."
+  # Export the holder OCID so install_k3s_server() can resolve the direct IP.
+  LOCK_HOLDER_OCID="${existing_ocid}"
+  export LOCK_HOLDER_OCID
   return 1
 }
 
@@ -266,11 +313,27 @@ install_k3s_server() {
 
   local max_attempts=10 attempt=0
 
+  # Resolve lock before branching: if elected first but lock is lost (another node
+  # won the race or the lock holder is still live), downgrade to join mode.
+  # This handles TIMECREATED-tie cases where two nodes simultaneously elect
+  # themselves as first server.
   if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
-    # Claim the atomic leader lock before running --cluster-init. If another node
-    # already holds the lock, this aborts rather than creating a second etcd cluster.
-    claim_first_server_lock || exit 1
+    if ! claim_first_server_lock; then
+      echo "==> Leader lock not won — downgrading to join mode."
+      # Resolve the lock holder's direct IP so the join branch bypasses the LB.
+      if [[ -n "${LOCK_HOLDER_OCID:-}" && -z "${FIRST_SERVER_IP:-}" ]]; then
+        FIRST_SERVER_IP=$(oci compute instance list-vnics \
+          --instance-id "${LOCK_HOLDER_OCID}" \
+          --compartment-id "${COMPARTMENT_OCID}" 2>/dev/null \
+          | jq -re '.data[0]["private-ip"]' 2>/dev/null || echo "")
+        echo "  Resolved lock holder IP: ${FIRST_SERVER_IP}"
+      fi
+      IS_FIRST_SERVER="false"
+      export IS_FIRST_SERVER FIRST_SERVER_IP
+    fi
+  fi
 
+  if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
@@ -390,6 +453,12 @@ resolve_k3s_token
 
 install_k3s_server
 
+# Install etcd snapshot upload cron on ALL server nodes (not just the first).
+# The cron runs every 6h: 'k3s etcd-snapshot save' + upload to OCI Object Storage.
+# Running on all 3 servers is safe and idempotent — if the first server is later
+# replaced by the instance pool, uploads continue uninterrupted from the survivors.
+setup_etcd_snapshot_upload
+
 if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
   wait_for_cluster_ready
 
@@ -402,10 +471,6 @@ if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     node-role.kubernetes.io/etcd:NoSchedule- \
     2>/dev/null || true
   echo "Control-plane NoSchedule taints removed -- all 4 nodes schedulable."
-
-  # Set up etcd snapshot upload cron job (uploads to OCI Object Storage every 6h).
-  # Must be called after k3s is running (needs k3s etcd-snapshot CLI tool).
-  setup_etcd_snapshot_upload
 
   # Source bootstrap functions (defined in k3s-bootstrap.sh, prepended by data.tf)
   export PATH="/root/bin:${PATH}"

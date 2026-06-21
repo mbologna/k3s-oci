@@ -132,7 +132,9 @@ locals {
     enable_longhorn_backup  = var.enable_longhorn_backup
     longhorn_backup_bucket  = var.enable_longhorn_backup ? "${var.cluster_name}-longhorn-backup" : ""
     # S3-compatible endpoint for Longhorn backup: auto-set when user_ocid is provided.
-    longhorn_backup_endpoint   = var.enable_longhorn_backup && var.user_ocid != null ? "https://${local.oci_object_namespace}.compat.objectstorage.${coalesce(var.region, "us-ashburn-1")}.oraclecloud.com" : ""
+    # region is required when enable_longhorn_backup && user_ocid != null (enforced by
+    # the longhorn_backup_requires_region check block in checks.tf).
+    longhorn_backup_endpoint   = var.enable_longhorn_backup && var.user_ocid != null ? "https://${local.oci_object_namespace}.compat.objectstorage.${var.region}.oraclecloud.com" : ""
     longhorn_backup_access_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].id, "") : ""
     longhorn_backup_secret_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].key, "") : ""
   }

@@ -8,8 +8,14 @@
 # ⚠️  SECURITY: This dynamic group matches ALL instances in the compartment,
 # not just k3s cluster members. Every instance in the compartment receives the
 # permissions below. Isolate each cluster in its own dedicated compartment to
-# prevent cross-cluster secret access. Using defined tags for finer scoping
-# would require a Defined Tag namespace but is more secure in shared compartments.
+# prevent cross-cluster secret access.
+#
+# For shared-compartment deployments, defined-tag scoping provides finer control:
+#   matching_rule = "All {instance.compartment.id = '${var.compartment_ocid}',
+#                        tag.<namespace>.<key>.value = '${var.cluster_name}'}"
+# This requires a Defined Tag namespace (free tier, no cost), and the tag must
+# be applied to all cluster instances via compute.tf freeform_tags or defined_tags.
+# See: https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingdynamicgroups.htm
 resource "oci_identity_dynamic_group" "k3s" {
   compartment_id = var.tenancy_ocid
   description    = "k3s cluster '${var.cluster_name}' instances"

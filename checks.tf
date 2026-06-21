@@ -104,6 +104,13 @@ check "expose_ssh_makes_bastion_redundant" {
   }
 }
 
+check "longhorn_backup_requires_region" {
+  assert {
+    condition     = !(var.enable_longhorn_backup && var.user_ocid != null) || var.region != null
+    error_message = "enable_longhorn_backup = true with user_ocid set requires region to be explicitly set. The S3-compatible endpoint URL is region-specific; omitting it would silently use the wrong endpoint and fail all backups."
+  }
+}
+
 check "etcd_snapshots_requires_object_storage" {
   assert {
     condition     = !var.enable_etcd_snapshots || var.enable_object_storage_state

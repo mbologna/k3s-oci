@@ -24,9 +24,14 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    # disableEviction removed: PDBs must be respected so the longhorn-manager
-    # minAvailable:2 PDB prevents draining a second control-plane node while
-    # another is already upgrading (which would drop Longhorn to 1 replica).
+    # disableEviction was removed to respect PodDisruptionBudgets during upgrades.
+    # NOTE: longhorn-manager is a DaemonSet — drain with --ignore-daemonsets never
+    # evicts it, so its PDB (minAvailable:2) is NOT what enforces serialization here.
+    # Actual one-at-a-time guarantees come from:
+    #   1. concurrency: 1 in this Plan (SUC only drains one node at a time)
+    #   2. kured distributed lock (prevents concurrent reboots)
+    #   3. Longhorn instance-manager auto-generated PDBs (block drain while replica
+    #      rebuild is in progress — these cover actual data-path pods, not DaemonSets)
     skipWaitForDeleteTimeout: 60
   upgrade:
     image: rancher/k3s-upgrade
@@ -47,6 +52,9 @@ spec:
   cordon: true
   drain:
     # disableEviction removed: same reasoning as server plan — respect PDBs.
+    # Serialization for worker node upgrades comes from concurrency:1 and the
+    # kured distributed lock; Longhorn instance-manager PDBs block drain while
+    # any replica rebuild is pending.
     skipWaitForDeleteTimeout: 60
   prepare:
     image: rancher/k3s-upgrade

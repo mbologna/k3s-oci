@@ -21,8 +21,24 @@ spec:
             # k3s exposes embedded etcd metrics on :2381 (--etcd-expose-metrics).
             # EtcdInsufficientMembers / EtcdNoLeader / EtcdMembersDown are the
             # primary signals for split-brain and quorum loss — must be enabled.
+            # The job name MUST remain 'k3s-etcd' (see additionalScrapeConfigs below)
+            # to match the bundled etcd mixin selector: job=~".*etcd.*".
             etcd: true
             kubeScheduler: false
+
+        # Disable serviceMonitors for components that k3s does not expose as
+        # separate processes (they run inside k3s itself and are not reachable
+        # from pods). Leaving these enabled produces chronic KubeSchedulerDown /
+        # KubeControllerManagerDown / KubeProxyDown false alerts and a collision
+        # between the kubeEtcd ServiceMonitor and our custom k3s-etcd scrape job.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
 
         # Prometheus — small retention, low memory
         prometheus:
