@@ -40,7 +40,6 @@ install_certmanager() {
     --namespace cert-manager --create-namespace \
     --version "${CERTMANAGER_CHART_VERSION}" \
     --set crds.enabled=true \
-    --set "extraArgs[0]=--feature-gates=ExperimentalGatewayAPISupport=true" \
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
     --set config.kind=ControllerConfiguration \
     --set config.enableGatewayAPI=true \

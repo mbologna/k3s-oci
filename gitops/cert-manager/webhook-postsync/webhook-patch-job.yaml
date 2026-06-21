@@ -1,0 +1,110 @@
+---
+# PostSync hook: set cert-manager webhook failurePolicy to Ignore after every sync.
+#
+# Why: k3s HA konnectivity proxy (EgressSelector) cannot route webhook calls
+# to pods — returns 502. With failurePolicy:Fail (the Helm default), any
+# write to cert-manager CRDs (Certificate, Issuer, ClusterIssuer, Order, Challenge)
+# fails when the webhook is temporarily unreachable — stalling certificate
+# issuance and renewal during leader transitions or kured reboots.
+# Setting failurePolicy:Ignore allows cert-manager operations to proceed
+# normally even when the webhook is momentarily unavailable.
+#
+# This hook runs after each cert-manager sync to re-apply the patch,
+# since the Helm chart resets failurePolicy:Fail on every sync.
+#
+# The cert-manager-webhook ValidatingWebhookConfiguration and (if present)
+# MutatingWebhookConfiguration are both patched. || true on the mutating
+# patch tolerates versions where only the validating config exists.
+#
+# Implementation note: rancher/kubectl is distroless (no sh/bash).
+# Two init containers call kubectl directly without a shell wrapper.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cert-manager-webhook-failurepolicy-ignore
+  namespace: cert-manager
+  labels:
+    app.kubernetes.io/name: cert-manager-webhook-failurepolicy-ignore
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cert-manager-webhook-failurepolicy-ignore
+    spec:
+      serviceAccountName: cert-manager-webhook-patcher
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: patch-validating-webhook
+          # renovate: datasource=docker depName=rancher/kubectl
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - kubectl
+            - patch
+            - validatingwebhookconfiguration
+            - cert-manager-webhook
+            - --type=json
+            - -p
+            - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
+        - name: patch-mutating-webhook
+          # renovate: datasource=docker depName=rancher/kubectl
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - kubectl
+            - patch
+            - mutatingwebhookconfiguration
+            - cert-manager-webhook
+            - --type=json
+            - -p
+            - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
+      containers:
+        - name: done
+          # renovate: datasource=docker depName=rancher/kubectl
+          image: rancher/kubectl:v1.31.5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - kubectl
+            - version
+            - --client

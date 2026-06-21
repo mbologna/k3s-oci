@@ -7,63 +7,69 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://charts.jetstack.io
-    chart: cert-manager
-    # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-    targetRevision: "v1.20.2"
-    helm:
-      valuesObject:
-        crds:
-          enabled: true
-        config:
-          apiVersion: controller.config.cert-manager.io/v1alpha1
-          kind: ControllerConfiguration
-          enableGatewayAPI: true
-        # Controller — issues certificates, manages ACME challenges
-        resources:
-          requests:
-            cpu: 10m
-            memory: 32Mi
-          limits:
-            memory: 64Mi
-        # Webhook — validates and mutates cert-manager CRs; must be available for API calls
-        webhook:
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              memory: 64Mi
-        # cainjector — injects CA bundles into webhook configurations
-        cainjector:
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              memory: 64Mi
-        # startupapicheck — one-shot init job that verifies the API is ready
-        startupapicheck:
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              memory: 32Mi
-        # Prometheus ServiceMonitor — enables certmanager_* metrics scraping.
-        # Must be set here (in addition to cloud-init k3s-cert-manager.sh) because ArgoCD
-        # owns this release with prune: true + selfHeal: true. Without it, ArgoCD re-renders
-        # the chart without the ServiceMonitor and prunes it, silently breaking cert expiry alerts.
-        prometheus:
-          servicemonitor:
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+      targetRevision: "v1.20.2"
+      helm:
+        valuesObject:
+          crds:
             enabled: true
-            labels:
-              release: kube-prometheus-stack
+          config:
+            apiVersion: controller.config.cert-manager.io/v1alpha1
+            kind: ControllerConfiguration
+            enableGatewayAPI: true
+          # Controller — issues certificates, manages ACME challenges
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          # Webhook — validates and mutates cert-manager CRs; must be available for API calls
+          webhook:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 64Mi
+          # cainjector — injects CA bundles into webhook configurations
+          cainjector:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 64Mi
+          # startupapicheck — one-shot init job that verifies the API is ready
+          startupapicheck:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 32Mi
+          # Prometheus ServiceMonitor — enables certmanager_* metrics scraping.
+          # Must be set here (in addition to cloud-init k3s-cert-manager.sh) because ArgoCD
+          # owns this release with prune: true + selfHeal: true. Without it, ArgoCD re-renders
+          # the chart without the ServiceMonitor and prunes it, silently breaking cert expiry alerts.
+          prometheus:
+            servicemonitor:
+              enabled: true
+              labels:
+                release: kube-prometheus-stack
+    # PostSync hook: sets cert-manager webhook failurePolicy to Ignore after each Helm sync.
+    # The Helm chart resets failurePolicy to Fail on every sync; the hook re-applies the Ignore
+    # patch so that k3s HA konnectivity 502s during leader transitions/kured reboots don't cause
+    # Certificate/Order/Challenge CRD writes to be rejected by the webhook.
+    - repoURL: https://github.com/mbologna/k3s-oci.git
+      targetRevision: HEAD
+      path: gitops/cert-manager/webhook-postsync
   # k3s HA konnectivity (EgressSelector) returns 502 for all admission webhook calls.
-  # ignoreDifferences on failurePolicy prevents ArgoCD (SSA) from claiming ownership,
-  # allowing a manual patch to set failurePolicy:Ignore to survive syncs.
-  # caBundle is continuously rotated by cert-manager cainjector — also excluded.
+  # ignoreDifferences on failurePolicy prevents ArgoCD (SSA) from reverting the PostSync
+  # hook's patch between syncs. caBundle is continuously rotated by cert-manager cainjector.
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration

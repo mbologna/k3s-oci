@@ -10,8 +10,10 @@
 # Do NOT add explicit hostnames here — that would break redirect for any host not listed.
 # cloud-init does NOT patch this file at bootstrap time.
 #
-# ArgoCD gateway-config has RespectIgnoreDifferences=true + ignoreDifferences on
-# http-to-https-redirect /spec/hostnames for forward-compatibility only.
+# SSA field ownership: cloud-init-bootstrap owns spec.hostnames on app HTTPRoutes (e.g.
+# grafana-route) via kubectl apply --server-side --field-manager=cloud-init-bootstrap.
+# This redirect route has no hostnames field, so there is no ownership conflict and no
+# ignoreDifferences entry for it in gateway-config (despite an earlier stale comment).
 #
 # Priority note: cert-manager HTTP-01 ACME challenges use a separate HTTPRoute
 # with a more specific path match (/.well-known/acme-challenge/…) that takes

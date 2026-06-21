@@ -180,15 +180,15 @@ spec:
       rules:
         - alert: LonghornBackupFailed
           expr: |
-            longhorn_backup_state{state="Error"} == 1
+            longhorn_backup_state == 4
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Longhorn backup {{ $labels.backup_name }} in error state"
+            summary: "Longhorn backup {{ $labels.backup }} in error state"
             description: >
-              Longhorn backup {{ $labels.backup_name }} (volume {{ $labels.volume_name }})
-              is in Error state. PVC data may not be protected.
+              Longhorn backup {{ $labels.backup }} (volume {{ $labels.volume }})
+              is in Error state (state value 4). PVC data may not be protected.
               Check: kubectl -n longhorn-system get backups.longhorn.io
 
         - alert: LonghornVolumeRobustnessUnhealthy
