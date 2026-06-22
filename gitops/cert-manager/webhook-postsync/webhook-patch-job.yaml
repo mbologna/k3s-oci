@@ -50,7 +50,7 @@ spec:
       initContainers:
         - name: patch-validating-webhook
           # renovate: datasource=docker depName=rancher/kubectl
-          image: rancher/kubectl:v1.31.5
+          image: rancher/kubectl:v1.36.1
           resources:
             requests:
               cpu: 10m
@@ -72,7 +72,7 @@ spec:
             - '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]'
         - name: patch-mutating-webhook
           # renovate: datasource=docker depName=rancher/kubectl
-          image: rancher/kubectl:v1.31.5
+          image: rancher/kubectl:v1.36.1
           resources:
             requests:
               cpu: 10m
@@ -95,7 +95,7 @@ spec:
       containers:
         - name: done
           # renovate: datasource=docker depName=rancher/kubectl
-          image: rancher/kubectl:v1.31.5
+          image: rancher/kubectl:v1.36.1
           resources:
             requests:
               cpu: 10m
