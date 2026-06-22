@@ -120,7 +120,11 @@ locals {
     mysql_admin_username        = var.enable_mysql ? var.mysql_admin_username : ""
     mysql_admin_password        = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
     dockerhub_username          = var.dockerhub_username
-    dockerhub_password          = var.dockerhub_password
+    # DockerHub password: plaintext only when vault is disabled or not set.
+    # When vault is enabled and a password is configured, the plaintext is blanked here
+    # and create_dockerhub_secret() in k3s-argocd.sh fetches it from Vault instead.
+    dockerhub_password        = var.enable_vault && var.dockerhub_password != "" ? "" : var.dockerhub_password
+    vault_secret_id_dockerhub = var.enable_vault && var.dockerhub_password != "" ? oci_vault_secret.dockerhub_password[0].id : ""
   }
 
   # etcd snapshot upload and Longhorn backup target vars

@@ -75,6 +75,8 @@ export VAULT_OCID="${vault_ocid}"
 export OCI_REGION="${oci_region}"
 export DOCKERHUB_USERNAME="${dockerhub_username}"
 export DOCKERHUB_PASSWORD="${dockerhub_password}"
+# Vault secret ID for the DockerHub password (empty when enable_vault=false or password not set)
+export VAULT_SECRET_ID_DOCKERHUB="${vault_secret_id_dockerhub}"
 
 # -- etcd snapshot upload (requires enable_etcd_snapshots + enable_object_storage_state) ----
 # Enables a cron job that uploads k3s etcd snapshots to OCI Object Storage every 6h.

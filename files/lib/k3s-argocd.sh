@@ -111,6 +111,16 @@ EOF
 create_dockerhub_secret() {
   [[ -z "${DOCKERHUB_USERNAME}" ]] && return 0
 
+  # Resolve DockerHub password from OCI Vault when available (plaintext blanked in user-data).
+  local dockerhub_password="${DOCKERHUB_PASSWORD}"
+  if [[ -n "${VAULT_SECRET_ID_DOCKERHUB:-}" ]]; then
+    echo "Fetching DockerHub password from OCI Vault..."
+    if ! dockerhub_password=$(fetch_from_vault "${VAULT_SECRET_ID_DOCKERHUB}"); then
+      echo "ERROR: Failed to fetch DockerHub password from OCI Vault." >&2; return 1
+    fi
+    [[ -z "${dockerhub_password}" ]] && { echo "ERROR: DockerHub password is empty after Vault fetch." >&2; return 1; }
+  fi
+
   kubectl apply -n argocd -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -125,7 +135,7 @@ stringData:
   type: helm
   enableOCI: "true"
   username: "${DOCKERHUB_USERNAME}"
-  password: "${DOCKERHUB_PASSWORD}"
+  password: "${dockerhub_password}"
 EOF
   echo "DockerHub ArgoCD repo credentials created."
 }
