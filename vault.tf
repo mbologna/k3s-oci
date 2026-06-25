@@ -78,6 +78,10 @@ resource "oci_vault_secret" "cluster" {
   }
 
   freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
 }
 
 resource "oci_vault_secret" "tailscale_oauth_client_id" {
@@ -94,6 +98,10 @@ resource "oci_vault_secret" "tailscale_oauth_client_id" {
   }
 
   freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
 }
 
 resource "oci_vault_secret" "tailscale_oauth_client_secret" {
@@ -101,7 +109,7 @@ resource "oci_vault_secret" "tailscale_oauth_client_secret" {
   compartment_id = var.compartment_ocid
   vault_id       = oci_kms_vault.k3s[0].id
   key_id         = oci_kms_key.k3s[0].id
-  secret_name    = "${var.cluster_name}-tailscale-oauth-client-secret"
+  secret_name    = "${var.cluster_name}-tailscale-client-secret"
   description    = "Tailscale operator OAuth client secret"
 
   secret_content {
@@ -110,6 +118,10 @@ resource "oci_vault_secret" "tailscale_oauth_client_secret" {
   }
 
   freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
 }
 
 resource "oci_vault_secret" "gitops_ssh_key" {
@@ -126,6 +138,10 @@ resource "oci_vault_secret" "gitops_ssh_key" {
   }
 
   freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
 }
 
 # Store the DockerHub password in Vault when vault is enabled and the credential is set.
