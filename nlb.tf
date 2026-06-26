@@ -3,7 +3,7 @@
 
 resource "oci_network_load_balancer_network_load_balancer" "k3s_public_nlb" {
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   compartment_id                 = var.compartment_ocid

@@ -273,7 +273,7 @@ resource "oci_core_instance" "k3s_standalone_worker" {
     # bug in the OCI Terraform provider (Go HTTP/2 issue on the /instances endpoint).
     # After import, all drift is suppressed so Terraform never modifies or destroys it.
     ignore_changes  = all
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
