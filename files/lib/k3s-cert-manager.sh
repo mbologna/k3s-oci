@@ -43,8 +43,7 @@ install_certmanager() {
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
     --set config.kind=ControllerConfiguration \
     --set config.enableGatewayAPI=true \
-    --set prometheus.servicemonitor.enabled=true \
-    --set prometheus.servicemonitor.labels.release=kube-prometheus-stack \
+    --set prometheus.servicemonitor.enabled=false \
     --atomic --wait --timeout 5m
 
   if [[ "${ENABLE_DNS01_CHALLENGE}" == "true" ]]; then
