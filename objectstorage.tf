@@ -16,6 +16,10 @@ resource "oci_objectstorage_bucket" "terraform_state" {
   access_type    = "NoPublicAccess"
   versioning     = "Enabled"
   freeform_tags  = local.common_tags
+
+  # Allow tofu destroy to delete the bucket even when it contains etcd snapshots
+  # or a cluster-init-lock object. Without this, destroy fails with 409-BucketNotEmpty.
+  force_destroy = true
 }
 
 # Dedicated bucket for Longhorn PVC backups (S3-compatible Longhorn backup target).
@@ -27,6 +31,9 @@ resource "oci_objectstorage_bucket" "longhorn_backup" {
   access_type    = "NoPublicAccess"
   versioning     = "Enabled"
   freeform_tags  = local.common_tags
+
+  # Allow tofu destroy to delete the bucket even when it contains Longhorn PVC backups.
+  force_destroy = true
 }
 
 # Customer Secret Key for Longhorn S3-compatible backup access.
