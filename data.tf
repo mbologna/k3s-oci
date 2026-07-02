@@ -181,6 +181,14 @@ locals {
   )
 }
 
+# Strip pure comment lines (lines that are only "# ...") from shell scripts.
+# This keeps shebangs (#!/), blank lines, and inline comments after code.
+# Required: OCI instance metadata has a hard 32KB limit; the cloud-init payload
+# with all comments exceeds this. Comments are preserved in source files (git).
+locals {
+  _sc = "(?m)^[ \\t]*#[^!][^\\n]*"
+}
+
 data "cloudinit_config" "k3s_server" {
   gzip          = true
   base64_encode = true
@@ -189,14 +197,14 @@ data "cloudinit_config" "k3s_server" {
     content_type = "text/x-shellscript"
     content = join("\n", [
       templatefile("${path.module}/files/server-vars.sh.tpl", local.k3s_server_cloud_init_vars),
-      var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"),
-      file("${path.module}/files/lib/common.sh"),
-      file("${path.module}/files/lib/k3s-secrets.sh"),
-      file("${path.module}/files/lib/k3s-cert-manager.sh"),
-      file("${path.module}/files/lib/k3s-external-secrets.sh"),
-      file("${path.module}/files/lib/k3s-argocd.sh"),
-      file("${path.module}/files/lib/k3s-bootstrap.sh"),
-      file("${path.module}/files/lib/k3s-server.sh"),
+      replace(var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/common.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-secrets.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-cert-manager.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-external-secrets.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-argocd.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-bootstrap.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-server.sh"), "/${local._sc}/", ""),
     ])
   }
 }
@@ -214,9 +222,9 @@ data "cloudinit_config" "k3s_worker" {
         os_user        = local.os_user
         ssh_public_key = local.ssh_public_key
       })),
-      var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"),
-      file("${path.module}/files/lib/common.sh"),
-      file("${path.module}/files/lib/k3s-agent.sh"),
+      replace(var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/common.sh"), "/${local._sc}/", ""),
+      replace(file("${path.module}/files/lib/k3s-agent.sh"), "/${local._sc}/", ""),
     ])
   }
 }
