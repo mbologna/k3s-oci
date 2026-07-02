@@ -161,6 +161,10 @@ resource "oci_vault_secret" "dockerhub_password" {
   }
 
   freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
 }
 
 # Store the Cloudflare API token in Vault when vault is enabled and the token is set.
