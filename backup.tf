@@ -1,6 +1,6 @@
 # ── Boot volume backup policy ─────────────────────────────────────────────────
 # Weekly full backups with 1-week retention = at most 1 active backup per volume.
-# With 4 nodes (3 servers + 1 worker) that is 4 concurrent backups — within the
+# With 2 nodes (1 server + 1 worker) that is 2 concurrent backups — within the
 # 5 Always Free volume backup limit.
 
 resource "oci_core_volume_backup_policy" "k3s" {

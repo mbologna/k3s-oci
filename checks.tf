@@ -70,8 +70,8 @@ check "always_free_ocpu_budget" {
       var.k3s_server_pool_size * var.server_ocpus +
       (var.k3s_standalone_worker ? var.worker_ocpus : 0) +
       var.k3s_worker_pool_size * var.worker_ocpus
-    ) <= 4
-    error_message = "Total OCPU allocation exceeds the Always Free A1.Flex limit of 4 OCPUs. Reduce server_ocpus, worker_ocpus, or the number of nodes."
+    ) <= 2
+    error_message = "Total OCPU allocation exceeds the Always Free A1.Flex limit of 2 OCPUs. Reduce server_ocpus, worker_ocpus, or the number of nodes."
   }
 }
 
@@ -81,8 +81,8 @@ check "always_free_ram_budget" {
       var.k3s_server_pool_size * var.server_memory_in_gbs +
       (var.k3s_standalone_worker ? var.worker_memory_in_gbs : 0) +
       var.k3s_worker_pool_size * var.worker_memory_in_gbs
-    ) <= 24
-    error_message = "Total RAM allocation exceeds the Always Free A1.Flex limit of 24 GB. Reduce server_memory_in_gbs, worker_memory_in_gbs, or the number of nodes."
+    ) <= 12
+    error_message = "Total RAM allocation exceeds the Always Free A1.Flex limit of 12 GB. Reduce server_memory_in_gbs, worker_memory_in_gbs, or the number of nodes."
   }
 }
 
@@ -92,8 +92,8 @@ check "always_free_node_count" {
       var.k3s_server_pool_size +
       (var.k3s_standalone_worker ? 1 : 0) +
       var.k3s_worker_pool_size
-    ) <= 4
-    error_message = "Total node count exceeds the Always Free limit of 4 A1.Flex instances. Use k3s_server_pool_size=3 + k3s_standalone_worker=true + k3s_worker_pool_size=0 for the recommended topology."
+    ) <= 2
+    error_message = "Total node count exceeds the Always Free limit of 2 A1.Flex instances. Use k3s_server_pool_size=1 + k3s_standalone_worker=true + k3s_worker_pool_size=0 for the recommended topology."
   }
 }
 

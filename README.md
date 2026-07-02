@@ -75,11 +75,11 @@ All four A1.Flex instances live in a **private subnet** with no public IPs. Inte
 
 **Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on all four nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
 
-**Internal Flex LB** provides a stable private VIP across all three control-plane nodes. Workers join via this VIP so the cluster survives any single control-plane loss.
+**Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP.
 
-**Longhorn** runs on all four nodes with `defaultReplicaCount=2`; each PVC is replicated across two nodes. For critical PVCs that must survive two simultaneous node losses, use the `longhorn-replicated-3` StorageClass (`gitops/longhorn/storageclasses/`). Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across all four identically-sized nodes.
+**Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across both identically-sized nodes.
 
-> **HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure**, the hard limit of a 4-node Always Free topology.
+> **Note:** OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery.
 
 ## Quickstart
 
@@ -476,15 +476,15 @@ terraform {
 
 | Resource | Free allowance | This module |
 |---|---|---|
-| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker = **4 OCPUs / 24 GB** |
-| Block storage | 200 GB | 4 × 50 GB = **200 GB** |
+| A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 worker = **2 OCPUs / 12 GB** |
+| Block storage | 200 GB | 2 × 50 GB = **100 GB** (100 GB spare) |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
 | Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
 | Vault (shared) | Software keys + 150 secrets | **3 secrets**: k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
-| Volume backups | 5 total | **4** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
+| Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -494,13 +494,11 @@ terraform {
 
 | Component | Tolerance | What happens on failure |
 |---|---|---|
-| **Any single node** (any role) | ✅ 1 node | Workloads reschedule to remaining 3 nodes; Longhorn (2 replicas) keeps storage up; Envoy Gateway DaemonSet keeps ingress up on remaining nodes |
-| **2 nodes simultaneously** | ⚠️ Partial | Workloads and ingress continue on 2 surviving nodes; **if both failed nodes are control-planes**, etcd quorum is lost and the API server stops accepting writes (running pods keep running, no new scheduling) |
-| **etcd / control-plane quorum** | ❌ 2 control-planes | Cluster becomes read-only; recovery requires etcd snapshot restore; see [Split-Brain Recovery](#split-brain-recovery) |
-| **Worker node** | ✅ Full | With taints removed, workloads reschedule to control-planes; no SPOF |
-| **HTTP/HTTPS ingress** | ✅ 3 node losses | Envoy Gateway DaemonSet; NLB health-checks remove unhealthy backends automatically |
-| **Kubernetes API** | ✅ 1 control-plane | ILB routes to remaining 2 control-planes |
-| **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 4 nodes; 1 replica lost, 1 remains serving. Use `longhorn-replicated-3` StorageClass for critical PVCs to survive 2 simultaneous losses |
+| **Worker node failure** | ✅ Full | Workloads reschedule to control-plane (taints removed); Longhorn (2 replicas) keeps storage up |
+| **Control-plane failure** | ❌ None | Single etcd node — cluster becomes unavailable; restore from etcd snapshot; see [Split-Brain Recovery](#split-brain-recovery) |
+| **HTTP/HTTPS ingress** | ✅ Worker loss | Envoy Gateway DaemonSet on control-plane keeps ingress up |
+| **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
+| **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
 | **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
 | **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
 | **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
@@ -509,7 +507,7 @@ terraform {
 
 Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role (server vs agent) affects which system processes run, not how much resource is available for workloads.
 
-| What | control-plane-0/1/2 | worker-0 | Scheduling mechanism |
+| What | control-plane-0 | worker-0 | Scheduling mechanism |
 |---|:---:|:---:|---|
 | **etcd** | ✅ | ❌ | k3s built-in; servers only |
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
@@ -519,36 +517,31 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
 | **kube-prometheus-stack** | ✅ | ✅ | Deployment/StatefulSet: any node |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **User workloads** | ✅ | ✅ | No restrictions — schedules on all 4 nodes |
+| **User workloads** | ✅ | ✅ | No restrictions — schedules on both nodes |
 
-> **Why control-planes run user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes those taints at cluster init so all 4 identically-sized nodes are available. With only one worker, keeping the taint would make it a single point of failure for all user workloads.
+> **Why control-plane runs user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes that taint at cluster init so both identically-sized nodes are available.
 >
-> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes and survive any single-node failure.
+> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes.
 
 ## Why this topology
 
-With a hard cap of 4 A1.Flex instances, the binding constraint is **etcd quorum**: HA etcd needs at minimum 3 nodes (quorum = ⌊n/2⌋+1 = 2). The result is a 3-server HA cluster plus 1 standalone worker that saturates every Always Free resource class with nothing left unused and nothing that costs money.
+OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to **2 OCPUs/12 GB** (max 2 instances). The result is 1 control-plane + 1 standalone worker — no etcd HA, but full use of the free allocation.
 
 ### Topology comparison
 
 | Topology | etcd HA | Nodes for workloads | Effective RAM for workloads† | Assessment |
 |---|:---:|:---:|:---:|---|
-| **3 CP + 1 worker (this module)** | ✅ 1-node fault | 4 (taints removed) | ~15 GB | **Optimal**: HA etcd, all 4 nodes contribute to workloads |
-| 1 CP + 3 workers | ❌ CP is total SPOF | 4 | ~18 GB | More capacity but control-plane loss = complete cluster death |
-| 2 CP + 2 workers | ❌ Invalid | - | - | 2-node etcd cannot form quorum; worse than 1 node |
-| 4 CP + 0 workers | ✅ 1-node fault | 4 (taints removed) | ~12 GB | Fewer resources for workloads; more etcd overhead |
+| **1 CP + 1 worker (this module)** | ❌ Single node | 2 (taints removed) | ~10 GB | **Only viable option** within 2 OCPU / 12 GB Always Free limit |
+| 2 CP + 0 workers | ❌ 2-node etcd invalid | 2 | ~9 GB | 2-node etcd cannot form quorum; worse than 1 node |
 
 †etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
-
-**4 × 1 OCPU even split** prevents any single etcd node from becoming a hot-spot, creates 4 equal fault domains, and allows workloads to spread evenly.
 
 ### Why not use the 2 free E2.1.Micro instances as extra workers?
 
 Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 
-1. **Storage budget exhausted**: 4 × 50 GB boot volumes already consume the full 200 GB Always Free block storage allowance; two additional instances would require at least 100 GB more
-2. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
-3. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
+1. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+2. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
 
 ### Previously rejected alternatives
 
