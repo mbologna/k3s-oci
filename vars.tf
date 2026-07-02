@@ -619,7 +619,7 @@ variable "certmanager_chart_version" {
   type        = string
   description = "cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  default = "v1.20.2"
+  default = "v1.20.3"
 
   validation {
     condition     = length(var.certmanager_chart_version) > 0 && can(regex("^[v0-9]", var.certmanager_chart_version))
