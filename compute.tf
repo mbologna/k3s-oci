@@ -102,8 +102,14 @@ resource "oci_core_instance_pool" "k3s_servers" {
   }
 
   lifecycle {
-    create_before_destroy = true
-    ignore_changes        = [load_balancers, freeform_tags, instance_configuration_id]
+    # create_before_destroy = false (default) — INTENTIONAL.
+    # With create_before_destroy = true, OCI creates a new pool before destroying
+    # the old one. If the new pool sits in PROVISIONING indefinitely (A1.Flex
+    # capacity constraint) and tofu is killed, BOTH pools become deposed objects.
+    # Each retry adds another pair, leading to quota exhaustion (50+ pools).
+    # With the default false, the old pool is destroyed first so at most one pool
+    # can exist in OCI at any given time.
+    ignore_changes = [load_balancers, freeform_tags, instance_configuration_id]
   }
 }
 
@@ -196,8 +202,8 @@ resource "oci_core_instance_pool" "k3s_workers" {
   }
 
   lifecycle {
-    create_before_destroy = true
-    ignore_changes        = [load_balancers, freeform_tags, instance_configuration_id]
+    # create_before_destroy = false (default) — same rationale as k3s_servers above.
+    ignore_changes = [load_balancers, freeform_tags, instance_configuration_id]
   }
 }
 
@@ -205,8 +211,9 @@ resource "oci_core_instance_pool" "k3s_workers" {
 # OCI Always Free A1.Flex capacity is best claimed via a direct oci_core_instance
 # rather than an instance pool. Instance pools go through OCI's Capacity Management
 # API which can return "out of capacity" errors for A1.Flex on Always Free tenancies.
-# With k3s_server_pool_size=3 and k3s_standalone_worker=true this consumes the full
-# Always Free budget: 4 × (1 OCPU / 6 GB RAM) = 4 OCPUs / 24 GB.
+# With k3s_server_pool_size=1 and k3s_standalone_worker=true this consumes the full
+# Always Free budget: 2 × (1 OCPU / 6 GB RAM) = 2 OCPUs / 12 GB.
+# OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to 2 OCPUs/12 GB.
 
 resource "oci_core_instance" "k3s_standalone_worker" {
   count = var.k3s_standalone_worker ? 1 : 0

@@ -131,13 +131,13 @@ variable "compute_shape" {
 
 variable "server_ocpus" {
   type        = number
-  description = "OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 4 (Always Free)."
+  description = "OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 2 (Always Free)."
   default     = 1
 }
 
 variable "server_memory_in_gbs" {
   type        = number
-  description = "RAM in GB per control-plane node. Total RAM must not exceed 24 GB (Always Free)."
+  description = "RAM in GB per control-plane node. Total RAM must not exceed 12 GB (Always Free)."
   default     = 6
 }
 
@@ -155,12 +155,12 @@ variable "worker_memory_in_gbs" {
 
 variable "boot_volume_size_in_gbs" {
   type        = number
-  description = "Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 4 k3s nodes at 50 GB each the total is 200 GB (exactly at the Always Free limit). The bastion uses OCI Bastion Service — no VM, no boot volume."
+  description = "Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 2 k3s nodes at 50 GB each the total is 100 GB (within the 200 GB Always Free block storage limit). The bastion uses OCI Bastion Service — no VM, no boot volume."
   default     = 50
 
   validation {
     condition     = var.boot_volume_size_in_gbs >= 50
-    error_message = "boot_volume_size_in_gbs must be at least 50 GB (OCI minimum). Note: 4 nodes × 50 GB = 200 GB already fills the Always Free storage limit — increasing this will exceed it."
+    error_message = "boot_volume_size_in_gbs must be at least 50 GB (OCI minimum). Note: 2 nodes × 50 GB = 100 GB; you have 200 GB Always Free block storage available."
   }
 }
 
@@ -174,8 +174,8 @@ variable "fault_domains" {
 
 variable "k3s_server_pool_size" {
   type        = number
-  description = "Number of k3s control-plane nodes in the instance pool. Use 3 for HA (etcd quorum). Must be an odd number >= 1."
-  default     = 3
+  description = "Number of k3s control-plane nodes in the instance pool. Always Free allows only 1 (2 OCPUs / 12 GB total split with the standalone worker). Must be an odd number >= 1."
+  default     = 1
 
   validation {
     condition     = var.k3s_server_pool_size >= 1 && var.k3s_server_pool_size % 2 == 1
@@ -200,7 +200,7 @@ variable "k3s_standalone_worker" {
     This is the recommended approach for OCI Always Free tenancies: instance pools route
     requests through OCI Capacity Management which can fail for A1.Flex shapes, whereas
     a direct oci_core_instance reliably claims the free allocation.
-    Default topology: 3 control-plane nodes (pool) + 1 standalone worker = 4 OCPUs / 24 GB.
+    Default topology: 1 control-plane node (pool) + 1 standalone worker = 2 OCPUs / 12 GB.
   EOT
   default     = true
 }
@@ -422,7 +422,7 @@ variable "gitops_path" {
 
 variable "enable_backup" {
   type        = bool
-  description = "Enable weekly boot volume backups for all k3s nodes (Always Free: 5 total backups). With 4 nodes at weekly-1-week-retention there are at most 4 active backups."
+  description = "Enable weekly boot volume backups for all k3s nodes (Always Free: 5 total backups). With 2 nodes at weekly-1-week-retention there are at most 2 active backups."
   default     = true
 }
 

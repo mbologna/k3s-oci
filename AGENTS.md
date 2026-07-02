@@ -30,8 +30,8 @@ do not introduce resources that incur cost.
 
 | Resource | Free allowance | This module |
 |---|---|---|
-| A1.Flex compute | 4 OCPUs / 24 GB / 4 instances | 3 servers + 1 worker |
-| Block storage | 200 GB | 4 × 50 GB boot volumes = 200 GB; bastion is OCI Bastion Service (managed, no VM, no storage) |
+| A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 standalone worker |
+| Block storage | 200 GB | 2 × 50 GB boot volumes = 100 GB; bastion is OCI Bastion Service (managed, no VM, no storage) |
 | NLB | 1 | 1 public NLB |
 | Flex LB | 2 × 10 Mbps | 1 internal LB |
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
@@ -400,7 +400,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 - Controlled by `enable_backup` variable (default: `true`).
 - Creates a custom `oci_core_volume_backup_policy` with weekly full backups, 1-week retention.
 - Assigns the policy to all server boot volumes (`data.oci_core_instance.k3s_servers[*].boot_volume_id`) and the standalone worker boot volume.
-- With 4 nodes and 1-week retention there are at most 4 active backups — within the 5-backup Always Free limit.
+- With 2 nodes and 1-week retention there are at most 2 active backups — within the 5-backup Always Free limit.
 - Do NOT increase retention or frequency beyond 1-week/weekly without exceeding the free limit.
 
 ### Object Storage Buckets (`objectstorage.tf`)

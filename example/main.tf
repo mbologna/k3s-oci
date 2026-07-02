@@ -31,7 +31,7 @@ variable "private_key_path" {
 
 variable "k3s_server_pool_size" {
   type    = number
-  default = 3
+  default = 1
 }
 variable "k3s_worker_pool_size" {
   type    = number
