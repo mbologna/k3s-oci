@@ -47,20 +47,20 @@ certmanager_email_address = "you@example.com"
 # Append all SSH keys published on a GitHub profile to every node's authorized_keys
 # github_ssh_keys_username = "mbologna"
 
-# ── Topology (Always Free: 4 OCPUs / 24 GB total across all A1.Flex nodes) ───
-# Default: 3 HA control-plane nodes (instance pool) + 1 standalone worker = 4 × (1 OCPU / 6 GB)
+# ── Topology (Always Free: 2 OCPUs / 12 GB total across all A1.Flex nodes) ───
+# Default: 1 control-plane node + 1 standalone worker = 2 × (1 OCPU / 6 GB)
 # k3s_standalone_worker=true uses a direct oci_core_instance for the worker because
 # OCI instance pools can fail for A1.Flex on Always Free tenancies (capacity errors).
-k3s_server_pool_size  = 3
+k3s_server_pool_size  = 1
 k3s_worker_pool_size  = 0   # Keep at 0; pool is reserved for future non-free scaling
 k3s_standalone_worker = true
 
 # compute_shape        = "VM.Standard.A1.Flex"  # Do not change — only A1.Flex is Always Free
-# server_ocpus         = 1                       # OCPUs per server node  (total: server_ocpus × pool_size + worker_ocpus ≤ 4)
-# server_memory_in_gbs = 6                       # RAM per server node    (total: must be ≤ 24 GB)
+# server_ocpus         = 1                       # OCPUs per server node  (total: server_ocpus × pool_size + worker_ocpus ≤ 2)
+# server_memory_in_gbs = 6                       # RAM per server node    (total: must be ≤ 12 GB)
 # worker_ocpus         = 1                       # OCPUs for standalone worker
 # worker_memory_in_gbs = 6                       # RAM for standalone worker
-# boot_volume_size_in_gbs = 50                   # Must be exactly 50 — 4×50 GB = 200 GB Always Free limit
+# boot_volume_size_in_gbs = 50                   # Must be exactly 50 — 2×50 GB = 100 GB (200 GB Always Free limit)
 
 # ── k3s ───────────────────────────────────────────────────────────────────────
 # k3s_version defaults to "stable" (resolved at plan-time via k3s channel API).

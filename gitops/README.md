@@ -249,4 +249,4 @@ spec:
       app: my-app
 ```
 
-> **etcd HA ceiling:** etcd runs on the 3 control-plane nodes (quorum = 2). The cluster tolerates **1 control-plane failure** maximum. This is the hard limit for an Always Free 4-node topology.
+> **etcd note:** etcd runs on a single control-plane node (no HA quorum). The cluster does not tolerate control-plane loss without manual recovery from an etcd snapshot. This is a constraint of the Always Free 2-node topology.
