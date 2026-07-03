@@ -6,7 +6,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 
 ## Features
 
-- **HA control plane**: 3 control-plane nodes with embedded etcd; survives 1 node failure
+- **Single control plane**: 1 control-plane node with embedded etcd + 1 standalone worker (OCI Always Free 2 OCPU / 12 GB limit)
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
 - **Envoy Gateway ingress (Gateway API)**: DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
