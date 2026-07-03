@@ -476,7 +476,7 @@ variable "enable_notifications" {
   type        = bool
   description = <<-EOT
     Create an OCI Notifications topic and wire the endpoint to Alertmanager as a webhook receiver
-    (Always Free: 1M HTTPS + 3K email/month).
+    (Always Free: 1M HTTPS + 1K email/month).
 
     ⚠️  IMPORTANT — ONS authentication limitation: The OCI Notifications PublishMessage REST endpoint
     requires OCI IAM request signing. Alertmanager sends unsigned HTTP POSTs, which OCI rejects with

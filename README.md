@@ -41,12 +41,8 @@ optional: kubeapi :6443 · SSH :22"]
         ILB["⚖️ Internal Flex LB (Always Free)
 kubeapi VIP :6443"]
 
-        subgraph cp["Control Plane × 3  ·  A1.Flex (1 OCPU / 6 GB each)
+        CP["control-plane-0  ·  A1.Flex (1 OCPU / 6 GB)
 k3s-server · etcd · Envoy Gateway · Longhorn · user workloads"]
-            CP0["control-plane-0"]
-            CP1["control-plane-1"]
-            CP2["control-plane-2"]
-        end
 
         W["worker-0  ·  A1.Flex (1 OCPU / 6 GB)
 k3s-agent · Envoy Gateway · Longhorn · user workloads"]
@@ -57,23 +53,23 @@ k3s-agent · Envoy Gateway · Longhorn · user workloads"]
 optional · Always Free"]
 
     Internet -->|HTTP / HTTPS| NLB
-    NLB -->|"Envoy Gateway NodePorts :30080 / :30443"| CP0 & CP1 & CP2 & W
+    NLB -->|"Envoy Gateway NodePorts :30080 / :30443"| CP & W
     NLB -. "kubeapi :6443
 expose_kubeapi=true" .-> ILB
     NLB -. "SSH :22
-expose_ssh=true" .-> CP0 & CP1 & CP2 & W
-    ILB --> CP0 & CP1 & CP2
+expose_ssh=true" .-> CP & W
+    ILB --> CP
     W -->|joins via kubeapi| ILB
     private -->|outbound| NAT --> Internet
     Bastion -. "SSH tunnel
 enable_bastion=true" .-> private
 ```
 
-All four A1.Flex instances live in a **private subnet** with no public IPs. Internet traffic enters exclusively through two Always Free load balancers.
+Both A1.Flex instances live in a **private subnet** with no public IPs. Internet traffic enters exclusively through two Always Free load balancers.
 
 > **k3s naming note:** k3s calls control-plane nodes "servers" (`k3s server`) and workers "agents" (`k3s agent`). Terraform resources follow k3s conventions (`server`/`worker`); in standard Kubernetes terminology these map to control-plane and worker nodes.
 
-**Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on all four nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
+**Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on both nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
 
 **Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP.
 
@@ -141,7 +137,7 @@ OCI provides two load balancer products with very different capabilities:
 |---|---|---|
 | OSI layer | **L4 (TCP passthrough)** | L7 (HTTP/HTTPS aware) |
 | TLS termination | ❌ Not possible | ✅ Yes |
-| Always Free | **1 NLB** | 2 × 10 Mbps |
+| Always Free | **1 NLB** | 1 × 10 Mbps |
 | Used here | `nlb.tf`: public internet traffic | `lb.tf`: internal kubeapi HA VIP |
 
 The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"`, so it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
@@ -479,13 +475,13 @@ terraform {
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 worker = **2 OCPUs / 12 GB** |
 | Block storage | 200 GB | 2 × 50 GB = **100 GB** (100 GB spare) |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
-| Flexible Load Balancer | 2 × 10 Mbps | **1** (private, kubeapi) |
+| Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
 | Vault (shared) | Software keys + 150 secrets | **3 secrets**: k3s_token, longhorn_ui_password, grafana_admin_password (`enable_vault = true`) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
-| Notifications | 1M HTTPS + 3K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
+| Notifications | 1M HTTPS + 1K email/month | **1 topic** wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
 > ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
@@ -549,7 +545,7 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 |---|---|
 | nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
-| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 4 × 50 GB = 200 GB exactly exhausts the free block storage allowance |
+| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 2 × 50 GB = 100 GB of the 200 GB free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
 | openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image. **openSUSE Leap 16.0 is now supported** via `os_family = "opensuse"` + a custom-imported UEFI image. See [Choosing an OS](#choosing-an-os) below. Other distros remain unsupported. |
 
