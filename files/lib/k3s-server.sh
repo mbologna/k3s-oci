@@ -452,7 +452,7 @@ if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
   # (unlike kubeadm). This command is a no-op on a standard k3s install, guarded by
   # || true. It exists as a safety net in case a future k3s version or a user-supplied
   # flag introduces these taints. With only one worker, keeping them would make the
-  # worker a single-node SPOF for user workloads. All four A1.Flex nodes are
+  # worker a single-node SPOF for user workloads. Both A1.Flex nodes are
   # identically sized, so co-locating etcd and user workloads is safe.
   kubectl taint nodes -l node-role.kubernetes.io/control-plane \
     node-role.kubernetes.io/control-plane:NoSchedule- \

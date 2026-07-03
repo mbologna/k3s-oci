@@ -1,5 +1,5 @@
 # ── OCI Notifications topic for Alertmanager ─────────────────────────────────
-# Always Free: 1 million HTTPS notifications + 3,000 email notifications/month.
+# Always Free: 1 million HTTPS notifications + 1,000 email notifications/month.
 # Alertmanager posts alerts to the HTTPS endpoint; OCI fans them out to
 # email/SMS/PagerDuty/Slack subscriptions.
 

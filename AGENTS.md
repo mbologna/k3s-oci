@@ -33,13 +33,13 @@ do not introduce resources that incur cost.
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 standalone worker |
 | Block storage | 200 GB | 2 × 50 GB boot volumes = 100 GB; bastion is OCI Bastion Service (managed, no VM, no storage) |
 | NLB | 1 | 1 public NLB |
-| Flex LB | 2 × 10 Mbps | 1 internal LB |
+| Flex LB | 1 × 10 Mbps | 1 internal LB |
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
 | Vault (shared) | Software keys + 150 secrets | 3–6 secrets — k3s_token, longhorn_ui_password, grafana_admin_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
 | Volume backups | 5 total | 4 — one per node, weekly, 1-week retention (`enable_backup = true`) |
-| Notifications | 1M HTTPS + 3K email/month | 1 topic wired to Alertmanager (`enable_notifications = false`, opt-in) |
+| Notifications | 1M HTTPS + 1K email/month | 1 topic wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
