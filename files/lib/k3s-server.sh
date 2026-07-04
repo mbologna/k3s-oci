@@ -339,6 +339,16 @@ install_k3s_server() {
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
+    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
+    # k3s uses KillMode=process, so shims survive crashes and reconnect all at once on
+    # restart, causing a load spike that exceeds k3s's internal leader-election timeout
+    # and triggers another crash. Killing shims on exit gives k3s a clean slate.
+    mkdir -p /etc/systemd/system/k3s.service.d
+    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
+[Service]
+ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
+CONF
+    systemctl daemon-reload
   else
     echo "==> Joining existing cluster"
 
@@ -410,6 +420,12 @@ install_k3s_server() {
       fi
       echo "==> Patched k3s.service.env: K3S_URL → https://${join_url}:${KUBE_API_PORT:-6443}"
     fi
+    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
+    mkdir -p /etc/systemd/system/k3s.service.d
+    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
+[Service]
+ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
+CONF
     systemctl daemon-reload
     echo "==> Starting k3s to join cluster..."
     systemctl start k3s
