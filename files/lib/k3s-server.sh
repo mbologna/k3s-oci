@@ -290,6 +290,15 @@ install_k3s_server() {
   # EtcdNoLeader / EtcdInsufficientMembers alerts depend on this endpoint being reachable.
   install_params+=("--etcd-expose-metrics")
 
+  # Extend leader election timeouts for the embedded kube-controller-manager.
+  # OCI A1.Flex ARM64 nodes run embedded etcd on boot volume storage; under bursty
+  # load (ArgoCD mass-sync, Rancher Fleet startup) etcd write latency can exceed the
+  # default 10s renew-deadline, causing the controller-manager to lose its lease and
+  # exit (restart counter grows unboundedly). 60s/40s gives 4x headroom over defaults.
+  install_params+=("--kube-controller-arg=leader-elect-lease-duration=60s")
+  install_params+=("--kube-controller-arg=leader-elect-renew-deadline=40s")
+  install_params+=("--kube-controller-arg=leader-elect-retry-period=5s")
+
   if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
     install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
   fi
