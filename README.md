@@ -75,7 +75,7 @@ Both A1.Flex instances live in a **private subnet** with no public IPs. Internet
 
 **Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across both identically-sized nodes.
 
-> **Note:** OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery.
+> **Note:** OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery.
 
 ## Quickstart
 
@@ -491,7 +491,7 @@ terraform {
 | Component | Tolerance | What happens on failure |
 |---|---|---|
 | **Worker node failure** | ✅ Full | Workloads reschedule to control-plane (taints removed); Longhorn (2 replicas) keeps storage up |
-| **Control-plane failure** | ❌ None | Single etcd node — cluster becomes unavailable; restore from etcd snapshot; see [Split-Brain Recovery](#split-brain-recovery) |
+| **Control-plane failure** | ❌ None | Single etcd node — cluster becomes unavailable; restore from etcd snapshot |
 | **HTTP/HTTPS ingress** | ✅ Worker loss | Envoy Gateway DaemonSet on control-plane keeps ingress up |
 | **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
 | **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
@@ -521,7 +521,7 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 
 ## Why this topology
 
-OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to **2 OCPUs/12 GB** (max 2 instances). The result is 1 control-plane + 1 standalone worker — no etcd HA, but full use of the free allocation.
+OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to **2 OCPUs/12 GB** (max 2 instances). The result is 1 control-plane + 1 standalone worker — no etcd HA, but full use of the free allocation.
 
 ### Topology comparison
 
@@ -612,97 +612,6 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
-
-## Split-Brain Recovery
-
-A **split-brain** occurs when multiple k3s server nodes each bootstrap an independent etcd cluster (`--cluster-init`) instead of joining a single shared one. Symptoms: `kubectl get nodes` shows only 1 node (not 3), or etcd member IDs differ across servers, or the cluster survives a reboot but each server has different state.
-
-### Detection
-
-```bash
-# On each server node (via SSH):
-sudo k3s kubectl get nodes          # should show all 3 servers
-sudo k3s etcd-snapshot ls           # should show same snapshots on all servers
-/usr/local/bin/k3s etcd-snapshot ls 2>&1 | grep -E "^etcd"
-
-# Check etcd member list (run on each server):
-sudo ETCDCTL_API=3 \
-  ETCDCTL_CACERT=/var/lib/rancher/k3s/server/tls/etcd/server-ca.crt \
-  ETCDCTL_CERT=/var/lib/rancher/k3s/server/tls/etcd/server-client.crt \
-  ETCDCTL_KEY=/var/lib/rancher/k3s/server/tls/etcd/server-client.key \
-  etcdctl member list
-# If IDs differ between servers → split-brain confirmed
-```
-
-### Recovery from etcd snapshot (recommended)
-
-```bash
-# 1. Identify the best snapshot. List snapshots in OCI Object Storage:
-#    (if enable_etcd_snapshots = true, snapshots are uploaded every 6h)
-oci os object list \
-  --namespace <your-namespace> \
-  --bucket-name <cluster-name>-terraform-state \
-  --prefix "etcd-snapshots/<cluster-name>/" \
-  --query 'sort_by(data, &"time-created")[-1]."name"' --raw-output
-
-# 2. Download the best snapshot to the elected first server:
-oci os object get \
-  --namespace <your-namespace> \
-  --bucket-name <cluster-name>-terraform-state \
-  --name etcd-snapshots/<cluster-name>/<snapshot-file> \
-  --file /tmp/etcd-restore.db
-
-# 3. Stop k3s on ALL server nodes:
-sudo systemctl stop k3s
-
-# 4. On the first server: reset etcd and restore from snapshot.
-#    WARNING: this wipes all current etcd state on this node.
-sudo k3s server --cluster-reset \
-  --cluster-reset-restore-path=/tmp/etcd-restore.db &
-# Wait for the reset to complete (watch journalctl -u k3s), then stop it:
-sudo pkill -f "k3s server --cluster-reset"
-
-# 5. On the REMAINING server nodes: wipe local etcd data and re-join.
-#    WARNING: this wipes all etcd state on these nodes (they will re-sync from step 4).
-sudo rm -rf /var/lib/rancher/k3s/server/db/
-sudo rm -f  /var/lib/rancher/k3s/server/token
-
-# 6. Start k3s on the first server first:
-sudo systemctl start k3s
-sleep 30  # wait for it to become the etcd leader
-
-# 7. Start k3s on the remaining servers (they will join the restored cluster):
-sudo systemctl start k3s  # (on each remaining server)
-
-# 8. Verify all members rejoined:
-sudo k3s kubectl get nodes
-```
-
-### Recovery without snapshot (last resort)
-
-```bash
-# 1. Stop k3s on ALL server nodes.
-# 2. On the intended first server ONLY, reset with no snapshot:
-sudo k3s server --cluster-reset &
-# Wait, then stop it.
-# 3. Wipe db/ and token on remaining servers (same as step 5 above).
-# 4. Start the first server, wait 30s, then start the others.
-# Note: without a snapshot you lose all etcd state from the previous cluster.
-```
-
-### Deleting a stale leader lock (after full rebuild)
-
-```bash
-# If cloud-init aborts with "leader lock held by running instance" after a
-# tofu destroy + tofu apply, the old lock is still in Object Storage.
-# Delete it before re-applying, or it will be cleared automatically if the
-# holder instance is no longer RUNNING.
-oci os object delete \
-  --namespace <your-namespace> \
-  --bucket-name <cluster-name>-terraform-state \
-  --name cluster-init-lock \
-  --force
-```
 
 ## NLB IP stability
 

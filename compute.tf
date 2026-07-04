@@ -213,7 +213,7 @@ resource "oci_core_instance_pool" "k3s_workers" {
 # API which can return "out of capacity" errors for A1.Flex on Always Free tenancies.
 # With k3s_server_pool_size=1 and k3s_standalone_worker=true this consumes the full
 # Always Free budget: 2 × (1 OCPU / 6 GB RAM) = 2 OCPUs / 12 GB.
-# OCI reduced the A1.Flex Always Free allocation in 2025 from 4 OCPUs/24 GB to 2 OCPUs/12 GB.
+# OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to 2 OCPUs/12 GB.
 
 resource "oci_core_instance" "k3s_standalone_worker" {
   count = var.k3s_standalone_worker ? 1 : 0
