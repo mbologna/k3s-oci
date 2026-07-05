@@ -290,6 +290,16 @@ install_k3s_server() {
   # EtcdNoLeader / EtcdInsufficientMembers alerts depend on this endpoint being reachable.
   install_params+=("--etcd-expose-metrics")
 
+  # Disable leader election for embedded kube-controller-manager, kube-scheduler,
+  # and cloud-controller-manager. On OCI A1.Flex ARM64 (2 vCPU), the combined startup
+  # load from ArgoCD, Rancher Fleet, and cert-manager causes API server latency to
+  # exceed the 10s k3s-internal leader-election timeout, crashing k3s. These
+  # components don't need leader election on a single-server cluster because there is
+  # only one candidate. NOTE: re-enable leader election if scaling to HA (>1 server).
+  install_params+=("--kube-controller-arg=leader-elect=false")
+  install_params+=("--kube-scheduler-arg=leader-elect=false")
+  install_params+=("--kube-cloud-controller-arg=leader-elect=false")
+
   if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
     install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
   fi
@@ -329,6 +339,16 @@ install_k3s_server() {
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
+    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
+    # k3s uses KillMode=process, so shims survive crashes and reconnect all at once on
+    # restart, causing a load spike that exceeds k3s's internal leader-election timeout
+    # and triggers another crash. Killing shims on exit gives k3s a clean slate.
+    mkdir -p /etc/systemd/system/k3s.service.d
+    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
+[Service]
+ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
+CONF
+    systemctl daemon-reload
   else
     echo "==> Joining existing cluster"
 
@@ -400,6 +420,12 @@ install_k3s_server() {
       fi
       echo "==> Patched k3s.service.env: K3S_URL → https://${join_url}:${KUBE_API_PORT:-6443}"
     fi
+    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
+    mkdir -p /etc/systemd/system/k3s.service.d
+    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
+[Service]
+ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
+CONF
     systemctl daemon-reload
     echo "==> Starting k3s to join cluster..."
     systemctl start k3s
