@@ -613,6 +613,17 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
 
+## Teardown
+
+To delete the cluster and all associated OCI resources:
+
+```bash
+cd example
+tofu destroy
+```
+
+> **Note:** If you enabled remote state (`enable_object_storage_state = true`), the state bucket itself is not destroyed — OCI cannot delete a non-empty versioned bucket. Empty and delete it manually via the OCI Console or CLI after `tofu destroy` completes.
+
 ## NLB IP stability
 
 The public NLB has `prevent_destroy = true` so its IP is stable across `tofu apply` runs.
