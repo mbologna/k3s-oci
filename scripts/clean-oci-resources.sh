@@ -32,7 +32,7 @@ for agent in $(oci logging agent-configuration list --compartment-id "$COMPARTME
   --query "data[?contains(\"display-name\", '${CLUSTER}')].id" --raw-output 2>/dev/null \
   | jq -r '.[]' 2>/dev/null); do
   log "  Deleting agent configuration ($agent)..."
-  oci logging agent-configuration delete --unified-agent-configuration-id "$agent" --force 2>/dev/null || true
+  oci logging agent-configuration delete --config-id "$agent" --force 2>/dev/null || true
 done
 # Individual logs within the log group
 LOG_GROUP_ID=$(oci logging log-group list --compartment-id "$COMPARTMENT" \
