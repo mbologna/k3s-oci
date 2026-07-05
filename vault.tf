@@ -134,7 +134,7 @@ resource "oci_vault_secret" "gitops_ssh_key" {
 
   secret_content {
     content_type = "BASE64"
-    content      = base64encode(var.gitops_ssh_private_key)
+    content      = var.gitops_ssh_private_key
   }
 
   freeform_tags = local.common_tags
