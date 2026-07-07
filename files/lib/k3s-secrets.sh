@@ -40,13 +40,14 @@ pre_create_secrets() {
   fi
   # When vault is not used, CLOUDFLARE_API_TOKEN is already exported from server-vars.sh.tpl
 
-  # Longhorn BasicAuth -- htpasswd hash generated here because openssl apr1 hashing
-  # is not possible inside static gitops YAML. Secret is referenced by
-  # gitops/longhorn/ingress.yaml (user-configured HTTPRoute + SecurityPolicy).
+  # Longhorn BasicAuth -- htpasswd hash generated here because Envoy Gateway SecurityPolicy
+  # requires {SHA}BASE64(SHA1(password)) format. openssl's -apr1 (MD5) is rejected.
+  # Secret is referenced by gitops/longhorn/ingress.yaml (HTTPRoute + SecurityPolicy).
   [[ -z "${LONGHORN_UI_USERNAME}" ]] && { echo "ERROR: LONGHORN_UI_USERNAME is empty — cannot create Longhorn auth secret."; exit 1; }
   [[ -z "${LONGHORN_UI_PASSWORD}" ]] && { echo "ERROR: LONGHORN_UI_PASSWORD is empty — cannot create Longhorn auth secret."; exit 1; }
-  local longhorn_hash
-  longhorn_hash=$(openssl passwd -apr1 "${LONGHORN_UI_PASSWORD}") || { echo "ERROR: openssl passwd failed."; exit 1; }
+  local longhorn_sha_hash
+  # {SHA} format: {SHA}BASE64(SHA1(password)) — required by Envoy Gateway BasicAuth
+  longhorn_sha_hash=$(printf '%s' "${LONGHORN_UI_PASSWORD}" | openssl dgst -sha1 -binary | base64) || { echo "ERROR: openssl sha1 failed."; exit 1; }
   kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -n longhorn-system -f - <<EOF
 apiVersion: v1
@@ -56,7 +57,7 @@ metadata:
   namespace: longhorn-system
 type: Opaque
 stringData:
-  .htpasswd: "${LONGHORN_UI_USERNAME}:${longhorn_hash}"
+  .htpasswd: "${LONGHORN_UI_USERNAME}:{SHA}${longhorn_sha_hash}"
 EOF
   echo "Longhorn BasicAuth secret created."
 
