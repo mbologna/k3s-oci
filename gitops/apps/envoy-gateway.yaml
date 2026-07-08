@@ -16,7 +16,7 @@ spec:
     repoURL: registry-1.docker.io/envoyproxy
     chart: gateway-helm
     # renovate: datasource=github-releases depName=envoyproxy/gateway
-    targetRevision: "v1.8.1"
+    targetRevision: "v1.8.2"
     helm:
       valuesObject:
         deployment:
