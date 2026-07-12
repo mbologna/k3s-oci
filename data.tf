@@ -153,6 +153,11 @@ locals {
     longhorn_hostname = local.longhorn_hostname
   }
 
+  # Extra k3s server args (e.g. etcd tuning)
+  _server_extra_args_vars = {
+    k3s_extra_server_args = join(" ", var.k3s_extra_server_args)
+  }
+
   # Debug
   _server_debug_vars = {
     trace_enabled = var.trace_enabled
@@ -176,6 +181,7 @@ locals {
     local._server_optional_vars,
     local._server_backup_vars,
     local._server_hostname_vars,
+    local._server_extra_args_vars,
     local._server_debug_vars,
     local._server_os_vars,
   )

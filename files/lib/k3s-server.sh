@@ -304,6 +304,12 @@ install_k3s_server() {
     install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
   fi
 
+  # Append extra server args (e.g. etcd tuning for resource-constrained nodes).
+  if [[ -n "${K3S_EXTRA_SERVER_ARGS:-}" ]]; then
+    read -ra _extra_args <<< "${K3S_EXTRA_SERVER_ARGS}"
+    install_params+=("${_extra_args[@]}")
+  fi
+
   local max_attempts=10 attempt=0
 
   # Resolve lock before branching: if elected first but lock is lost (another node

@@ -232,6 +232,12 @@ variable "k3s_subnet" {
   default     = "default_route_table"
 }
 
+variable "k3s_extra_server_args" {
+  type        = list(string)
+  description = "Extra arguments appended to the k3s server install command. Useful for etcd tuning on resource-constrained nodes (e.g. ['--etcd-arg=election-timeout=5000', '--etcd-arg=heartbeat-interval=1000'])."
+  default     = []
+}
+
 # ── Networking ────────────────────────────────────────────────────────────────
 
 variable "oci_core_vcn_cidr" {
