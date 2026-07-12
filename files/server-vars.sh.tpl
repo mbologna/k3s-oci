@@ -105,6 +105,9 @@ export LONGHORN_BACKUP_SECRET_KEY="${longhorn_backup_secret_key}"
 export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
 export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 
+# -- Extra k3s server args (space-separated, appended to install command) ------
+export K3S_EXTRA_SERVER_ARGS="${k3s_extra_server_args}"
+
 # -- OS family and default SSH user --------------------------------------------
 export OS_FAMILY="${os_family}"
 export OS_USER="${os_user}"

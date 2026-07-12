@@ -157,6 +157,7 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # ingress_controller_http_nodeport  = 30080
 # ingress_controller_https_nodeport = 30443
 # k3s_subnet                        = "default_route_table"
+# k3s_extra_server_args             = ["--etcd-arg=election-timeout=5000", "--etcd-arg=heartbeat-interval=1000"]
 # fault_domains                     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
 
 # ── Advanced IAM (change only if names conflict with existing OCI resources) ───
