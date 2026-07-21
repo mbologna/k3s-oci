@@ -93,6 +93,7 @@ configure_unattended_upgrades() {
   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'UUEOF'
 Unattended-Upgrade::Allowed-Origins {
     "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-updates";
     "${distro_id}:${distro_codename}-security";
     "${distro_id}ESMApps:${distro_codename}-apps-security";
     "${distro_id}ESM:${distro_codename}-infra-security";
@@ -101,6 +102,8 @@ Unattended-Upgrade::Package-Blacklist {};
 Unattended-Upgrade::DevRelease "false";
 Unattended-Upgrade::AutoFixInterruptedDpkg "true";
 Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 // kured handles reboots -- never auto-reboot here
 Unattended-Upgrade::Automatic-Reboot "false";
@@ -142,4 +145,9 @@ TIMEREOF
   systemctl restart apt-daily.timer apt-daily-upgrade.timer
 
   systemctl enable --now unattended-upgrades
+
+  # Release the kernel hold that bootstrap() set to prevent mid-provisioning
+  # kernel upgrades. With k3s running and kured managing reboots, unattended-upgrades
+  # can safely apply kernel security updates — kured will reboot in its window.
+  apt-mark unhold linux-oracle linux-image-oracle linux-headers-oracle 2>/dev/null || true
 }
