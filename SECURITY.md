@@ -34,8 +34,8 @@ Out of scope:
 
 ## Known security trade-offs
 
-- **Secrets in cloud-init user-data**: `k3s_token`, `longhorn_ui_password`, and
-  `grafana_admin_password` are passed via Terraform templatefile and land in OCI instance
+- **Secrets in cloud-init user-data**: `k3s_token` and `longhorn_ui_password`
+  are passed via Terraform templatefile and land in OCI instance
   user-data (accessible via IMDSv2 from within the instance). **Mitigation:** set
   `enable_vault = true` to store secrets in an OCI Vault (DEFAULT type, software-protected,
   Always Free) and have nodes fetch them at boot via instance_principal — secrets are never

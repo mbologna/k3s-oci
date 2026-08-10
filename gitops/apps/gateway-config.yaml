@@ -27,7 +27,7 @@ spec:
       # Use Server-Side Apply so ArgoCD manages fields via SSA ownership instead of
       # the last-applied-configuration annotation. With SSA, ArgoCD owns only the
       # listeners it explicitly applies (the `http` listener from gateway.yaml).
-      # cloud-init-bootstrap owns the `https-grafana` listener; ArgoCD's SSA apply
+      # cloud-init-bootstrap owns the `https-argocd` listener; ArgoCD's SSA apply
       # never touches it. ignoreDifferences below suppresses OutOfSync warnings.
       - ServerSideApply=true
     retry:
@@ -47,7 +47,7 @@ spec:
         - .spec.rules[].backendRefs[].kind
         - .spec.rules[].backendRefs[].weight
         - .spec.rules[].matches
-    # cloud-init adds hostname-specific HTTPS listeners (e.g. https-grafana, https-argocd,
+    # cloud-init adds hostname-specific HTTPS listeners (e.g. https-argocd,
     # https-longhorn) to the Gateway after ArgoCD deploys it. Only ignore those cloud-init-owned
     # listeners; ArgoCD still detects changes to its own `http` listener.
     - group: gateway.networking.k8s.io

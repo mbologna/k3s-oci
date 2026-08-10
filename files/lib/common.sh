@@ -184,15 +184,6 @@ oci os object list \
     done
 
 echo "[$(date -u)] etcd snapshot upload complete."
-# Write a textfile-collector metric so Prometheus can alert on snapshot staleness.
-# EtcdSnapshotStale alert in prometheus-rules.yaml fires when this is older than 7h.
-TEXTFILE_DIR="/var/lib/node_exporter/textfile_collector"
-mkdir -p "${TEXTFILE_DIR}"
-cat > "${TEXTFILE_DIR}/etcd_snapshot.prom" << PROM
-# HELP etcd_snapshot_last_success_timestamp_seconds Unix timestamp of the last successful etcd snapshot upload.
-# TYPE etcd_snapshot_last_success_timestamp_seconds gauge
-etcd_snapshot_last_success_timestamp_seconds $(date -u +%s)
-PROM
 ETCD_SCRIPT
 
   # Substitute placeholders with actual values

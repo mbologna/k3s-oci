@@ -90,19 +90,9 @@ variable "enable_longhorn_backup" {
   default = true
 }
 
-variable "enable_notifications" {
-  type    = bool
-  default = false
-}
-
 variable "enable_oci_logging" {
   type    = bool
   default = false
-}
-
-variable "alertmanager_email" {
-  type    = string
-  default = null
 }
 
 variable "enable_mysql" {
@@ -126,11 +116,6 @@ variable "github_ssh_keys_username" {
 }
 
 variable "longhorn_hostname" {
-  type    = string
-  default = null
-}
-
-variable "grafana_hostname" {
   type    = string
   default = null
 }
@@ -412,14 +397,11 @@ module "k3s_cluster" {
   enable_vault                      = var.enable_vault
   enable_object_storage_state       = var.enable_object_storage_state
   enable_longhorn_backup            = var.enable_longhorn_backup
-  enable_notifications              = var.enable_notifications
-  alertmanager_email                = var.alertmanager_email
   enable_mysql                      = var.enable_mysql
   mysql_admin_username              = var.mysql_admin_username
   mysql_shape                       = var.mysql_shape
   github_ssh_keys_username          = var.github_ssh_keys_username
   longhorn_hostname                 = var.longhorn_hostname
-  grafana_hostname                  = var.grafana_hostname
   argocd_hostname                   = var.argocd_hostname
   gitops_repo_url                   = var.gitops_repo_url
   gitops_path                       = var.gitops_path
@@ -488,20 +470,12 @@ output "ssh_host_public_key" {
   sensitive = true
 }
 
-output "grafana_admin_credentials" {
-  value     = module.k3s_cluster.grafana_admin_credentials
-  sensitive = true
-}
 output "longhorn_ui_credentials" {
   value     = module.k3s_cluster.longhorn_ui_credentials
   sensitive = true
 }
 output "k3s_token" {
   value     = module.k3s_cluster.k3s_token
-  sensitive = true
-}
-output "notification_topic_endpoint" {
-  value     = module.k3s_cluster.notification_topic_endpoint
   sensitive = true
 }
 output "mysql_admin_credentials" {

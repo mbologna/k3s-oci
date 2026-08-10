@@ -4,13 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
+### Removed
 
-- **`output.tf`: grafana hint showed literal `<grafana-hostname>`** instead of the
-  actual derived hostname. `local.grafana_hostname` already resolves to either the
-  user-set `var.grafana_hostname` or the auto-derived `grafana.<nlb-ip>.sslip.io`.
-  Using the literal string meant the hint was useless when `var.grafana_hostname`
-  was null (the common case with sslip.io).
+- **Monitoring stack removed entirely** (kube-prometheus-stack: Prometheus + Grafana +
+  Alertmanager, plus the OCI Notifications/Alertmanager integration). The module no longer
+  deploys any metrics/dashboards/alerting stack — gatus-style external uptime checks and
+  targeted node/Longhorn alerts are expected to be provided out-of-band. Removed:
+  - `gitops/apps/kube-prometheus-stack.yaml`, `gitops/apps/monitoring-extras.yaml`,
+    `gitops/monitoring/`, `gitops/network-policies/monitoring.yaml`, and the monitoring PDBs
+    (grafana/alertmanager/kube-state-metrics) from `gitops/pdbs/pod-disruption-budgets.yaml`.
+  - `notifications.tf` and the `enable_notifications` / `alertmanager_email` variables, the
+    `notification_topic_endpoint` output, and the `alertmanager-oci-config` secret.
+  - `var.grafana_hostname`, the `grafana_admin_credentials` output, the
+    `grafana_admin_password` Vault secret, and all `configure_grafana_ingress` cloud-init logic.
+  - The `--etcd-expose-metrics` k3s server flag and the `servers_allow_etcd_metrics` NSG rule
+    (TCP 2381), which existed solely for in-cluster Prometheus scraping.
+  - cert-manager's ServiceMonitor is now disabled (`servicemonitor.enabled=false`) since the
+    Prometheus operator CRDs are no longer installed.
 
 ### Added
 
@@ -18,15 +28,6 @@ All notable changes to this project will be documented in this file.
   Added `resources.requests` and `limits` for the controller, webhook, cainjector, and
   startupapicheck. On a 6 GB RAM A1.Flex node running etcd + k3s + user workloads,
   unbounded cert-manager pods can cause OOM events under memory pressure.
-
-- **PodDisruptionBudgets for monitoring stack** (`gitops/pdbs/pod-disruption-budgets.yaml`):
-  Added PDBs (`maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow`) for:
-  - `grafana` (monitoring namespace) — single-replica Deployment
-  - `alertmanager` (monitoring namespace) — single-replica StatefulSet
-  - `kube-state-metrics` (monitoring namespace) — single-replica Deployment
-  
-  Without these, kured could evict all three simultaneously on a node drain during
-  a rolling reboot window, causing a complete monitoring outage until pods reschedule.
 
 ### Fixed
 
@@ -94,9 +95,8 @@ All notable changes to this project will be documented in this file.
 
 - **Optional `route_name` parameter for `configure_app_ingress()`**
   (`files/lib/k3s-argocd.sh`): A 6th optional parameter lets callers specify the HTTPRoute
-  resource name independently from the backend service name. Fixes a duplicate HTTPRoute
-  issue where `configure_grafana_ingress()` was creating a separate
-  `kube-prometheus-stack-grafana` route instead of patching the gitops-owned `grafana` route.
+  resource name independently from the backend service name, for apps whose gitops HTTPRoute
+  file uses a different name from the backend service.
 
 - **Resource requests/limits for Envoy proxy pods** (`gitops/gateway/envoy-proxy.yaml`):
   Added `resources.requests: {cpu: 100m, memory: 128Mi}` and `limits: {memory: 256Mi}`
@@ -107,9 +107,6 @@ All notable changes to this project will be documented in this file.
 
 - **Resource requests/limits for ArgoCD controllers** (`gitops/apps/argocd.yaml`): Added
   resource boundaries for `applicationController`, `redis`, and `notifications` components.
-
-- **CPU limit for Prometheus** (`gitops/apps/kube-prometheus-stack.yaml`): Added
-  `limits.cpu: 500m` to prevent Prometheus from saturating a whole A1.Flex OCPU.
 
 - **Resource requests/limits for ArgoCD Image Updater** (`gitops/apps/argocd-image-updater.yaml`):
   Added `resources.requests: {cpu: 10m, memory: 32Mi}` and `limits: {memory: 64Mi}`.
@@ -158,19 +155,7 @@ All notable changes to this project will be documented in this file.
   `CreateNamespace=false` → `CreateNamespace=true` so the app can pre-create
   `external-dns` and `external-secrets` namespaces for the new NetworkPolicy files.
 
-### Removed
-
-- **`gitops/monitoring/alertmanager-config.yaml`**: Removed a broken `AlertmanagerConfig`
-  resource that defined a `default-receiver` with zero notification targets (all stanzas
-  commented out). An `AlertmanagerConfig` with an empty receiver causes Alertmanager to
-  log errors on every evaluation. The `alertmanager-oci-config` Secret (pre-created by
-  cloud-init) already handles the OCI Notifications webhook receiver correctly when
-  `enable_notifications = true`. See `gitops/monitoring/README.md` for guidance on adding
-  custom receivers.
-
 ### Documentation
 
-- Updated `gitops/monitoring/README.md` to document the `longhorn-servicemonitor.yaml`
-  file and remove the reference to the deleted `alertmanager-config.yaml`.
 - Updated `AGENTS.md` to document the optional 6th `[route_name]` parameter in
   `configure_app_ingress()`.

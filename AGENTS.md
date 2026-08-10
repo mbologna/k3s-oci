@@ -19,7 +19,6 @@ do not introduce resources that incur cost.
 | OS | Ubuntu 24.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Envoy Gateway (Gateway API) |
-| Observability | kube-prometheus-stack (via GitOps) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
 | GitOps | ArgoCD + Image Updater |
@@ -37,9 +36,8 @@ do not introduce resources that incur cost.
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | 3–6 secrets — k3s_token, longhorn_ui_password, grafana_admin_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
+| Vault (shared) | Software keys + 150 secrets | 2–5 secrets — k3s_token, longhorn_ui_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
 | Volume backups | 5 total | 4 — one per node, weekly, 1-week retention (`enable_backup = true`) |
-| Notifications | 1M HTTPS + 1K email/month | 1 topic wired to Alertmanager (`enable_notifications = false`, opt-in) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
@@ -63,11 +61,10 @@ compute.tf       — Instance pool (servers), pool (workers), standalone extra w
 lb.tf            — Internal Flexible LB (kubeapi HA)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
-vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 3–6 cluster secrets: k3s_token, longhorn_ui_password, grafana_admin_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 2–5 cluster secrets: k3s_token, longhorn_ui_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true
 objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
-notifications.tf — OCI Notifications topic + optional email subscription (enable_notifications)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
-output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, notification_topic_endpoint, mysql_endpoint, vault_id, tailscale_vault_secret_names)
+output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, mysql_endpoint, vault_id, tailscale_vault_secret_names)
 files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file with Terraform ${var} syntax
 files/agent-vars.sh.tpl           — cloud-init header for agents: ONLY file with Terraform ${var} syntax
 files/kubeconfig-hint-bastion.tpl     — kubeconfig retrieval instructions when bastion is enabled
@@ -77,11 +74,11 @@ files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
 files/lib/k3s-server.sh           — pure bash: first-server election, k3s install, main entry point
 files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_gateway_api_crds() then run_bootstrap()
-files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, Grafana, Alertmanager, MySQL, Cloudflare secrets
+files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, MySQL, Cloudflare secrets
 files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
 files/lib/k3s-external-secrets.sh — pure bash: install_external_secrets() — ESO Helm + ClusterSecretStore
 files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_dockerhub_secret(), create_optional_app(),
-                                    create_optional_apps(), configure_app_ingress(), configure_grafana_ingress(),
+                                    create_optional_apps(), configure_app_ingress(),
                                     configure_argocd_ingress(), configure_longhorn_ingress()
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
@@ -316,11 +313,11 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
   `export KEY="value"` statements available to the lib scripts at runtime.
 - **Bootstrap script split**: `k3s-bootstrap.sh` is now a ~45-line orchestrator. Concerns live in
   focused sub-scripts (all pure bash, concatenated in order before `k3s-bootstrap.sh` in `data.tf`):
-  - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, Grafana, Alertmanager, MySQL, Cloudflare
+  - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, MySQL, Cloudflare
   - `k3s-cert-manager.sh` — `install_certmanager()`: cert-manager Helm + ClusterIssuers
   - `k3s-external-secrets.sh` — `install_external_secrets()`: ESO Helm + ClusterSecretStore
   - `k3s-argocd.sh` — `install_argocd()`, `create_dockerhub_secret()`, `create_optional_app()`,
-    `create_optional_apps()`, `configure_app_ingress()`, `configure_grafana_ingress()`,
+    `create_optional_apps()`, `configure_app_ingress()`,
     `configure_argocd_ingress()`, `configure_longhorn_ingress()`
   - `k3s-bootstrap.sh` — `install_gateway_api_crds()` + `run_bootstrap()` (calls the above)
 - **GitOps-first**: cloud-init only bootstraps what ArgoCD cannot self-manage:
@@ -329,7 +326,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
   - ArgoCD Helm + App of Apps bootstrap
   - External Secrets Operator Helm + ClusterSecretStore (conditional, vault_ocid is runtime)
   - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
-  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_grafana_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
+  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_argocd_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
 - **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
   system-upgrade-controller, external-dns Helm — all in `gitops/apps/*.yaml`.
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
@@ -372,9 +369,9 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores four secrets by default: `k3s_token`, `longhorn_ui_password`, `grafana_admin_password`, and `dockerhub_password` (when `var.dockerhub_password` is set).
+- Stores three secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (when `var.dockerhub_password` is set).
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
-- When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `GRAFANA_ADMIN_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
+- When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
 - Agent script (`files/lib/k3s-agent.sh`) installs OCI CLI and fetches k3s_token from Vault when `VAULT_SECRET_ID_K3S_TOKEN` is non-empty.
 
@@ -409,14 +406,6 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 - **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. The `longhorn_backup_setup` output prints the three steps to connect Longhorn (Customer Secret Key → kubectl secret → uncomment `gitops/longhorn/backup-target.yaml`).
 - Both buckets share the 20 GB Always Free Object Storage allowance. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
 - Users need OCI Customer Secret Keys (S3 credentials) to use either bucket — these are user-created in the Console and not managed by Terraform.
-
-### OCI Notifications + Alertmanager (`notifications.tf`)
-- Controlled by `enable_notifications` variable (default: `false`).
-- Creates `oci_ons_notification_topic.k3s_alerts` + optional email subscription (`alertmanager_email`).
-- Cloud-init **always** creates the `alertmanager-oci-config` Secret in the `monitoring` namespace — with a null receiver when disabled, OCI webhook receiver when enabled.
-- `gitops/apps/kube-prometheus-stack.yaml` references this secret via `alertmanager.alertmanagerSpec.configSecret`. Do NOT remove `configSecret: alertmanager-oci-config` from that file — the secret always exists.
-- `notification_topic_endpoint` output provides the HTTPS endpoint for the Alertmanager webhook.
-- ⚠️ **ONS authentication limitation**: The OCI Notifications PublishMessage endpoint requires OCI IAM request signing. Alertmanager sends **unsigned** HTTP POSTs, which OCI rejects with HTTP 401. The OCI webhook receiver will silently fail. The `alertmanager_email` subscription works correctly (OCI delivers email internally, no signing needed). For Alertmanager webhook delivery, use a signing proxy, an OCI Function, or a third-party receiver (Slack, PagerDuty, etc.) instead.
 
 ### MySQL HeatWave (`mysql.tf`)
 - Controlled by `enable_mysql` variable (default: `false`).
@@ -460,7 +449,7 @@ reconciliation never removes cloud-init-owned fields.
 configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [route_name]
 ```
 
-`route_name` is optional and defaults to `<service>`. Set it explicitly when the gitops HTTPRoute file uses a different name from the backend service (e.g. `grafana` vs `kube-prometheus-stack-grafana`).
+`route_name` is optional and defaults to `<service>`. Set it explicitly when the gitops HTTPRoute file uses a different name from the backend service (e.g. `longhorn` vs `longhorn-frontend`).
 
 **To add a new cloud-init-managed HTTPS app:**
 1. Add `var.myapp_hostname` to `vars.tf` (nullable string, default null).
@@ -512,27 +501,26 @@ An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting 
 **Hostname-specific HTTPS resources are managed by cloud-init, not gitops/**
 
 NLB IP changes on every redeploy. Hardcoding sslip.io addresses in `gitops/` breaks GitOps: every redeploy requires manual file edits. The design:
-- `local.grafana_hostname` in `locals.tf` auto-computes `grafana.<nlb-ip>.sslip.io` (or uses `var.grafana_hostname` if set).
 - `local.argocd_hostname` auto-computes `argocd.<nlb-ip>.sslip.io` (or uses `var.argocd_hostname` if set).
 - `local.longhorn_hostname` uses `var.longhorn_hostname` (no sslip.io fallback — Longhorn UI is opt-in).
-- `files/server-vars.sh.tpl` exports `GRAFANA_HOSTNAME`, `ARGOCD_HOSTNAME`, `LONGHORN_HOSTNAME`.
+- `files/server-vars.sh.tpl` exports `ARGOCD_HOSTNAME`, `LONGHORN_HOSTNAME`.
 - `files/lib/k3s-argocd.sh:configure_app_ingress(hostname namespace service port listener_name)` is the generic helper.
   - Creates the Gateway HTTPS listener (SSA, field-manager=cloud-init-bootstrap)
   - Creates the cert-manager Certificate in `envoy-gateway-system`
   - Creates the app HTTPRoute in the app namespace (SSA, field-manager=cloud-init-bootstrap)
-- `configure_grafana_ingress()`, `configure_argocd_ingress()`, `configure_longhorn_ingress()` each call the generic helper.
+- `configure_argocd_ingress()`, `configure_longhorn_ingress()` each call the generic helper.
 - `configure_longhorn_ingress()` additionally applies the `SecurityPolicy` for BasicAuth.
 - `gitops/gateway/gateway.yaml` has ONLY the `http` listener (ArgoCD owns it via SSA).
-- `gitops/monitoring/grafana-ingress.yaml` has the Grafana HTTPRoute WITHOUT `hostnames` (ArgoCD owns all fields except `spec.hostnames`, which cloud-init-bootstrap owns).
+- The ArgoCD HTTPRoute is defined WITHOUT `hostnames` (ArgoCD owns all fields except `spec.hostnames`, which cloud-init-bootstrap owns).
 
 **SSA field-manager ownership prevents ArgoCD from clearing cloud-init patches**
 
 Gateway API's `spec.listeners` is a `x-kubernetes-list-map-keys: [name]` list — SSA treats it as a named map and merges by the `name` key. Each SSA manager owns the entries it applied:
 - `argocd-controller` owns `spec.listeners[name=http]` (applied from gateway.yaml)
-- `cloud-init-bootstrap` owns `spec.listeners[name=https-grafana]` (applied by configure_grafana_ingress)
-When ArgoCD syncs gateway.yaml (without `https-grafana`), it only owns `http` and never touches `https-grafana`. The `ignoreDifferences: /spec/listeners` in gateway-config ArgoCD Application suppresses OutOfSync warnings.
+- `cloud-init-bootstrap` owns `spec.listeners[name=https-argocd]` (applied by configure_argocd_ingress)
+When ArgoCD syncs gateway.yaml (without `https-argocd`), it only owns `http` and never touches `https-argocd`. The `ignoreDifferences: /spec/listeners` in gateway-config ArgoCD Application suppresses OutOfSync warnings.
 
-Similarly, `spec.hostnames` in the Grafana HTTPRoute is owned by `cloud-init-bootstrap` (via `kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts`). ArgoCD's SSA apply (without `hostnames` in the manifest) doesn't claim or clear the field.
+Similarly, `spec.hostnames` in the ArgoCD HTTPRoute is owned by `cloud-init-bootstrap` (via `kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts`). ArgoCD's SSA apply (without `hostnames` in the manifest) doesn't claim or clear the field.
 
 **Do NOT use CSA (kubectl apply without --server-side) to patch ArgoCD-managed resources.** CSA sets the `kubectl.kubernetes.io/last-applied-configuration` annotation, which confuses ArgoCD's 3-way merge on the next sync. Always use SSA with a custom field-manager for cloud-init patches to ArgoCD-managed resources.
 
@@ -586,12 +574,6 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - On a deliberate full rebuild (destroy + apply), delete the stale lock: `oci os object delete --bucket-name ${cluster_name}-terraform-state --name cluster-init-lock --force`.
 - When Object Storage is not configured (`ETCD_SNAPSHOT_BUCKET` empty), the lock is skipped and the TIMECREATED election alone determines the first server.
 
-### etcd Monitoring
-- `kube-prometheus-stack.yaml` has `defaultRules.rules.etcd: true` — **do not disable**. These rules (EtcdNoLeader, EtcdInsufficientMembers, EtcdMembersDown, EtcdHighFsyncDurations) are the primary signals for split-brain.
-- etcd metrics are exposed on `:2381` via `--etcd-expose-metrics` (added to `install_k3s_server()` in `k3s-server.sh`).
-- `additionalScrapeConfigs` in `kube-prometheus-stack.yaml` uses `kubernetes_sd_configs` to discover control-plane nodes and scrape `:2381/metrics` automatically.
-- NSG rule `servers_allow_etcd_metrics` in `nsg.tf` opens TCP 2381 from `private_subnet_cidr` for in-cluster Prometheus scraping.
-
 ### Fail-closed split-brain fallback
 - `install_k3s_server()` in `k3s-server.sh`: when `IS_FIRST_SERVER=false`, joining nodes **abort** if `FIRST_SERVER_IP` is empty (OCI API failure during election), instead of falling back to `K3S_URL` (the internal LB).
 - **Do NOT reintroduce `${FIRST_SERVER_IP:-${K3S_URL}}`** — that fallback is the exact path that caused the documented split-brain issues. The internal LB routes to UNKNOWN-state backends for ~30s after creation, which can route a joining server's bootstrap to another uninitialised node.
@@ -602,7 +584,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - **Do not increase the default back to 3** without acknowledging the storage budget impact.
 
 ### Longhorn sync-wave
-- `gitops/apps/longhorn.yaml` has `argocd.argoproj.io/sync-wave: "-1"` — **do not remove**. This ensures Longhorn converges and its StorageClass is ready before `kube-prometheus-stack` (wave 0) creates PVCs. Without it, Prometheus PVCs sit Pending for 10-30 minutes on first boot.
+- `gitops/apps/longhorn.yaml` has `argocd.argoproj.io/sync-wave: "-1"` — **do not remove**. This ensures Longhorn converges and its StorageClass is ready before any wave-0 app that provisions PVCs. Without it, PVCs from those apps sit Pending for 10-30 minutes on first boot.
 
 ### Upgrade plan PDB behaviour
 - `gitops/system-upgrade/plans.yaml` does NOT use `disableEviction: true` — **do not add it back**. With `disableEviction`, the server and agent upgrade plans can drain nodes simultaneously, reducing Longhorn to 1 replica during rebuild. Without it, the `longhorn-manager minAvailable: 2` PDB prevents concurrent drains.
@@ -643,11 +625,11 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - A 2-bucket Always Free allocation (state + Longhorn backup) makes per-purpose IAM scoping
   impossible without exceeding the budget. Document this if operating in a high-threat environment.
 
-### ArgoCD and Grafana are publicly reachable by default (accepted constraint)
-- `configure_argocd_ingress()` and `configure_grafana_ingress()` in `k3s-argocd.sh` run
-  unconditionally, creating sslip.io HTTPS hostnames derived from the NLB IP.
-- Both UIs are reachable from the internet. Mitigations in place: TLS (cert-manager/Let's Encrypt),
-  random admin passwords (output only to Terraform state), ArgoCD RBAC.
+### ArgoCD is publicly reachable by default (accepted constraint)
+- `configure_argocd_ingress()` in `k3s-argocd.sh` runs
+  unconditionally, creating an sslip.io HTTPS hostname derived from the NLB IP.
+- The ArgoCD UI is reachable from the internet. Mitigations in place: TLS (cert-manager/Let's Encrypt),
+  random admin password (output only to Terraform state), ArgoCD RBAC.
 - To restrict access: add an Envoy `SecurityPolicy` (Gateway API ExtAuth or IP-based allow-list)
-  on the ArgoCD/Grafana HTTPRoutes, or set `var.my_public_ip_cidr` and add an NSG rule that
+  on the ArgoCD HTTPRoute, or set `var.my_public_ip_cidr` and add an NSG rule that
   limits NLB HTTP/HTTPS to your IP. Set `var.argocd_hostname = null` to skip the ArgoCD ingress.

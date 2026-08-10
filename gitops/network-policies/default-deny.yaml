@@ -1,6 +1,6 @@
 ---
 # Default-deny for the default namespace.
-# Additional namespace-scoped policies (argocd, monitoring, cert-manager, longhorn-system)
+# Additional namespace-scoped policies (argocd, cert-manager, longhorn-system)
 # live in separate files in this directory.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

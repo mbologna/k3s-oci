@@ -1,6 +1,6 @@
 # ── OCI Vault (software-protected keys — Always Free) ─────────────────────────
 # Always Free: all software-protected master encryption key versions + 150 secrets.
-# Stores k3s_token, longhorn_ui_password, and grafana_admin_password as Vault
+# Stores k3s_token and longhorn_ui_password as Vault
 # secrets fetched by cloud-init via OCI CLI instance_principal auth at boot.
 # This removes plaintext secrets from instance user-data (cloud-init).
 
@@ -39,7 +39,7 @@ resource "oci_kms_key" "k3s" {
 }
 
 # ── Cluster secrets (for_each over a shared map) ──────────────────────────────
-# Collapses k3s_token, longhorn_ui_password, and grafana_admin_password into one
+# Collapses k3s_token and longhorn_ui_password into one
 # resource. The conditional secrets (tailscale, gitops_ssh_key) remain separate
 # because they have different enable conditions.
 
@@ -54,11 +54,6 @@ locals {
       name        = "${var.cluster_name}-longhorn-ui-password"
       description = "Longhorn UI BasicAuth password"
       content     = base64encode(random_password.longhorn_ui_password.result)
-    }
-    grafana_admin_password = {
-      name        = "${var.cluster_name}-grafana-admin-password"
-      description = "Grafana admin password"
-      content     = base64encode(random_password.grafana_admin_password.result)
     }
   } : {}
 }

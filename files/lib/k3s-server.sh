@@ -286,10 +286,6 @@ install_k3s_server() {
   # Always disable k3s built-in Traefik; Envoy Gateway is managed via ArgoCD.
   install_params+=("--disable" "traefik")
 
-  # Expose embedded etcd metrics on :2381 so Prometheus can scrape quorum/latency.
-  # EtcdNoLeader / EtcdInsufficientMembers alerts depend on this endpoint being reachable.
-  install_params+=("--etcd-expose-metrics")
-
   # Disable leader election for embedded kube-controller-manager, kube-scheduler,
   # and cloud-controller-manager. On OCI A1.Flex ARM64 (2 vCPU), the combined startup
   # load from ArgoCD, Rancher Fleet, and cert-manager causes API server latency to

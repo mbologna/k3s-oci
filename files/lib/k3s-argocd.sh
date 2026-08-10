@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# lib/k3s-argocd.sh -- ArgoCD install, optional app wrappers, Grafana ingress.
+# lib/k3s-argocd.sh -- ArgoCD install, optional app wrappers, hostname ingress.
 # Installs ArgoCD via Helm, bootstraps the App of Apps, creates optional ArgoCD
-# Application wrappers for feature-gated components, and wires up the Grafana
-# Gateway listener + HTTPRoute (hostname-specific, kept outside gitops/).
+# Application wrappers for feature-gated components, and wires up hostname-specific
+# Gateway listeners + HTTPRoutes (e.g. ArgoCD, Longhorn — kept outside gitops/).
 # Pure bash -- no Terraform interpolation.
 #
 # shellcheck disable=SC2154
@@ -269,8 +269,7 @@ EOF
 #      with <hostname> (SSA, field-manager=cloud-init-bootstrap)
 #
 # <route_name> is optional and defaults to <service>. Set it explicitly when the
-# gitops HTTPRoute file uses a different name from the backend service (e.g. grafana
-# HTTPRoute is named "grafana" while the service is "kube-prometheus-stack-grafana").
+# gitops HTTPRoute file uses a different name from the backend service.
 #
 # All resources survive ArgoCD reconciliation because cloud-init-bootstrap owns
 # the specific fields; ArgoCD never claims them.
@@ -355,30 +354,6 @@ EOF
   echo "${service} ingress configured: https://${hostname}"
 }
 
-# -- Grafana ingress (hostname-specific, created outside gitops/) ---------------
-# The Gateway listener, TLS Certificate, and Grafana HTTPRoute are IP-specific
-# (hostname includes the NLB IP). They are created here so that gitops/ files
-# remain IP-independent across redeployments. ArgoCD gateway-config is configured
-# to ignore differences in Gateway spec.listeners so these survive reconciliation.
-#
-# The HTTPRoute is named "grafana" (matching gitops/monitoring/grafana-ingress.yaml)
-# so that cloud-init-bootstrap owns spec.hostnames via SSA while ArgoCD owns the
-# rest of the manifest. monitoring-extras app ignoreDifferences covers /spec/hostnames.
-
-configure_grafana_ingress() {
-  configure_app_ingress \
-    "${GRAFANA_HOSTNAME}" \
-    "monitoring" \
-    "kube-prometheus-stack-grafana" \
-    "80" \
-    "https-grafana" \
-    "grafana"
-
-  # The HTTP->HTTPS redirect HTTPRoute (gitops/gateway/redirect.yaml) intentionally
-  # has no hostnames and matches ALL HTTP traffic. The ACME challenge HTTPRoute
-  # (created by cert-manager) has a more specific hostname+path match and takes
-  # precedence. No patching of the redirect route is needed.
-}
 
 # -- ArgoCD ingress -------------------------------------------------------------
 configure_argocd_ingress() {

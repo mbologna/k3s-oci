@@ -1,13 +1,3 @@
-output "grafana_admin_credentials" {
-  description = "Grafana admin credentials (only available after cluster bootstrap)"
-  value = {
-    username = "admin"
-    password = random_password.grafana_admin_password.result
-    hint     = "Access via: https://${local.grafana_hostname}"
-  }
-  sensitive = true
-}
-
 output "argocd_initial_password_hint" {
   description = "Command to retrieve the ArgoCD initial admin password (run after cluster is up)"
   value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
@@ -98,12 +88,6 @@ output "longhorn_backup_setup" {
     step_2 = var.user_ocid == null ? "kubectl create secret generic longhorn-backup-secret --from-literal=AWS_ACCESS_KEY_ID='<key-id>' --from-literal=AWS_SECRET_ACCESS_KEY='<secret>' -n longhorn-system" : null
     step_3 = var.user_ocid == null ? "Uncomment and fill gitops/longhorn/backup-target.yaml with bucket '${oci_objectstorage_bucket.longhorn_backup[0].name}', namespace '${data.oci_objectstorage_namespace.k3s[0].namespace}'" : null
   } : null
-}
-
-output "notification_topic_endpoint" {
-  description = "OCI Notifications HTTPS endpoint for the Alertmanager webhook receiver (null if enable_notifications = false)."
-  value       = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : null
-  sensitive   = true
 }
 
 output "mysql_endpoint" {
