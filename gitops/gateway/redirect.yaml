@@ -11,7 +11,7 @@
 # cloud-init does NOT patch this file at bootstrap time.
 #
 # SSA field ownership: cloud-init-bootstrap owns spec.hostnames on app HTTPRoutes (e.g.
-# grafana-route) via kubectl apply --server-side --field-manager=cloud-init-bootstrap.
+# argocd-route) via kubectl apply --server-side --field-manager=cloud-init-bootstrap.
 # This redirect route has no hostnames field, so there is no ownership conflict and no
 # ignoreDifferences entry for it in gateway-config (despite an earlier stale comment).
 #

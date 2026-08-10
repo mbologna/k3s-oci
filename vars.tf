@@ -387,12 +387,6 @@ variable "longhorn_ui_username" {
 
 # ── ArgoCD (always installed — GitOps controller keeps cluster active) ────────
 
-variable "grafana_hostname" {
-  type        = string
-  description = "Fully-qualified hostname for the Grafana UI (e.g. grafana.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created in gitops/monitoring/."
-  default     = null
-}
-
 variable "argocd_hostname" {
   type        = string
   description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP."
@@ -476,41 +470,6 @@ variable "user_ocid" {
   default     = null
 }
 
-# ── Notifications ─────────────────────────────────────────────────────────────
-
-variable "enable_notifications" {
-  type        = bool
-  description = <<-EOT
-    Create an OCI Notifications topic and wire the endpoint to Alertmanager as a webhook receiver
-    (Always Free: 1M HTTPS + 1K email/month).
-
-    ⚠️  IMPORTANT — ONS authentication limitation: The OCI Notifications PublishMessage REST endpoint
-    requires OCI IAM request signing. Alertmanager sends unsigned HTTP POSTs, which OCI rejects with
-    HTTP 401. Enabling this variable creates the ONS topic and records its endpoint in the
-    'notification_topic_endpoint' output, but alerts will NOT be delivered to ONS without a signing proxy.
-
-    Workarounds (choose one):
-      (a) Use Alertmanager's native 'email_configs' receiver with an SMTP relay — no proxy needed.
-      (b) Deploy a small signing proxy (e.g. an OCI Function with instance-principal auth) between
-          Alertmanager and the ONS endpoint.
-      (c) Use a third-party webhook receiver (PagerDuty, Slack, etc.) that does not require signing.
-
-    The 'alertmanager_email' variable provides a direct ONS email subscription — this works correctly
-    and is independent of the signing limitation (OCI delivers email subscriptions internally).
-  EOT
-  default     = false
-}
-
-variable "alertmanager_email" {
-  type        = string
-  description = "Optional email address to subscribe to the OCI Notifications topic. The subscriber must confirm via an OCI confirmation email."
-  default     = null
-
-  validation {
-    condition     = var.alertmanager_email == null || can(regex("^[^@]+@[^@]+\\.[^@]+$", var.alertmanager_email))
-    error_message = "alertmanager_email must be a valid email address or null."
-  }
-}
 
 # ── MySQL HeatWave ────────────────────────────────────────────────────────────
 
@@ -541,7 +500,7 @@ variable "mysql_admin_username" {
 
 variable "enable_vault" {
   type        = bool
-  description = "Store cluster secrets (k3s_token, longhorn_ui_password, grafana_admin_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
+  description = "Store cluster secrets (k3s_token, longhorn_ui_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
   default     = true
 }
 

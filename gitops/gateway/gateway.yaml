@@ -30,23 +30,11 @@ spec:
 
     # ── HTTPS listeners — one per hostname ────────────────────────────────────
     # Hostname-specific HTTPS listeners are added by cloud-init at bootstrap time
-    # using the GRAFANA_HOSTNAME variable (NLB-IP-derived sslip.io or custom domain).
+    # using the ARGOCD_HOSTNAME variable (NLB-IP-derived sslip.io or custom domain).
     # ArgoCD gateway-config ignores differences in spec.listeners so these survive
     # GitOps reconciliation. Do NOT add hardcoded hostname entries here.
     #
     # Example listeners (managed by cloud-init, shown for reference only):
-    #
-    # - name: https-grafana
-    #   port: 443
-    #   protocol: HTTPS
-    #   hostname: "grafana.<nlb-ip>.sslip.io"   # set by cloud-init
-    #   tls:
-    #     mode: Terminate
-    #     certificateRefs:
-    #       - name: grafana-tls
-    #   allowedRoutes:
-    #     namespaces:
-    #       from: All
     #
     # - name: https-argocd
     #   port: 443

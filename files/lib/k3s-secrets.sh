@@ -18,16 +18,6 @@ pre_create_secrets() {
     LONGHORN_UI_PASSWORD="${LONGHORN_UI_PASSWORD_PLAIN}"
   fi
 
-  if [[ -n "${VAULT_SECRET_ID_GRAFANA_PASSWORD}" ]]; then
-    echo "Fetching Grafana admin password from OCI Vault..."
-    if ! GRAFANA_ADMIN_PASSWORD=$(fetch_from_vault "${VAULT_SECRET_ID_GRAFANA_PASSWORD}"); then
-      echo "ERROR: Failed to fetch Grafana admin password from OCI Vault." >&2; exit 1
-    fi
-    [[ -z "${GRAFANA_ADMIN_PASSWORD}" ]] && { echo "ERROR: GRAFANA_ADMIN_PASSWORD is empty after Vault fetch." >&2; exit 1; }
-  else
-    GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_PLAIN}"
-  fi
-
   # Resolve Cloudflare token from Vault when available; otherwise use the plain-text
   # value embedded in user-data (CLOUDFLARE_API_TOKEN is empty when vault is enabled).
   if [[ -n "${VAULT_SECRET_ID_CLOUDFLARE:-}" ]]; then
@@ -61,80 +51,6 @@ stringData:
 EOF
   echo "Longhorn BasicAuth secret created."
 
-  # Grafana admin secret -- referenced by kube-prometheus-stack ArgoCD app
-  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-  kubectl apply -n monitoring -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: grafana-admin-secret
-  namespace: monitoring
-type: Opaque
-stringData:
-  admin-user: admin
-  admin-password: "${GRAFANA_ADMIN_PASSWORD}"
-EOF
-  echo "Grafana admin secret pre-created in monitoring namespace."
-
-  # Alertmanager config -- always created so kube-prometheus-stack can reference
-  # it via alertmanagerSpec.configSecret. Null receiver when OCI Notifications is
-  # disabled; OCI webhook receiver when enabled.
-  if [[ -n "${NOTIFICATION_TOPIC_ENDPOINT}" ]]; then
-    kubectl apply -n monitoring -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: alertmanager-oci-config
-  namespace: monitoring
-type: Opaque
-stringData:
-  alertmanager.yaml: |
-    global:
-      resolve_timeout: 5m
-    route:
-      group_by: ['alertname', 'namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 12h
-      receiver: 'oci-notifications'
-    receivers:
-    - name: 'oci-notifications'
-      webhook_configs:
-      - url: '${NOTIFICATION_TOPIC_ENDPOINT}'
-        send_resolved: true
-EOF
-  else
-    kubectl apply -n monitoring -f - <<'EOF'
-apiVersion: v1
-kind: Secret
-metadata:
-  name: alertmanager-oci-config
-  namespace: monitoring
-type: Opaque
-stringData:
-  alertmanager.yaml: |
-    global:
-      resolve_timeout: 5m
-    route:
-      group_by: ['alertname', 'namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 12h
-      receiver: 'null'
-    receivers:
-    - name: 'null'
-EOF
-    echo ""
-    echo "┌─────────────────────────────────────────────────────────────────┐"
-    echo "│ WARNING: Alertmanager is using the null receiver.               │"
-    echo "│ All Prometheus alerts (etcd quorum, node disk pressure, TLS     │"
-    echo "│ expiry, etc.) will fire silently with no notification delivery. │"
-    echo "│ To enable alerts: set enable_notifications=true in terraform    │"
-    echo "│ and re-apply. Optional: also set alertmanager_email.            │"
-    echo "└─────────────────────────────────────────────────────────────────┘"
-    echo ""
-  fi
-  echo "Alertmanager config secret created."
 
   # MySQL credentials -- pre-created so apps can mount this secret on first deploy.
   # NOTE: CLUSTER_NAME is used as the db name in the JDBC URL. CLUSTER_NAME allows hyphens;

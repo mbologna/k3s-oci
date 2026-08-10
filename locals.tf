@@ -44,11 +44,6 @@ locals {
     addr.ip_address if addr.is_public == true
   ]
 
-  # Grafana hostname: user-supplied or derived from NLB IP via sslip.io.
-  grafana_hostname = var.grafana_hostname != null ? var.grafana_hostname : (
-    length(local.public_lb_ip) > 0 ? "grafana.${local.public_lb_ip[0]}.sslip.io" : ""
-  )
-
   # ArgoCD hostname: user-supplied or derived from NLB IP via sslip.io.
   argocd_hostname = var.argocd_hostname != null ? var.argocd_hostname : (
     length(local.public_lb_ip) > 0 ? "argocd.${local.public_lb_ip[0]}.sslip.io" : ""
@@ -71,7 +66,7 @@ locals {
     # Blanked when vault is enabled so the cluster join token is NOT embedded in
     # plaintext instance user-data (readable via IMDS and the GetInstance API by any
     # principal with read instance-family in the compartment). Cloud-init fetches it
-    # from OCI Vault via vault_secret_id_k3s_token instead. Mirrors the longhorn/grafana
+    # from OCI Vault via vault_secret_id_k3s_token instead. Mirrors the longhorn
     # password blanking in data.tf:_server_secret_vars and the vault.tf design goal
     # ("removes plaintext secrets from instance user-data"). When enable_vault = false
     # the plaintext value remains the only delivery mechanism for the token.

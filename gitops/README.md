@@ -16,10 +16,8 @@ gitops/
 │   ├── external-dns.yaml             # External DNS Helm release (optional)
 │   ├── external-secrets.yaml         # External Secrets Operator Helm release (optional)
 │   ├── gateway-config.yaml           # Envoy Gateway config manifests (gitops/gateway/)
-│   ├── kube-prometheus-stack.yaml    # Prometheus + Grafana + Alertmanager (Helm)
 │   ├── kured.yaml                    # kured Helm release
 │   ├── longhorn.yaml                 # Longhorn Helm release
-│   ├── monitoring-extras.yaml        # PrometheusRules, ServiceMonitor, Grafana HTTPRoute
 │   ├── network-policies.yaml         # NetworkPolicies for all namespaces
 │   ├── pdbs.yaml                     # PodDisruptionBudgets for core components
 │   └── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
@@ -45,19 +43,12 @@ gitops/
 │       ├── kustomization.yaml        #   after each Helm sync (workaround: k3s HA konnectivity 502)
 │       ├── rbac.yaml                 #   ServiceAccount + ClusterRole + ClusterRoleBinding
 │       └── webhook-patch-job.yaml    #   Job with hardened securityContext; backoffLimit:0
-├── monitoring/                       # Supplementary monitoring resources
-│   ├── alertmanager-config.yaml      # AlertmanagerConfig template (Slack/email/webhook)
-│   ├── grafana-ingress.yaml          # Gateway API HTTPRoute for Grafana (update hostname)
-│   ├── longhorn-servicemonitor.yaml  # ServiceMonitor for Longhorn metrics scraping
-│   ├── prometheus-rules.yaml         # Disk + Longhorn alert rules
-│   └── README.md                     # Grafana access, dashboards, alerting how-to
 ├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
 │   ├── default-deny.yaml             # default namespace
 │   ├── argocd.yaml                   # argocd namespace (includes port 22 SSH egress for git clone)
 │   ├── cert-manager.yaml             # cert-manager namespace (includes port 80 egress for HTTP-01)
 │   ├── envoy-gateway-system.yaml     # envoy-gateway-system namespace (NodePort ingress + backend egress)
 │   ├── longhorn-system.yaml          # longhorn-system namespace
-│   ├── monitoring.yaml               # monitoring namespace
 │   └── system-upgrade.yaml           # system-upgrade namespace
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
@@ -97,7 +88,7 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 | ArgoCD Helm + App of Apps | cloud-init | Chicken-and-egg: ArgoCD must be installed before it can manage itself |
 | ESO Helm + ClusterSecretStore | cloud-init | `vault_ocid` is runtime; conditional on `enable_external_secrets` |
 | Kubernetes Secrets with runtime values | cloud-init | Passwords, endpoints, OCI OCIDs resolved at `tofu apply` time |
-| `https-grafana` / `https-argocd` / `https-longhorn` Gateway listeners | cloud-init | NLB IP changes on every deploy; cannot be hardcoded in git |
+| `https-argocd` / `https-longhorn` Gateway listeners | cloud-init | NLB IP changes on every deploy; cannot be hardcoded in git |
 | Envoy Gateway Helm | ArgoCD (`apps/envoy-gateway.yaml`) | Helm chart, no runtime variables |
 | Longhorn Helm | ArgoCD (`apps/longhorn.yaml`) | Helm chart, no runtime variables |
 | kured Helm | ArgoCD (`apps/kured.yaml`) | Helm chart, no runtime variables |

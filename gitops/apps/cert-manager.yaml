@@ -51,15 +51,12 @@ spec:
                 memory: 32Mi
               limits:
                 memory: 32Mi
-          # Prometheus ServiceMonitor — enables certmanager_* metrics scraping.
-          # Must be set here (in addition to cloud-init k3s-cert-manager.sh) because ArgoCD
-          # owns this release with prune: true + selfHeal: true. Without it, ArgoCD re-renders
-          # the chart without the ServiceMonitor and prunes it, silently breaking cert expiry alerts.
+          # Prometheus ServiceMonitor disabled — kube-prometheus-stack (which provides the
+          # ServiceMonitor CRD) is not deployed. Leaving it enabled makes ArgoCD fail to sync
+          # cert-manager ("no matches for kind ServiceMonitor").
           prometheus:
             servicemonitor:
-              enabled: true
-              labels:
-                release: kube-prometheus-stack
+              enabled: false
     # PostSync hook: sets cert-manager webhook failurePolicy to Ignore after each Helm sync.
     # The Helm chart resets failurePolicy to Fail on every sync; the hook re-applies the Ignore
     # patch so that k3s HA konnectivity 502s during leader transitions/kured reboots don't cause

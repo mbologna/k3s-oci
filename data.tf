@@ -51,15 +51,6 @@ resource "random_password" "longhorn_ui_password" {
   }
 }
 
-resource "random_password" "grafana_admin_password" {
-  length  = 24
-  special = false
-
-  keepers = {
-    cluster_name = var.cluster_name
-  }
-}
-
 # ── Server cloud-init vars (thematic locals for readability) ──────────────────
 # These are merged on top of local.k3s_common_cloud_init_vars in the templatefile call.
 
@@ -94,9 +85,7 @@ locals {
   _server_secret_vars = {
     longhorn_ui_username              = var.longhorn_ui_username
     longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
-    grafana_admin_password            = var.enable_vault ? "" : random_password.grafana_admin_password.result
     vault_secret_id_longhorn_password = var.enable_vault ? try(oci_vault_secret.cluster["longhorn_ui_password"].id, "") : ""
-    vault_secret_id_grafana_password  = var.enable_vault ? try(oci_vault_secret.cluster["grafana_admin_password"].id, "") : ""
     vault_ocid                        = var.enable_vault ? oci_kms_vault.k3s[0].id : ""
   }
 
@@ -110,16 +99,15 @@ locals {
   # Optional integrations (Cloudflare, MySQL, Notifications, DockerHub)
   _server_optional_vars = {
     # Cloudflare: plaintext only when vault is disabled; vault secret ID used otherwise.
-    cloudflare_api_token        = var.enable_vault ? "" : coalesce(var.cloudflare_api_token, "")
-    cloudflare_zone_id          = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
-    external_dns_domain_filter  = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
-    vault_secret_id_cloudflare  = var.enable_vault && var.cloudflare_api_token != null ? oci_vault_secret.cloudflare_api_token[0].id : ""
-    oci_region                  = coalesce(var.region, "")
-    notification_topic_endpoint = var.enable_notifications ? oci_ons_notification_topic.k3s_alerts[0].api_endpoint : ""
-    mysql_endpoint              = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
-    mysql_admin_username        = var.enable_mysql ? var.mysql_admin_username : ""
-    mysql_admin_password        = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
-    dockerhub_username          = var.dockerhub_username
+    cloudflare_api_token       = var.enable_vault ? "" : coalesce(var.cloudflare_api_token, "")
+    cloudflare_zone_id         = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
+    external_dns_domain_filter = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
+    vault_secret_id_cloudflare = var.enable_vault && var.cloudflare_api_token != null ? oci_vault_secret.cloudflare_api_token[0].id : ""
+    oci_region                 = coalesce(var.region, "")
+    mysql_endpoint             = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
+    mysql_admin_username       = var.enable_mysql ? var.mysql_admin_username : ""
+    mysql_admin_password       = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
+    dockerhub_username         = var.dockerhub_username
     # DockerHub password: plaintext only when vault is disabled or not set.
     # When vault is enabled and a password is configured, the plaintext is blanked here
     # and create_dockerhub_secret() in k3s-argocd.sh fetches it from Vault instead.
@@ -148,7 +136,6 @@ locals {
 
   # Hostname vars: IP-specific, derived at plan time from the NLB IP
   _server_hostname_vars = {
-    grafana_hostname  = local.grafana_hostname
     argocd_hostname   = local.argocd_hostname
     longhorn_hostname = local.longhorn_hostname
   }

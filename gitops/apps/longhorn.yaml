@@ -4,7 +4,7 @@ metadata:
   name: longhorn
   namespace: argocd
   annotations:
-    # Deploy before storage consumers (kube-prometheus-stack PVCs, alertmanager PVC).
+    # Deploy before storage consumers (any wave-0 app that provisions PVCs).
     # Wave -1 ensures Longhorn converges and StorageClass is ready before wave 0 apps.
     argocd.argoproj.io/sync-wave: "-1"
   finalizers:

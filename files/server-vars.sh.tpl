@@ -36,12 +36,10 @@ export ENABLE_DNS01_CHALLENGE="${enable_dns01_challenge ? "true" : "false"}"
 # -- Secrets (plain-text fallback; empty string when OCI Vault is used) --------
 export K3S_TOKEN_PLAIN="${k3s_token}"
 export LONGHORN_UI_PASSWORD_PLAIN="${longhorn_ui_password}"
-export GRAFANA_ADMIN_PASSWORD_PLAIN="${grafana_admin_password}"
 
 # -- OCI Vault secret IDs (empty string when enable_vault = false) -------------
 export VAULT_SECRET_ID_K3S_TOKEN="${vault_secret_id_k3s_token}"
 export VAULT_SECRET_ID_LONGHORN_PASSWORD="${vault_secret_id_longhorn_password}"
-export VAULT_SECRET_ID_GRAFANA_PASSWORD="${vault_secret_id_grafana_password}"
 export VAULT_SECRET_ID_GITOPS_SSH_KEY="${vault_secret_id_gitops_ssh_key}"
 
 # -- Chart versions (bootstrap only; ArgoCD adopts and manages ongoing) --------
@@ -52,17 +50,14 @@ export ARGOCD_CHART_VERSION="${argocd_chart_version}"
 export EXTERNAL_SECRETS_CHART_VERSION="${external_secrets_chart_version}"
 
 # -- Cluster services -----------------------------------------------------------
-# Grafana ingress: cloud-init creates the Gateway listener, TLS cert, and HTTPRoute
-# so that gitops/ files are IP-independent. Empty = skip Grafana HTTPS setup.
-export GRAFANA_HOSTNAME="${grafana_hostname}"
-# ArgoCD ingress: same pattern as Grafana. Auto-derived as argocd.<nlb-ip>.sslip.io if null.
+# ArgoCD ingress: cloud-init creates the Gateway listener/TLS/HTTPRoute so gitops/
+# files stay IP-independent. Auto-derived as argocd.<nlb-ip>.sslip.io if null.
 export ARGOCD_HOSTNAME="${argocd_hostname}"
 # Longhorn ingress: set longhorn_hostname in tfvars to enable. No sslip.io fallback.
 export LONGHORN_HOSTNAME="${longhorn_hostname}"
 
 # -- Optional integrations -----------------------------------------------------
 export LONGHORN_UI_USERNAME="${longhorn_ui_username}"
-export NOTIFICATION_TOPIC_ENDPOINT="${notification_topic_endpoint}"
 export MYSQL_ENDPOINT="${mysql_endpoint}"
 export MYSQL_ADMIN_USERNAME="${mysql_admin_username}"
 export MYSQL_ADMIN_PASSWORD="${mysql_admin_password}"

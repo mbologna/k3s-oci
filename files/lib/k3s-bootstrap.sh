@@ -6,7 +6,7 @@
 #   k3s-cert-manager.sh   -> install_certmanager()
 #   k3s-external-secrets.sh -> install_external_secrets()
 #   k3s-argocd.sh         -> install_argocd(), create_dockerhub_secret(),
-#                            create_optional_apps(), configure_grafana_ingress()
+#                            create_optional_apps()
 # Pure bash -- no Terraform interpolation.
 #
 # What is NOT here (managed by ArgoCD via gitops/apps/):
@@ -51,7 +51,6 @@ run_bootstrap() {
   # running and the cluster is functional. To manually retry, re-run the bootstrap:
   #   cloud-init clean --logs && cloud-init init
   # Or re-invoke the individual function from cloud-init context on the first server.
-  configure_grafana_ingress  || echo "WARNING: configure_grafana_ingress failed — cluster is functional; ingress can be retried via cloud-init."
   configure_longhorn_ingress || echo "WARNING: configure_longhorn_ingress failed — cluster is functional; ingress can be retried via cloud-init."
   configure_argocd_ingress   || echo "WARNING: configure_argocd_ingress failed — cluster is functional; ingress can be retried via cloud-init."
 
