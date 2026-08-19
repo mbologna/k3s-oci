@@ -14,7 +14,7 @@ resource "oci_bastion_bastion" "k3s" {
   target_subnet_id = oci_core_subnet.private.id
   name             = "${var.cluster_name}-bastion"
 
-  client_cidr_block_allow_list = [var.my_public_ip_cidr]
+  client_cidr_block_allow_list = var.my_public_ip_cidr
 
   freeform_tags = local.common_tags
 }

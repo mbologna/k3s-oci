@@ -58,6 +58,16 @@ locals {
     servers = oci_core_network_security_group.servers.id
   }
 
+  # Cartesian product of node tier × operator CIDR, for the one NSG rule
+  # (nodes_allow_ssh_public) that needs both dimensions at once.
+  nodes_ssh_public_pairs = var.expose_ssh ? {
+    for pair in setproduct(keys(local.nodes_nsgs), var.my_public_ip_cidr) :
+    "${pair[0]}-${replace(pair[1], "/", "_")}" => {
+      nsg_id = local.nodes_nsgs[pair[0]]
+      cidr   = pair[1]
+    }
+  } : {}
+
   # Shared cloud-init vars passed to both server and agent template files.
   # Server-specific vars are merged on top in data.tf.
   k3s_common_cloud_init_vars = {
@@ -95,7 +105,7 @@ locals {
 
   _kubeconfig_hint_no_bastion = templatefile("${path.module}/files/kubeconfig-hint-no-bastion.tpl", {
     server_ocid       = try(data.oci_core_instance.k3s_servers[0].id, "<server-ocid>")
-    my_public_ip_cidr = var.my_public_ip_cidr
+    my_public_ip_cidr = join(", ", var.my_public_ip_cidr)
     public_nlb_ip     = try(local.public_lb_ip[0], "<public-nlb-ip>")
     kube_api_port     = var.kube_api_port
   })

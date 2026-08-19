@@ -32,10 +32,11 @@ environment   = "staging"
 # For openSUSE, run scripts/import-opensuse-aarch64.sh first and set os_image_id above.
 # os_family = "ubuntu"
 
-# Your workstation IP — restricts kubeapi access (expose_kubeapi=true) and
+# Your workstation IP(s) — restricts kubeapi access (expose_kubeapi=true) and
 # direct SSH access (expose_ssh=true). Use /16 for dynamic ISP ranges
-# (a /32 breaks access if your IP changes within the session).
-my_public_ip_cidr = "1.2.3.0/16"
+# (a /32 breaks access if your IP changes within the session). List can hold
+# more than one network (e.g. home + travel) at once.
+my_public_ip_cidr = ["1.2.3.0/16"]
 
 # cert-manager — must be a real email for Let's Encrypt
 certmanager_email_address = "you@example.com"

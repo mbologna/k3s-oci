@@ -2,7 +2,7 @@ variable "compartment_ocid" { type = string }
 variable "tenancy_ocid" { type = string }
 variable "region" { type = string }
 variable "availability_domain" { type = string }
-variable "my_public_ip_cidr" { type = string }
+variable "my_public_ip_cidr" { type = list(string) }
 variable "cluster_name" { type = string }
 variable "os_image_id" {
   type    = string
