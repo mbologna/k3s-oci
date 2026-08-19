@@ -11,21 +11,27 @@ resource "oci_core_security_list" "public" {
     description = "Allow all egress"
   }
 
-  # ICMP from operator IP for diagnostics
-  ingress_security_rules {
-    protocol    = "1"
-    source      = var.my_public_ip_cidr
-    description = "ICMP from operator"
+  # ICMP from operator IP(s) for diagnostics
+  dynamic "ingress_security_rules" {
+    for_each = var.my_public_ip_cidr
+    content {
+      protocol    = "1"
+      source      = ingress_security_rules.value
+      description = "ICMP from operator"
+    }
   }
 
-  # SSH to bastion only from operator IP
-  ingress_security_rules {
-    protocol    = "6"
-    source      = var.my_public_ip_cidr
-    description = "SSH from operator"
-    tcp_options {
-      min = 22
-      max = 22
+  # SSH to bastion only from operator IP(s)
+  dynamic "ingress_security_rules" {
+    for_each = var.my_public_ip_cidr
+    content {
+      protocol    = "6"
+      source      = ingress_security_rules.value
+      description = "SSH from operator"
+      tcp_options {
+        min = 22
+        max = 22
+      }
     }
   }
 
@@ -53,10 +59,10 @@ resource "oci_core_security_list" "public" {
 
   # kubeapi via public NLB — inbound to NLB on the public subnet
   dynamic "ingress_security_rules" {
-    for_each = var.expose_kubeapi ? [1] : []
+    for_each = var.expose_kubeapi ? var.my_public_ip_cidr : []
     content {
       protocol    = "6"
-      source      = var.my_public_ip_cidr
+      source      = ingress_security_rules.value
       description = "kubeapi from operator"
       tcp_options {
         min = var.kube_api_port
@@ -98,10 +104,10 @@ resource "oci_core_security_list" "private" {
   # must allow those ports from the operator IP so NLB-forwarded packets aren't dropped.
 
   dynamic "ingress_security_rules" {
-    for_each = var.expose_ssh ? [1] : []
+    for_each = var.expose_ssh ? var.my_public_ip_cidr : []
     content {
       protocol    = "6"
-      source      = var.my_public_ip_cidr
+      source      = ingress_security_rules.value
       description = "SSH from operator via NLB pass-through"
       tcp_options {
         min = 22
@@ -111,10 +117,10 @@ resource "oci_core_security_list" "private" {
   }
 
   dynamic "ingress_security_rules" {
-    for_each = var.expose_kubeapi ? [1] : []
+    for_each = var.expose_kubeapi ? var.my_public_ip_cidr : []
     content {
       protocol    = "6"
-      source      = var.my_public_ip_cidr
+      source      = ingress_security_rules.value
       description = "kubeapi from operator via NLB pass-through"
       tcp_options {
         min = var.kube_api_port

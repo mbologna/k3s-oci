@@ -85,17 +85,18 @@ variable "github_ssh_keys_username" {
 }
 
 variable "my_public_ip_cidr" {
-  type        = string
+  type        = list(string)
   description = <<-EOT
-    Your workstation public IP in CIDR notation (e.g. 1.2.3.4/32).
+    Your workstation public IP(s) in CIDR notation (e.g. ["1.2.3.4/32"]).
     Restricts OCI Bastion Service session creation (enable_bastion = true) and
     kubeapi access via the public NLB (expose_kubeapi = true).
     k3s nodes are in a private subnet and are only reachable via OCI Bastion sessions.
+    A list so multiple networks (e.g. home + travel) can be allowed at once.
   EOT
 
   validation {
-    condition     = can(cidrnetmask(var.my_public_ip_cidr))
-    error_message = "my_public_ip_cidr must be a valid CIDR block (e.g. 1.2.3.4/32)."
+    condition     = alltrue([for c in var.my_public_ip_cidr : can(cidrnetmask(c))])
+    error_message = "my_public_ip_cidr must be a list of valid CIDR blocks (e.g. [\"1.2.3.4/32\"])."
   }
 }
 

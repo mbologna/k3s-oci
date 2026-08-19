@@ -42,12 +42,12 @@ resource "oci_core_network_security_group_security_rule" "nlb_allow_https" {
 }
 
 resource "oci_core_network_security_group_security_rule" "nlb_allow_kubeapi" {
-  count                     = var.expose_kubeapi ? 1 : 0
+  for_each                  = var.expose_kubeapi ? toset(var.my_public_ip_cidr) : toset([])
   network_security_group_id = oci_core_network_security_group.public_nlb.id
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "Allow kubeapi from operator IP"
-  source                    = var.my_public_ip_cidr
+  source                    = each.value
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 
@@ -60,12 +60,12 @@ resource "oci_core_network_security_group_security_rule" "nlb_allow_kubeapi" {
 }
 
 resource "oci_core_network_security_group_security_rule" "nlb_allow_ssh" {
-  count                     = var.expose_ssh ? 1 : 0
+  for_each                  = var.expose_ssh ? toset(var.my_public_ip_cidr) : toset([])
   network_security_group_id = oci_core_network_security_group.public_nlb.id
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "Allow SSH from operator IP (expose_ssh=true)"
-  source                    = var.my_public_ip_cidr
+  source                    = each.value
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 
@@ -157,7 +157,7 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
 }
 
 resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_public" {
-  count                     = var.expose_kubeapi ? 1 : 0
+  for_each                  = var.expose_kubeapi ? toset(var.my_public_ip_cidr) : toset([])
   network_security_group_id = oci_core_network_security_group.servers.id
   direction                 = "INGRESS"
   protocol                  = "6"
@@ -165,7 +165,7 @@ resource "oci_core_network_security_group_security_rule" "servers_allow_kubeapi_
   # NLB uses is_preserve_source=true so the real client IP arrives at the node VNIC,
   # not the NLB IP. NETWORK_SECURITY_GROUP source type only matches the NLB's own
   # health-check traffic. Use CIDR_BLOCK so actual kubeapi connections are allowed.
-  source      = var.my_public_ip_cidr
+  source      = each.value
   source_type = "CIDR_BLOCK"
   stateless   = false
 
@@ -197,12 +197,12 @@ resource "oci_core_network_security_group_security_rule" "nodes_allow_ssh_from_p
 
 # NLB uses is_preserve_source = true so nodes see the real client IP — use CIDR_BLOCK rules.
 resource "oci_core_network_security_group_security_rule" "nodes_allow_ssh_public" {
-  for_each                  = var.expose_ssh ? local.nodes_nsgs : {}
-  network_security_group_id = each.value
+  for_each                  = local.nodes_ssh_public_pairs
+  network_security_group_id = each.value.nsg_id
   direction                 = "INGRESS"
   protocol                  = "6"
   description               = "SSH from operator IP via public NLB (expose_ssh=true)"
-  source                    = var.my_public_ip_cidr
+  source                    = each.value.cidr
   source_type               = "CIDR_BLOCK"
   stateless                 = false
 
