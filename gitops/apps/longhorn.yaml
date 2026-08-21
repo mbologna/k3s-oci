@@ -15,7 +15,7 @@ spec:
     - repoURL: https://charts.longhorn.io
       chart: longhorn
       # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-      targetRevision: "1.12.0"
+      targetRevision: "1.12.1"
       helm:
         valuesObject:
           defaultSettings:
