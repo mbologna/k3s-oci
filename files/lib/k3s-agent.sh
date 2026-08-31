@@ -6,7 +6,17 @@
 # -- k3s agent install ---------------------------------------------------------
 
 install_k3s_agent() {
-  local install_params=()
+  # Pin node identity to the OCI instance's own display name — see the matching
+  # comment in k3s-server.sh's install_k3s_server() for why this must not be
+  # left to default to `hostname`.
+  local self_instance_name
+  self_instance_name=$(curl -sfL --max-time 10 \
+    -H "Authorization: Bearer Oracle" \
+    http://169.254.169.254/opc/v2/instance | jq -r '.displayName') || {
+    echo "ERROR: IMDS fetch failed — cannot determine instance display name for --node-name."
+    exit 1
+  }
+  local install_params=("--node-name" "${self_instance_name}")
 
   resolve_flannel_params
   if [[ -n "${LOCAL_IP:-}" ]]; then

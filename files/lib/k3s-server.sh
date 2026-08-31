@@ -24,6 +24,9 @@ detect_first_server() {
     echo "ERROR: IMDS fetch failed — cannot determine instance display name for first-server election."
     exit 1
   }
+  # Exported for install_k3s_server()'s --node-name — see the comment there for why
+  # this must not be left to default to `hostname`.
+  export SELF_INSTANCE_NAME="${instance_display_name}"
 
   # Find the server pool by cluster tags -- pool membership only includes current
   # members, so replaced/stale instances from previous applies are excluded.
@@ -276,7 +279,18 @@ claim_first_server_lock() {
 
 
 install_k3s_server() {
-  local install_params=("--tls-san" "${K3S_TLS_SAN}")
+  # Pin node identity to the OCI instance's own display name instead of letting
+  # k3s default to `hostname` at first start. Without this, any later OS hostname
+  # change (e.g. a config-management tool that renames hosts to match its own
+  # inventory) is invisible to the *running* k3s process — it keeps using its
+  # cached identity until some unrelated future restart, at which point it
+  # re-registers under the new hostname as a SEPARATE Node object, orphaning the
+  # old one (and, for a server, desyncing etcd's own member-name bookkeeping from
+  # the Node object k3s uses to decide whether it's a voter — a single-node
+  # cluster's control plane going through this is a full-outage-shaped bug, not a
+  # cosmetic one). Pinning here means the OS hostname can change freely and k3s's
+  # identity never moves — it only changes when this VM is genuinely replaced.
+  local install_params=("--tls-san" "${K3S_TLS_SAN}" "--node-name" "${SELF_INSTANCE_NAME}")
 
   resolve_flannel_params
   if [[ -n "${LOCAL_IP:-}" ]]; then
