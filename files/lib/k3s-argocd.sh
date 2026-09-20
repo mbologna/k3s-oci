@@ -12,9 +12,38 @@ install_argocd() {
 
   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
-  # Pre-create the ArgoCD SSH repo secret so ArgoCD can clone the gitops repo
+  # Pre-create the ArgoCD repo secret so ArgoCD can clone the gitops repo
   # immediately after install. Must exist before the App of Apps is applied.
-  if [[ -n "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" ]]; then
+  #
+  # HTTPS token auth takes precedence when configured. Some git hosts (Codeberg,
+  # for one) throttle SSH per source IP, and ArgoCD is a heavy SSH client: every
+  # Application opens its own `git ls-remote`, so connection bursts can trip the
+  # throttle and stall GitOps entirely. HTTPS is not subject to that there.
+  if [[ -n "${VAULT_SECRET_ID_GITOPS_HTTPS_TOKEN}" ]]; then
+    echo "Fetching gitops HTTPS token from OCI Vault..."
+    local https_token
+    if ! https_token=$(fetch_from_vault "${VAULT_SECRET_ID_GITOPS_HTTPS_TOKEN}"); then
+      echo "ERROR: Failed to fetch gitops HTTPS token from OCI Vault." >&2
+      exit 1
+    fi
+    [[ -z "${https_token}" ]] && { echo "ERROR: gitops HTTPS token is empty after Vault fetch." >&2; exit 1; }
+    kubectl apply -n argocd -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-repo-gitops
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: ${GITOPS_REPO_URL}
+  username: ${GITOPS_HTTPS_USERNAME}
+  password: ${https_token}
+EOF
+    echo "ArgoCD gitops repo HTTPS secret created."
+  elif [[ -n "${VAULT_SECRET_ID_GITOPS_SSH_KEY}" ]]; then
     echo "Fetching gitops SSH deploy key from OCI Vault..."
     local ssh_key
     if ! ssh_key=$(fetch_from_vault "${VAULT_SECRET_ID_GITOPS_SSH_KEY}"); then
@@ -54,8 +83,12 @@ EOF
   # immediately. The Helm chart only includes GitHub/GitLab/Bitbucket by default.
   # Once ArgoCD self-manages via the app-of-apps, configs.ssh.extraHosts in the
   # ArgoCD Application takes over (but we need this to reach that point).
-  local repo_host
-  repo_host=$(printf '%s' "${GITOPS_REPO_URL}" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+  # SSH-only: an https:// URL has no host key to scan, and the sed below (which
+  # keys off the "user@" in an SSH URL) would not match one anyway.
+  local repo_host=""
+  if [[ "${GITOPS_REPO_URL}" != https://* ]]; then
+    repo_host=$(printf '%s' "${GITOPS_REPO_URL}" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+  fi
   if [[ -n "${repo_host}" ]]; then
     local known_hosts
     known_hosts=$(ssh-keyscan -T 10 "${repo_host}" 2>/dev/null | grep -v '^#')

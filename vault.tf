@@ -139,6 +139,26 @@ resource "oci_vault_secret" "gitops_ssh_key" {
   }
 }
 
+resource "oci_vault_secret" "gitops_https_token" {
+  count          = var.enable_vault && var.gitops_https_token != "" ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-gitops-https-token"
+  description    = "ArgoCD HTTPS access token for the gitops repo (${var.gitops_repo_url})"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = var.gitops_https_token
+  }
+
+  freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
+}
+
 # Store the DockerHub password in Vault when vault is enabled and the credential is set.
 # This removes the password from cloud-init user-data (IMDS-accessible) and fetches it
 # at bootstrap time via OCI CLI instance_principal instead.

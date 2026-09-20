@@ -369,7 +369,14 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 > argocd app set app-of-apps --repo https://github.com/your-org/your-fork.git
 > ```
 
-> **Private repos**: set `gitops_ssh_private_key` in `terraform.tfvars` with your SSH private key — Terraform stores it in OCI Vault automatically and cloud-init creates the `argocd-repo-gitops` Secret before ArgoCD starts. No manual `argocd repo add` step needed. For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
+> **Private repos**: two auth methods, both storing the credential in OCI Vault automatically so cloud-init can create the `argocd-repo-gitops` Secret before ArgoCD starts. No manual `argocd repo add` step needed.
+>
+> - **SSH** — set `gitops_ssh_private_key` with your deploy key.
+> - **HTTPS token** — set `gitops_https_username` + `gitops_https_token` (read-only repository scope; ArgoCD never writes). Takes precedence over the SSH key when both are set.
+>
+> Prefer the HTTPS token if your git host throttles SSH per source IP. ArgoCD is a heavy SSH client — every Application opens its own `git ls-remote` — and the resulting connection bursts can trip such limits and stall GitOps entirely, with apps stuck reporting `sync.revision` as `HEAD` rather than a SHA. Codeberg does this; GitHub and GitLab generally do not.
+>
+> For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
 
 ## Automatic updates & reboots (unattended-upgrades + kured)
 
@@ -626,9 +633,11 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
 | <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config. | `string` | `"v1.5.1"` | no |
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
+| <a name="input_gitops_https_token"></a> [gitops\_https\_token](#input\_gitops\_https\_token) | Access token (or password) for HTTPS auth against a PRIVATE gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret with username/password before ArgoCD starts. Grant read-only repository scope — ArgoCD never writes. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
+| <a name="input_gitops_https_username"></a> [gitops\_https\_username](#input\_gitops\_https\_username) | Username for HTTPS auth against a PRIVATE gitops repo. Used with gitops\_https\_token. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
 | <a name="input_gitops_path"></a> [gitops\_path](#input\_gitops\_path) | Path within gitops\_repo\_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Override when your GitOps repo uses a different directory structure. | `string` | `"gitops/apps"` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
-| <a name="input_gitops_ssh_private_key"></a> [gitops\_ssh\_private\_key](#input\_gitops\_ssh\_private\_key) | SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty only when gitops\_repo\_url is a public HTTPS repo. | `string` | `""` | no |
+| <a name="input_gitops_ssh_private_key"></a> [gitops\_ssh\_private\_key](#input\_gitops\_ssh\_private\_key) | SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty when using gitops\_https\_token (HTTPS auth takes precedence) or when gitops\_repo\_url is a public HTTPS repo. | `string` | `""` | no |
 | <a name="input_http_lb_port"></a> [http\_lb\_port](#input\_http\_lb\_port) | Public HTTP port on the NLB frontend (default 80). | `number` | `80` | no |
 | <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | Public HTTPS port on the NLB frontend (default 443). | `number` | `443` | no |
 | <a name="input_ingress_controller_http_nodeport"></a> [ingress\_controller\_http\_nodeport](#input\_ingress\_controller\_http\_nodeport) | NodePort on workers that the ingress controller binds for HTTP traffic | `number` | `30080` | no |
