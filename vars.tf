@@ -655,9 +655,29 @@ variable "tailscale_oauth_client_secret" {
 
 # ── GitOps SSH deploy key ──────────────────────────────────────────────────────
 
+# ── GitOps HTTPS token (alternative to the SSH deploy key) ────────────────────
+# Some git hosts throttle SSH per source IP. Codeberg does, and it repeatedly
+# stalled a cluster whose ArgoCD polled over SSH: every Application opens its own
+# `git ls-remote`, and the resulting connection bursts tripped the throttle. HTTPS
+# is unaffected there, so private-repo HTTPS auth needs to be a first-class option
+# rather than only working for public repos.
+
+variable "gitops_https_username" {
+  type        = string
+  description = "Username for HTTPS auth against a PRIVATE gitops repo. Used with gitops_https_token. Leave empty for SSH auth or a public HTTPS repo."
+  default     = ""
+}
+
+variable "gitops_https_token" {
+  type        = string
+  sensitive   = true
+  description = "Access token (or password) for HTTPS auth against a PRIVATE gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret with username/password before ArgoCD starts. Grant read-only repository scope — ArgoCD never writes. Leave empty for SSH auth or a public HTTPS repo."
+  default     = ""
+}
+
 variable "gitops_ssh_private_key" {
   type        = string
   sensitive   = true
-  description = "SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty only when gitops_repo_url is a public HTTPS repo."
+  description = "SSH private key (PEM/OpenSSH format) for ArgoCD to clone the gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret before ArgoCD starts. Leave empty when using gitops_https_token (HTTPS auth takes precedence) or when gitops_repo_url is a public HTTPS repo."
   default     = ""
 }

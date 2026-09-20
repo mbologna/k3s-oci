@@ -41,6 +41,8 @@ export LONGHORN_UI_PASSWORD_PLAIN="${longhorn_ui_password}"
 export VAULT_SECRET_ID_K3S_TOKEN="${vault_secret_id_k3s_token}"
 export VAULT_SECRET_ID_LONGHORN_PASSWORD="${vault_secret_id_longhorn_password}"
 export VAULT_SECRET_ID_GITOPS_SSH_KEY="${vault_secret_id_gitops_ssh_key}"
+export GITOPS_HTTPS_USERNAME="${gitops_https_username}"
+export VAULT_SECRET_ID_GITOPS_HTTPS_TOKEN="${vault_secret_id_gitops_https_token}"
 
 # -- Chart versions (bootstrap only; ArgoCD adopts and manages ongoing) --------
 export GATEWAY_API_VERSION="${gateway_api_version}"

@@ -125,6 +125,19 @@ variable "gitops_repo_url" {
   default = "https://github.com/mbologna/k3s-oci.git"
 }
 
+# HTTPS auth for a PRIVATE gitops repo. Leave both empty to use the SSH deploy
+# key instead (gitops_ssh_private_key), or for a public HTTPS repo.
+variable "gitops_https_username" {
+  type    = string
+  default = ""
+}
+
+variable "gitops_https_token" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
 # ── External DNS (Cloudflare) ─────────────────────────────────────────────────
 
 variable "enable_external_dns" {
@@ -406,6 +419,8 @@ module "k3s_cluster" {
   gitops_repo_url                   = var.gitops_repo_url
   gitops_path                       = var.gitops_path
   gitops_ssh_private_key            = var.gitops_ssh_private_key
+  gitops_https_username             = var.gitops_https_username
+  gitops_https_token                = var.gitops_https_token
   enable_tailscale                  = var.enable_tailscale
   tailscale_oauth_client_id         = var.tailscale_oauth_client_id
   tailscale_oauth_client_secret     = var.tailscale_oauth_client_secret
