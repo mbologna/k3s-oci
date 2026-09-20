@@ -42,3 +42,7 @@ terraform.rc
 
 # Keep example file but ignore actual tfvars with real credentials
 example/terraform.tfvars
+# Backups of the above carry the same secrets (SSH deploy key, access tokens) and
+# must never be committable either.
+example/terraform.tfvars.bak*
+**/terraform.tfvars.bak*
