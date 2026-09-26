@@ -235,7 +235,7 @@ create_optional_apps() {
 # The gitops/optional/external-dns.yaml file is a reference template only.
 create_external_dns_app() {
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
-  local chart_version="1.21.1"
+  local chart_version="1.22.0"
 
   kubectl apply -n argocd -f - <<EOF
 apiVersion: argoproj.io/v1alpha1
