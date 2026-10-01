@@ -51,6 +51,14 @@ resource "oci_identity_policy" "k3s" {
     var.enable_longhorn_backup ? [
       "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to manage objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${var.cluster_name}-longhorn-backup'",
     ] : [],
+    # The Object Storage platform service itself needs this to execute lifecycle
+    # rules (e.g. purging noncurrent versions) — without it, PutObjectLifecyclePolicy
+    # fails with "InsufficientServicePermissions" even though the bucket owner can
+    # create the policy. The service principal name is region-specific (plain
+    # "objectstorage" is rejected with "Service {objectstorage} does not exist").
+    (var.enable_object_storage_state || var.enable_longhorn_backup) ? [
+      "allow service objectstorage-${var.region} to manage object-family in compartment id ${var.compartment_ocid}",
+    ] : [],
   )
 
   freeform_tags = local.common_tags
