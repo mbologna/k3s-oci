@@ -438,9 +438,31 @@ The namespace is in `terraform output terraform_state_backend`.
 > **S3 credentials are OCI Customer Secret Keys** (**Identity → Users → <user> → Customer Secret Keys**).
 > A key is **not** scoped to a bucket: it carries every permission of the user it belongs to. A key that
 > only lives on your laptop can belong to your own user. Any key stored *inside* the cluster (such as
-> Longhorn backups) must belong to a dedicated service user. Put that user in a group whose policy is limited
+> Longhorn backups) must belong to a dedicated service user. For Longhorn backups,
+> `create_longhorn_backup_user = true` makes the module create one; see [Longhorn backups](#longhorn-backups). Put that user in a group whose policy is limited
 > to one bucket: `Allow group <g> to manage objects in tenancy where target.bucket.name='<bucket>'`
 > (plus `read buckets` with the same condition). New keys take about 5 minutes to work on the S3 endpoint.
+
+## Longhorn backups
+
+`enable_longhorn_backup = true` (the default) creates the `<cluster_name>-longhorn-backup` bucket.
+Set `create_longhorn_backup_user = true` to wire backups end to end:
+
+- The module creates an IAM user, a group and a policy, all named `<cluster_name>-longhorn-backup`. The policy
+  allows only `read buckets` and `manage objects` on the backup bucket. The user can use Customer Secret
+  Keys and nothing else.
+- Terraform creates the user's Customer Secret Key. With `enable_vault = true` the secret half is
+  stored in Vault as `<cluster_name>-longhorn-backup-secret-key` and fetched at boot, so it is never in user-data.
+- Cloud-init creates `longhorn-backup-secret` and points the Longhorn `BackupTarget` at the bucket. It also
+  applies two RecurringJobs for every volume in the `default` group:
+  - `daily-backup`: cron `longhorn_backup_schedule`, default `30 0 * * *` UTC; keeps `longhorn_backup_retain` backups, default 7.
+  - `weekly-snapshot-cleanup`.
+
+Creating IAM users requires tenancy-level IAM permissions. Without them, keep `create_longhorn_backup_user = false`
+and follow the `longhorn_backup_setup` output (or `just setup-longhorn-backup`).
+`retain` is the only cleanup: do not add an age-based lifecycle rule on `backupstore/`. Expiring blocks
+underneath Longhorn corrupts the incremental chain. Backups of deleted volumes are never pruned automatically.
+Delete them in the Longhorn UI.
 
 ## Always Free budget
 
@@ -453,7 +475,7 @@ The namespace is in `terraform output terraform_state_backend`.
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **2–5 secrets**: k3s_token, longhorn_ui_password, optional dockerhub_password, +2 Tailscale OAuth (`enable_vault = true`) |
+| Vault (shared) | Software keys + 150 secrets | **2–6 secrets**: k3s_token, longhorn_ui_password, optional dockerhub_password, +2 Tailscale OAuth, +1 Longhorn backup key (`enable_vault = true`) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -598,14 +620,32 @@ tofu destroy
 > are module resources. OCI refuses to delete a non-empty bucket, so `tofu destroy` fails on them while they hold data.
 > `scripts/clean-oci-resources.sh` empties and deletes them.
 >
-> **To rebuild without losing snapshots and backups**, keep the buckets:
-> 1. Run `tofu state rm` on `oci_objectstorage_bucket.{terraform_state,longhorn_backup}[0]` and their
->    `oci_objectstorage_object_lifecycle_policy` before `tofu destroy`.
-> 2. Run the clean script with `KEEP_BUCKETS=true`.
-> 3. Re-import before `tofu apply`: bucket ID `n/<namespace>/b/<name>`, lifecycle policy ID `n/<namespace>/b/<name>/l`.
+> **To rebuild without losing snapshots and backups**, use `scripts/teardown-keep-data.sh` instead of `tofu destroy`.
+> It keeps the vault, its key and secrets, and both buckets, and puts them back into the state afterwards:
 >
-> Do the same for the vault with `KEEP_VAULT=true` (see AGENTS.md → Troubleshooting scripts).
+> ```bash
+> COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just teardown-keep-data
+> # TF_DIR=path/to/root-module, CLEAN_CMD="bash my-wrapper.sh" optional;
+> # IMPORT_ONLY=true resumes after a failed re-import
+> just apply
+> ```
+>
+> The script runs `state rm` on the kept resources, then `tofu destroy`, then the clean script with
+> `KEEP_VAULT=true KEEP_BUCKETS=true`. Then it cancels pending vault and secret deletions and re-imports everything.
 > Keep your Terraform state in a separate, module-external bucket (see [Remote Terraform state](#remote-terraform-state-oci-object-storage)) so teardown never touches it.
+
+### After a rebuild that kept the buckets
+
+- **Expected warning:** the new server finds the old cluster's etcd snapshots and logs
+  `WARNING: etcd snapshots from a previous '<cluster>' cluster exist in ...` with the `k3s server --cluster-reset --cluster-reset-restore-path`
+  restore steps. If you meant to start fresh, ignore it.
+- **Restore window:** pruning keeps the newest `etcd_snapshot_retention` objects across the whole
+  `etcd-snapshots/<cluster>/` prefix, so the new cluster's uploads push the old ones out. That takes
+  `etcd_snapshot_retention` uploads, about 30 hours at the default retention of 5 and 6 hours between uploads.
+  If you might need the old cluster's state later, copy its snapshots outside that prefix first
+  (e.g. `oci os object copy` to `etcd-archive/`; it counts against the Object Storage allowance).
+- **Longhorn backups** are not pruned by the new cluster. Restore PVCs from the Longhorn UI
+  (**Backup → select → Restore**) or with a `Volume` that has `spec.fromBackup` set.
 
 ## NLB IP stability
 
@@ -642,6 +682,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Logical name for the cluster. Used in display names and freeform tags. | `string` | n/a | yes |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | OCID of the compartment where all resources are created | `string` | n/a | yes |
 | <a name="input_compute_shape"></a> [compute\_shape](#input\_compute\_shape) | OCI compute shape for k3s nodes | `string` | `"VM.Standard.A1.Flex"` | no |
+| <a name="input_create_longhorn_backup_user"></a> [create\_longhorn\_backup\_user](#input\_create\_longhorn\_backup\_user) | Create a dedicated IAM service user, group and policy (all named <cluster\_name>-longhorn-backup)<br/>that can only read/write the Longhorn backup bucket, plus a Customer Secret Key for it.<br/>Cloud-init then wires the Longhorn BackupTarget and default RecurringJobs automatically.<br/>Preferred over user\_ocid. Requires enable\_longhorn\_backup = true, region set, and<br/>permission to manage IAM users/groups in the tenancy. Mutually exclusive with user\_ocid. | `bool` | `false` | no |
 | <a name="input_dockerhub_password"></a> [dockerhub\_password](#input\_dockerhub\_password) | Docker Hub access token (PAT) for ArgoCD OCI Helm chart pulls. Paired with dockerhub\_username. | `string` | `""` | no |
 | <a name="input_dockerhub_username"></a> [dockerhub\_username](#input\_dockerhub\_username) | Docker Hub username for ArgoCD to authenticate when pulling OCI Helm charts (e.g. Envoy Gateway from registry-1.docker.io). If empty, anonymous pulls are attempted and may be rate-limited. Create a PAT at https://app.docker.com/settings/personal-access-tokens | `string` | `""` | no |
 | <a name="input_enable_backup"></a> [enable\_backup](#input\_enable\_backup) | Enable weekly boot volume backups for all k3s nodes (Always Free: 5 total backups). With 2 nodes at weekly-1-week-retention there are at most 2 active backups. | `bool` | `true` | no |
@@ -650,7 +691,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_enable_etcd_snapshots"></a> [enable\_etcd\_snapshots](#input\_enable\_etcd\_snapshots) | Upload etcd snapshots to the OCI Object Storage state bucket every 6 hours using OCI CLI instance\_principal auth (no Customer Secret Keys required). Requires enable\_object\_storage\_state = true. Provides off-node etcd backup for split-brain recovery. | `bool` | `true` | no |
 | <a name="input_enable_external_dns"></a> [enable\_external\_dns](#input\_enable\_external\_dns) | Deploy external-dns (kubernetes-sigs) configured for Cloudflare. Automatically creates/updates DNS A records when Services or Ingresses are annotated. Requires cloudflare\_api\_token and cloudflare\_zone\_id. | `bool` | `false` | no |
 | <a name="input_enable_external_secrets"></a> [enable\_external\_secrets](#input\_enable\_external\_secrets) | Deploy the External Secrets Operator and create a ClusterSecretStore backed by OCI Vault (instance\_principal auth). Requires enable\_vault = true. Workloads can then create ExternalSecret resources to sync any OCI Vault secret into a Kubernetes Secret without hard-coding values. | `bool` | `false` | no |
-| <a name="input_enable_longhorn_backup"></a> [enable\_longhorn\_backup](#input\_enable\_longhorn\_backup) | Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups. Cloud-init automatically creates the backup credentials secret and wires the Longhorn BackupTarget when enable\_longhorn\_backup = true AND user\_ocid is set. Shares the 20 GB free allowance with the Terraform state bucket. | `bool` | `true` | no |
+| <a name="input_enable_longhorn_backup"></a> [enable\_longhorn\_backup](#input\_enable\_longhorn\_backup) | Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups. Cloud-init automatically creates the backup credentials secret and wires the Longhorn BackupTarget when create\_longhorn\_backup\_user = true (or user\_ocid is set). Shares the Object Storage free allowance (20 GB, or 10 GB on Pay As You Go) with the Terraform state bucket. | `bool` | `true` | no |
 | <a name="input_enable_mysql"></a> [enable\_mysql](#input\_enable\_mysql) | Provision an Always Free MySQL HeatWave DB system (single node, 50 GB). Creates a Kubernetes Secret 'mysql-credentials' in the default namespace. | `bool` | `false` | no |
 | <a name="input_enable_object_storage_state"></a> [enable\_object\_storage\_state](#input\_enable\_object\_storage\_state) | Provision an Always Free OCI Object Storage bucket for storing Terraform/OpenTofu state (S3-compatible API). See the terraform\_state\_backend output for the backend configuration snippet. | `bool` | `true` | no |
 | <a name="input_enable_oci_logging"></a> [enable\_oci\_logging](#input\_enable\_oci\_logging) | Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month). | `bool` | `true` | no |
@@ -681,6 +722,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_k3s_version"></a> [k3s\_version](#input\_k3s\_version) | k3s version to install. Use 'stable' or 'latest' to resolve from the k3s channel API at plan-time, or pin to a specific release (e.g. 'v1.35.5+k3s1'). | `string` | `"stable"` | no |
 | <a name="input_k3s_worker_pool_size"></a> [k3s\_worker\_pool\_size](#input\_k3s\_worker\_pool\_size) | Number of k3s worker nodes managed by the OCI Instance Pool.<br/>Set to 0 (default) when using k3s\_standalone\_worker = true, which is the recommended<br/>Always Free topology. The pool is kept to allow future scaling beyond the free tier. | `number` | `0` | no |
 | <a name="input_kube_api_port"></a> [kube\_api\_port](#input\_kube\_api\_port) | Port the k3s API server listens on | `number` | `6443` | no |
+| <a name="input_longhorn_backup_retain"></a> [longhorn\_backup\_retain](#input\_longhorn\_backup\_retain) | Number of backups per volume the default Longhorn `daily-backup` RecurringJob keeps. Longhorn deletes older backups (and their unreferenced blocks) from the bucket itself. Keep the bucket inside the Object Storage free allowance. | `number` | `7` | no |
+| <a name="input_longhorn_backup_schedule"></a> [longhorn\_backup\_schedule](#input\_longhorn\_backup\_schedule) | Cron schedule (UTC) of the default Longhorn `daily-backup` RecurringJob created by cloud-init when the backup target is wired automatically. | `string` | `"30 0 * * *"` | no |
 | <a name="input_longhorn_hostname"></a> [longhorn\_hostname](#input\_longhorn\_hostname) | Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, a Gateway API HTTPRoute with BasicAuth (Envoy Gateway SecurityPolicy) and a cert-manager TLS certificate is created. | `string` | `null` | no |
 | <a name="input_longhorn_ui_username"></a> [longhorn\_ui\_username](#input\_longhorn\_ui\_username) | Username for Longhorn UI BasicAuth (only used when longhorn\_hostname is set). | `string` | `"admin"` | no |
 | <a name="input_my_public_ip_cidr"></a> [my\_public\_ip\_cidr](#input\_my\_public\_ip\_cidr) | Your workstation public IP(s) in CIDR notation (e.g. ["1.2.3.4/32"]).<br/>Restricts OCI Bastion Service session creation (enable\_bastion = true) and<br/>kubeapi access via the public NLB (expose\_kubeapi = true).<br/>k3s nodes are in a private subnet and are only reachable via OCI Bastion sessions.<br/>A list so multiple networks (e.g. home + travel) can be allowed at once. | `list(string)` | n/a | yes |

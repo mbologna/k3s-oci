@@ -47,6 +47,12 @@ update-gitops-url url:
 clean-oci-resources:
     ./scripts/clean-oci-resources.sh
 
+# Destroy the cluster but keep the Vault and buckets (etcd snapshots, Longhorn backups)
+# and re-import them into state, ready for `just apply`. Requires COMPARTMENT_OCID;
+# CLUSTER_NAME defaults to k3s-oci. Resume a failed import with IMPORT_ONLY=true.
+teardown-keep-data:
+    ./scripts/teardown-keep-data.sh
+
 # Wire Longhorn backups to OCI Object Storage (interactive).
 # Use when user_ocid is not set in tfvars — creates Customer Secret Key, K8s Secret,
 # and applies the Longhorn BackupTarget. Requires kubectl + oci CLI configured.
@@ -86,7 +92,8 @@ shellcheck:
         files/lib/k3s-external-secrets.sh \
         files/lib/k3s-argocd.sh \
         files/lib/k3s-agent.sh \
-        scripts/clean-oci-resources.sh
+        scripts/clean-oci-resources.sh \
+        scripts/teardown-keep-data.sh
 
 # Run YAML lint on gitops/ and .github/workflows/
 yamllint:

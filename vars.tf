@@ -448,7 +448,7 @@ variable "enable_object_storage_state" {
 
 variable "enable_longhorn_backup" {
   type        = bool
-  description = "Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups. Cloud-init automatically creates the backup credentials secret and wires the Longhorn BackupTarget when enable_longhorn_backup = true AND user_ocid is set. Shares the 20 GB free allowance with the Terraform state bucket."
+  description = "Provision a dedicated Always Free OCI Object Storage bucket for Longhorn PVC backups. Cloud-init automatically creates the backup credentials secret and wires the Longhorn BackupTarget when create_longhorn_backup_user = true (or user_ocid is set). Shares the Object Storage free allowance (20 GB, or 10 GB on Pay As You Go) with the Terraform state bucket."
   default     = true
 }
 
@@ -482,6 +482,40 @@ variable "user_ocid" {
     (follow the longhorn_backup_setup output instructions).
   EOT
   default     = null
+}
+
+variable "create_longhorn_backup_user" {
+  type        = bool
+  description = <<-EOT
+    Create a dedicated IAM service user, group and policy (all named <cluster_name>-longhorn-backup)
+    that can only read/write the Longhorn backup bucket, plus a Customer Secret Key for it.
+    Cloud-init then wires the Longhorn BackupTarget and default RecurringJobs automatically.
+    Preferred over user_ocid. Requires enable_longhorn_backup = true, region set, and
+    permission to manage IAM users/groups in the tenancy. Mutually exclusive with user_ocid.
+  EOT
+  default     = false
+}
+
+variable "longhorn_backup_schedule" {
+  type        = string
+  description = "Cron schedule (UTC) of the default Longhorn `daily-backup` RecurringJob created by cloud-init when the backup target is wired automatically."
+  default     = "30 0 * * *"
+
+  validation {
+    condition     = can(regex("^[0-9*/,-]+( [0-9*/,-]+){4}$", var.longhorn_backup_schedule))
+    error_message = "longhorn_backup_schedule must be a 5-field cron expression (e.g. \"30 0 * * *\")."
+  }
+}
+
+variable "longhorn_backup_retain" {
+  type        = number
+  description = "Number of backups per volume the default Longhorn `daily-backup` RecurringJob keeps. Longhorn deletes older backups (and their unreferenced blocks) from the bucket itself. Keep the bucket inside the Object Storage free allowance."
+  default     = 7
+
+  validation {
+    condition     = var.longhorn_backup_retain >= 1 && var.longhorn_backup_retain <= 100
+    error_message = "longhorn_backup_retain must be between 1 and 100 (Longhorn's limit)."
+  }
 }
 
 

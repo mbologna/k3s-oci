@@ -200,3 +200,27 @@ resource "oci_vault_secret" "cloudflare_api_token" {
 
   freeform_tags = local.common_tags
 }
+
+# Longhorn backup S3 secret key: fetched by cloud-init at boot instead of being
+# embedded in instance user-data. The access key ID is not a secret and stays in
+# user-data. A secret of the same name created by hand must be adopted with
+# `tofu import` first (or apply fails with "name already exists").
+resource "oci_vault_secret" "longhorn_backup_secret_key" {
+  count          = var.enable_vault && local.longhorn_backup_automated ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-longhorn-backup-secret-key"
+  description    = "S3 secret key of the Longhorn backup Customer Secret Key"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(oci_identity_customer_secret_key.longhorn_backup[0].key)
+  }
+
+  freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
+}

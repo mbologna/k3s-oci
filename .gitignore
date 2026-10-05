@@ -46,3 +46,6 @@ example/terraform.tfvars
 # must never be committable either.
 example/terraform.tfvars.bak*
 **/terraform.tfvars.bak*
+
+# Resume file written by scripts/teardown-keep-data.sh (import IDs, no secrets)
+.teardown-keep-data.tsv

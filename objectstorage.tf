@@ -69,11 +69,15 @@ resource "oci_objectstorage_object_lifecycle_policy" "longhorn_backup" {
 }
 
 # Customer Secret Key for Longhorn S3-compatible backup access.
-# Created automatically when user_ocid is provided; allows cloud-init to wire
-# the Longhorn BackupTarget without manual Console steps.
-# The secret key is stored in Terraform state (encrypted when using the S3 backend).
+# Created automatically for the module's service user (create_longhorn_backup_user)
+# or for user_ocid; allows cloud-init to wire the Longhorn BackupTarget without
+# manual Console steps. The secret key is stored in Terraform state, and in Vault
+# (not in user-data) when enable_vault = true.
 resource "oci_identity_customer_secret_key" "longhorn_backup" {
-  count        = var.enable_longhorn_backup && var.user_ocid != null ? 1 : 0
+  count        = local.longhorn_backup_automated ? 1 : 0
   display_name = "${var.cluster_name}-longhorn-backup"
-  user_id      = var.user_ocid
+  user_id      = local.create_longhorn_backup_user ? oci_identity_user.longhorn_backup[0].id : var.user_ocid
+
+  # The capability must be in place before OCI accepts the key.
+  depends_on = [oci_identity_user_capabilities_management.longhorn_backup]
 }
