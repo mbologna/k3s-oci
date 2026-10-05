@@ -594,7 +594,18 @@ cd example
 tofu destroy
 ```
 
-> **Note:** If you enabled remote state (`enable_object_storage_state = true`), the state bucket itself is not destroyed — OCI cannot delete a non-empty versioned bucket. Empty and delete it manually via the OCI Console or CLI after `tofu destroy` completes.
+> **Buckets:** `<cluster>-terraform-state` (etcd snapshots) and `<cluster>-longhorn-backup` (Longhorn backups)
+> are module resources. OCI refuses to delete a non-empty bucket, so `tofu destroy` fails on them while they hold data.
+> `scripts/clean-oci-resources.sh` empties and deletes them.
+>
+> **To rebuild without losing snapshots and backups**, keep the buckets:
+> 1. Run `tofu state rm` on `oci_objectstorage_bucket.{terraform_state,longhorn_backup}[0]` and their
+>    `oci_objectstorage_object_lifecycle_policy` before `tofu destroy`.
+> 2. Run the clean script with `KEEP_BUCKETS=true`.
+> 3. Re-import before `tofu apply`: bucket ID `n/<namespace>/b/<name>`, lifecycle policy ID `n/<namespace>/b/<name>/l`.
+>
+> Do the same for the vault with `KEEP_VAULT=true` (see AGENTS.md → Troubleshooting scripts).
+> Keep your Terraform state in a separate, module-external bucket (see [Remote Terraform state](#remote-terraform-state-oci-object-storage)) so teardown never touches it.
 
 ## NLB IP stability
 
@@ -697,7 +708,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_trace_enabled"></a> [trace\_enabled](#input\_trace\_enabled) | Enable bash trace mode (set -x) in cloud-init scripts. Produces verbose output in /var/log/k3s-cloud-init.log. Useful for debugging bootstrap failures. Do NOT enable in production. | `bool` | `false` | no |
 | <a name="input_unique_tag_key"></a> [unique\_tag\_key](#input\_unique\_tag\_key) | Freeform tag key applied to every resource for identification | `string` | `"k3s-provisioner"` | no |
 | <a name="input_unique_tag_value"></a> [unique\_tag\_value](#input\_unique\_tag\_value) | Freeform tag value applied to every resource for identification | `string` | `"https://github.com/mbologna/k3s-oci"` | no |
-| <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | OCID of the OCI user running Terraform (format: ocid1.user.oc1..xxx).<br/>Required when enable\_longhorn\_backup = true to automatically create a Customer<br/>Secret Key for S3-compatible access, wire the Longhorn backup credentials<br/>Kubernetes Secret, and apply the Longhorn BackupTarget in cloud-init.<br/>When null, the Longhorn backup bucket is still created but wiring is manual<br/>(follow the longhorn\_backup\_setup output instructions). | `string` | `null` | no |
+| <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | OCID of the user that owns the Longhorn backup S3 key (format: ocid1.user.oc1..xxx).<br/>The key ends up in the cluster and carries ALL of this user's rights, so use a<br/>dedicated service user whose policy is limited to the backup bucket, not an admin.<br/>Required when enable\_longhorn\_backup = true to automatically create a Customer<br/>Secret Key for S3-compatible access, wire the Longhorn backup credentials<br/>Kubernetes Secret, and apply the Longhorn BackupTarget in cloud-init.<br/>When null, the Longhorn backup bucket is still created but wiring is manual<br/>(follow the longhorn\_backup\_setup output instructions). | `string` | `null` | no |
 | <a name="input_worker_memory_in_gbs"></a> [worker\_memory\_in\_gbs](#input\_worker\_memory\_in\_gbs) | RAM in GB per worker node. | `number` | `6` | no |
 | <a name="input_worker_ocpus"></a> [worker\_ocpus](#input\_worker\_ocpus) | OCPUs per worker node. | `number` | `1` | no |
 
@@ -722,6 +733,6 @@ MIT. See [LICENSE](LICENSE).
 | <a name="output_ssh_command"></a> [ssh\_command](#output\_ssh\_command) | SSH command to connect to a cluster node via the public NLB (null if expose\_ssh = false). Routes to any available server. |
 | <a name="output_ssh_host_public_key"></a> [ssh\_host\_public\_key](#output\_ssh\_host\_public\_key) | Shared SSH host public key deployed to all nodes. Add to known\_hosts with: ssh-keygen -R <nlb-ip> && terraform output -raw ssh\_host\_public\_key \| ssh-keyscan -f - >> ~/.ssh/known\_hosts  (or simply ssh-keyscan <nlb-ip> >> ~/.ssh/known\_hosts after apply). |
 | <a name="output_tailscale_vault_secret_names"></a> [tailscale\_vault\_secret\_names](#output\_tailscale\_vault\_secret\_names) | OCI Vault secret names for the Tailscale operator OAuth credentials (null if enable\_tailscale = false).<br/>Reference these names in the ExternalSecret (platform/<cluster>/tailscale-operator/oauth-secret.yaml). |
-| <a name="output_terraform_state_backend"></a> [terraform\_state\_backend](#output\_terraform\_state\_backend) | S3-compatible backend config snippet for storing Terraform state in the provisioned OCI Object Storage bucket. Replace <region> and add S3 credentials (OCI Customer Secret Key). |
+| <a name="output_terraform_state_backend"></a> [terraform\_state\_backend](#output\_terraform\_state\_backend) | Name and namespace of the etcd-snapshot / leader-lock bucket. Do NOT store Terraform state in it: nodes can write it and destroy/clean delete it. Use a separate bucket (see README: Remote Terraform state); the namespace is the same. |
 | <a name="output_vault_id"></a> [vault\_id](#output\_vault\_id) | OCI Vault OCID (null if enable\_vault = false) |
 <!-- END_TF_DOCS -->

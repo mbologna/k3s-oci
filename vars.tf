@@ -472,7 +472,9 @@ variable "etcd_snapshot_retention" {
 variable "user_ocid" {
   type        = string
   description = <<-EOT
-    OCID of the OCI user running Terraform (format: ocid1.user.oc1..xxx).
+    OCID of the user that owns the Longhorn backup S3 key (format: ocid1.user.oc1..xxx).
+    The key ends up in the cluster and carries ALL of this user's rights, so use a
+    dedicated service user whose policy is limited to the backup bucket, not an admin.
     Required when enable_longhorn_backup = true to automatically create a Customer
     Secret Key for S3-compatible access, wire the Longhorn backup credentials
     Kubernetes Secret, and apply the Longhorn BackupTarget in cloud-init.
