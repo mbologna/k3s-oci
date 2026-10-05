@@ -23,6 +23,9 @@ install_k3s_agent() {
     install_params+=("--node-ip" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
   fi
 
+  # Kubelet image GC at 70% instead of 85% — same reasoning as the server.
+  install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
+
   local max_api_attempts=180 max_attempts=10 attempt=0
   local api_port="${KUBE_API_PORT:-6443}"
 

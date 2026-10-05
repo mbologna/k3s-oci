@@ -65,21 +65,3 @@ spec:
     matchLabels:
       app.kubernetes.io/name: webhook
       app.kubernetes.io/instance: cert-manager
----
-# PodDisruptionBudget for Longhorn manager
-# longhorn-manager runs as a DaemonSet. minAvailable: 2 limits voluntary evictions
-# to 1 pod at a time for kubectl drain or system-upgrade-controller.
-# NOTE: kured uses --ignore-daemonsets, so it drains nodes without consulting this PDB.
-# This PDB protects against concurrent kubectl drain / SUC drains, NOT kured reboots.
-# Kured's one-at-a-time reboot guarantee comes from its own distributed lock.
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: longhorn-manager
-  namespace: longhorn-system
-spec:
-  minAvailable: 2
-  unhealthyPodEvictionPolicy: AlwaysAllow
-  selector:
-    matchLabels:
-      app: longhorn-manager

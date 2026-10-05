@@ -37,10 +37,10 @@ gitops/
 │   └── tls-policy.yaml               # ClientTrafficPolicy: TLS 1.2+, strong ciphers
 ├── longhorn/                         # Longhorn supplementary config
 │   ├── ingress.yaml                  # HTTPRoute + SecurityPolicy (BasicAuth) template
-│   ├── backup-target.yaml            # OCI Object Storage backup target template (see file for setup)
+│   ├── backup-target.yaml            # BackupTarget CR setup steps + weekly RecurringJob template
 │   ├── taint-toleration.yaml         # Worker node NoSchedule taint Setting template (uncomment + set taint key)
 │   └── webhook-postsync/             # ArgoCD PostSync hook — patches webhook failurePolicy to Ignore
-│       ├── kustomization.yaml        #   after each Helm sync (workaround: k3s HA konnectivity 502)
+│       ├── kustomization.yaml        #   after each Helm sync (workaround: webhook 502s via the k3s egress tunnel)
 │       ├── rbac.yaml                 #   ServiceAccount + ClusterRole + ClusterRoleBinding
 │       └── webhook-patch-job.yaml    #   Job with hardened securityContext; backoffLimit:0
 ├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
@@ -206,7 +206,7 @@ To expose a new service over HTTPS:
 
 ## Resilience: spread replicas across nodes
 
-With 4 nodes available for user workloads, use `topologySpreadConstraints` so that pod replicas never pile up on a single node. Losing one node then kills at most ⌈replicas/4⌉ pods instead of all of them.
+With 2 nodes available for user workloads, use `topologySpreadConstraints` so that pod replicas never pile up on a single node. Losing one node then kills at most ⌈replicas/2⌉ pods instead of all of them.
 
 ```yaml
 # Add to every Deployment/StatefulSet with replicas > 1

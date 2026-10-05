@@ -73,7 +73,7 @@ Both A1.Flex instances live in a **private subnet** with no public IPs. Internet
 
 **Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across both identically-sized nodes.
 
-> **Note:** OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery.
+> **Note:** OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery from an etcd snapshot. The server and worker are placed in different fault domains (`fault_domains` / `standalone_worker_fault_domain`).
 
 ## Quickstart
 
@@ -426,13 +426,13 @@ terraform {
 | Resource | Free allowance | This module |
 |---|---|---|
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 worker = **2 OCPUs / 12 GB** |
-| Block storage | 200 GB | 2 × 50 GB = **100 GB** (100 GB spare) |
+| Block storage | 200 GB | 2 × 100 GB = **200 GB** (boot volume IOPS scale with size — the full allowance goes to etcd/image/Longhorn IO) |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
 | Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **2 secrets**: k3s_token, longhorn_ui_password (`enable_vault = true`) |
+| Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
+| Vault (shared) | Software keys + 150 secrets | **2–5 secrets**: k3s_token, longhorn_ui_password, optional dockerhub_password, +2 Tailscale OAuth (`enable_vault = true`) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -496,7 +496,7 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 |---|---|
 | nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
-| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; 2 × 50 GB = 100 GB of the 200 GB free block storage allowance |
+| Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; the default 2 × 100 GB uses the whole 200 GB free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
 | openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image. **openSUSE Leap 16.0 is now supported** via `os_family = "opensuse"` + a custom-imported UEFI image. See [Choosing an OS](#choosing-an-os) below. Other distros remain unsupported. |
 
@@ -577,8 +577,8 @@ tofu destroy
 
 ## NLB IP stability
 
-The public NLB has `prevent_destroy = true` so its IP is stable across `tofu apply` runs.
-However, if the NLB is **ever recreated** (e.g. after `tofu state rm` + re-apply):
+The public NLB is never replaced by an ordinary `tofu apply`, so its IP is stable across applies.
+It has `prevent_destroy = false` (so `tofu destroy` works for full rebuilds); if the NLB is **ever recreated** (destroy + apply, or `tofu state rm` + re-apply):
 
 - All `sslip.io` hostnames change (e.g. `argocd.<old-ip>.sslip.io` → `argocd.<new-ip>.sslip.io`)
 - Let's Encrypt certificates are invalid for the new hostnames and must be reissued
@@ -598,11 +598,11 @@ MIT. See [LICENSE](LICENSE).
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"10.9.2"` | no |
 | <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP. | `string` | `null` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
-| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 2 k3s nodes at 50 GB each the total is 100 GB (within the 200 GB Always Free block storage limit). The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `50` | no |
+| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB. Default 100 GB × 2 nodes = 200 GB, exactly the Always Free block storage limit. Boot volume performance scales with size (Balanced: 60 IOPS/GB), and etcd fsync latency on the boot volume is the main stability limit of the server — so use the whole allowance. The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `100` | no |
 | <a name="input_certmanager_chart_version"></a> [certmanager\_chart\_version](#input\_certmanager\_chart\_version) | cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate. | `string` | `"v1.21.2"` | no |
 | <a name="input_certmanager_email_address"></a> [certmanager\_email\_address](#input\_certmanager\_email\_address) | Email address for Let's Encrypt ACME registration. Must be a real address. | `string` | n/a | yes |
 | <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | Cloudflare API token. Required when enable\_external\_dns = true or enable\_dns01\_challenge = true. Create a scoped token at https://dash.cloudflare.com/profile/api-tokens with Zone:DNS:Edit permissions. | `string` | `null` | no |
@@ -630,7 +630,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_expose_ssh"></a> [expose\_ssh](#input\_expose\_ssh) | Expose SSH (port 22) via the public NLB to all cluster nodes (restricted to my\_public\_ip\_cidr). Eliminates the need for OCI Bastion sessions for day-to-day access. | `bool` | `false` | no |
 | <a name="input_external_dns_domain_filter"></a> [external\_dns\_domain\_filter](#input\_external\_dns\_domain\_filter) | Domain filter for external-dns — only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable\_external\_dns = true. | `string` | `null` | no |
 | <a name="input_external_secrets_chart_version"></a> [external\_secrets\_chart\_version](#input\_external\_secrets\_chart\_version) | External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate. | `string` | `"2.10.0"` | no |
-| <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pool across | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-2",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
+| <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pools across. FAULT-DOMAIN-2 is left out by default because it is reserved for the standalone worker (standalone\_worker\_fault\_domain), so the server and the worker never share hardware. | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
 | <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config. | `string` | `"v1.5.1"` | no |
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
 | <a name="input_gitops_https_token"></a> [gitops\_https\_token](#input\_gitops\_https\_token) | Access token (or password) for HTTPS auth against a PRIVATE gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret with username/password before ArgoCD starts. Grant read-only repository scope — ArgoCD never writes. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
@@ -658,8 +658,8 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3svcn"` | no |
 | <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy — the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
 | <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy — the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
-| <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu 24.04 and auto-resolves the image. "opensuse" uses openSUSE Leap 16.0 — requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
-| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu 24.04 LTS (Noble) aarch64 image is resolved automatically. Required when os\_family = "opensuse" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
+| <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu (ubuntu\_version) and auto-resolves the image. "opensuse" uses openSUSE Leap 16.0 — requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
+| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu ubuntu\_version aarch64 image is resolved automatically. Required when os\_family = "opensuse" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
 | <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
 | <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | DNS label for the private subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3sprivate"` | no |
 | <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path —<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
@@ -669,10 +669,12 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_region"></a> [region](#input\_region) | OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable\_external\_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint. | `string` | `null` | no |
 | <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 12 GB (Always Free). | `number` | `6` | no |
 | <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 2 (Always Free). | `number` | `1` | no |
+| <a name="input_standalone_worker_fault_domain"></a> [standalone\_worker\_fault\_domain](#input\_standalone\_worker\_fault\_domain) | Fault domain for the standalone worker. Keep it out of var.fault\_domains so the worker and the server land on different physical hardware. Set to null to let OCI choose. | `string` | `"FAULT-DOMAIN-2"` | no |
 | <a name="input_tailscale_oauth_client_id"></a> [tailscale\_oauth\_client\_id](#input\_tailscale\_oauth\_client\_id) | Tailscale OAuth client ID. Required when enable\_tailscale = true. | `string` | `null` | no |
 | <a name="input_tailscale_oauth_client_secret"></a> [tailscale\_oauth\_client\_secret](#input\_tailscale\_oauth\_client\_secret) | Tailscale OAuth client secret. Required when enable\_tailscale = true. | `string` | `null` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | OCID of the tenancy | `string` | n/a | yes |
 | <a name="input_trace_enabled"></a> [trace\_enabled](#input\_trace\_enabled) | Enable bash trace mode (set -x) in cloud-init scripts. Produces verbose output in /var/log/k3s-cloud-init.log. Useful for debugging bootstrap failures. Do NOT enable in production. | `bool` | `false` | no |
+| <a name="input_ubuntu_version"></a> [ubuntu\_version](#input\_ubuntu\_version) | Ubuntu LTS release for nodes when os\_family = "ubuntu" and os\_image\_id is null. "24.04" (Noble) is the tested default; "26.04" (Resolute) is available on OCI for A1.Flex. Changing it only affects newly created instances — existing nodes ignore image changes. | `string` | `"24.04"` | no |
 | <a name="input_unique_tag_key"></a> [unique\_tag\_key](#input\_unique\_tag\_key) | Freeform tag key applied to every resource for identification | `string` | `"k3s-provisioner"` | no |
 | <a name="input_unique_tag_value"></a> [unique\_tag\_value](#input\_unique\_tag\_value) | Freeform tag value applied to every resource for identification | `string` | `"https://github.com/mbologna/k3s-oci"` | no |
 | <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | OCID of the OCI user running Terraform (format: ocid1.user.oc1..xxx).<br/>Required when enable\_longhorn\_backup = true to automatically create a Customer<br/>Secret Key for S3-compatible access, wire the Longhorn backup credentials<br/>Kubernetes Secret, and apply the Longhorn BackupTarget in cloud-init.<br/>When null, the Longhorn backup bucket is still created but wiring is manual<br/>(follow the longhorn\_backup\_setup output instructions). | `string` | `null` | no |
@@ -682,7 +684,7 @@ MIT. See [LICENSE](LICENSE).
 ## Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_argocd_initial_password_hint"></a> [argocd\_initial\_password\_hint](#output\_argocd\_initial\_password\_hint) | Command to retrieve the ArgoCD initial admin password (run after cluster is up) |
 | <a name="output_bastion_ocid"></a> [bastion\_ocid](#output\_bastion\_ocid) | OCID of the OCI Bastion Service resource (null if enable\_bastion = false). Use with example/get-kubeconfig.sh or oci bastion session create-managed-ssh. |
 | <a name="output_internal_lb_ip"></a> [internal\_lb\_ip](#output\_internal\_lb\_ip) | Private IP of the internal load balancer (used by agents to join the cluster) |

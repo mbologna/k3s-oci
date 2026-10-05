@@ -85,8 +85,8 @@ output "longhorn_backup_setup" {
       "Manual wiring required: set user_ocid in tfvars for full automation, or follow steps 1-3 below."
     )
     step_1 = var.user_ocid == null ? "Create OCI Customer Secret Key: Console → Identity → Users → <user> → Customer Secret Keys → Generate" : null
-    step_2 = var.user_ocid == null ? "kubectl create secret generic longhorn-backup-secret --from-literal=AWS_ACCESS_KEY_ID='<key-id>' --from-literal=AWS_SECRET_ACCESS_KEY='<secret>' -n longhorn-system" : null
-    step_3 = var.user_ocid == null ? "Uncomment and fill gitops/longhorn/backup-target.yaml with bucket '${oci_objectstorage_bucket.longhorn_backup[0].name}', namespace '${data.oci_objectstorage_namespace.k3s[0].namespace}'" : null
+    step_2 = var.user_ocid == null ? "kubectl create secret generic longhorn-backup-secret --from-literal=AWS_ACCESS_KEY_ID='<key-id>' --from-literal=AWS_SECRET_ACCESS_KEY='<secret>' --from-literal=AWS_ENDPOINTS='https://${data.oci_objectstorage_namespace.k3s[0].namespace}.compat.objectstorage.${coalesce(var.region, "<region>")}.oraclecloud.com' -n longhorn-system" : null
+    step_3 = var.user_ocid == null ? "kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge -p '{\"spec\":{\"backupTargetURL\":\"s3://${oci_objectstorage_bucket.longhorn_backup[0].name}@${coalesce(var.region, "<region>")}/\",\"credentialSecret\":\"longhorn-backup-secret\"}}'  (or run scripts/setup-longhorn-backup.sh)" : null
   } : null
 }
 

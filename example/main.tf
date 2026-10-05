@@ -12,6 +12,10 @@ variable "os_family" {
   type    = string
   default = "ubuntu"
 }
+variable "ubuntu_version" {
+  type    = string
+  default = "24.04"
+}
 variable "certmanager_email_address" { type = string }
 
 # Optional explicit API key auth — when null, the OCI provider reads from ~/.oci/config.
@@ -204,12 +208,17 @@ variable "worker_memory_in_gbs" {
 
 variable "boot_volume_size_in_gbs" {
   type    = number
-  default = 50
+  default = 100
 }
 
 variable "fault_domains" {
   type    = list(string)
-  default = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+  default = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-3"]
+}
+
+variable "standalone_worker_fault_domain" {
+  type    = string
+  default = "FAULT-DOMAIN-2"
 }
 
 # ── Networking ────────────────────────────────────────────────────────────────
@@ -397,6 +406,7 @@ module "k3s_cluster" {
   environment                       = var.environment
   os_image_id                       = var.os_image_id
   os_family                         = var.os_family
+  ubuntu_version                    = var.ubuntu_version
   certmanager_email_address         = var.certmanager_email_address
   k3s_server_pool_size              = var.k3s_server_pool_size
   k3s_worker_pool_size              = var.k3s_worker_pool_size
@@ -438,6 +448,7 @@ module "k3s_cluster" {
   worker_memory_in_gbs              = var.worker_memory_in_gbs
   boot_volume_size_in_gbs           = var.boot_volume_size_in_gbs
   fault_domains                     = var.fault_domains
+  standalone_worker_fault_domain    = var.standalone_worker_fault_domain
   oci_core_vcn_cidr                 = var.oci_core_vcn_cidr
   public_subnet_cidr                = var.public_subnet_cidr
   private_subnet_cidr               = var.private_subnet_cidr

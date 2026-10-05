@@ -97,8 +97,9 @@ resolve_flannel_params() {
 # Installs a cron job that takes a k3s etcd snapshot and uploads it to OCI Object
 # Storage every 6 hours using OCI CLI instance_principal auth (no S3 credentials).
 # Requires ETCD_SNAPSHOT_BUCKET and OCI_OBJECT_NAMESPACE to be non-empty.
-# Installed on ALL server nodes. Each server stores snapshots under its own
-# hostname prefix so snapshots don't collide and prune is per-node independent.
+# Installed on ALL server nodes. Each server uploads under its own hostname
+# prefix (no name collisions); pruning covers the whole cluster prefix so
+# snapshots left behind by replaced servers age out instead of piling up.
 
 setup_etcd_snapshot_upload() {
   if [[ "${ENABLE_ETCD_SNAPSHOTS:-false}" != "true" ]] \
@@ -112,8 +113,8 @@ setup_etcd_snapshot_upload() {
   local retain="${ETCD_SNAPSHOT_RETENTION:-5}"
 
   # Compute a stable per-node cron offset (0, 2, or 4 min) from the last octet
-  # of the primary IP to stagger all 3 server crons so they don't run at exactly
-  # the same minute. Prevents concurrent k3s etcd-snapshot save calls and prune
+  # of the primary IP to stagger multiple server crons so they don't run at
+  # exactly the same minute. Prevents concurrent k3s etcd-snapshot save calls and prune
   # races on the same Object Storage prefix.
   local node_ip cron_offset octet
   node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "0.0.0.0")
@@ -126,7 +127,7 @@ setup_etcd_snapshot_upload() {
 #!/usr/bin/env bash
 # Cron-managed etcd snapshot upload to OCI Object Storage via instance_principal.
 # Installed by cloud-init; edit /etc/cron.d/etcd-snapshot-upload to reschedule.
-# Each server stores snapshots under its own hostname prefix to prevent collisions.
+# Each server uploads under its own hostname prefix; prune spans the cluster prefix.
 set -euo pipefail
 
 export OCI_CLI_AUTH=instance_principal
@@ -153,8 +154,8 @@ if [[ -z "${SNAPSHOT_FILE}" ]]; then
   exit 1
 fi
 
-# Per-node prefix isolates each server's snapshots — prune is per-node only.
-NODE_PREFIX="etcd-snapshots/${CLUSTER}/${NODE_NAME}"
+CLUSTER_PREFIX="etcd-snapshots/${CLUSTER}"
+NODE_PREFIX="${CLUSTER_PREFIX}/${NODE_NAME}"
 echo "[$(date -u)] Uploading $(basename "${SNAPSHOT_FILE}") to oci://${BUCKET}/${NODE_PREFIX}/"
 oci os object put \
   --namespace "${NAMESPACE}" \
@@ -163,11 +164,14 @@ oci os object put \
   --file "${SNAPSHOT_FILE}" \
   --no-multipart
 
-echo "[$(date -u)] Pruning old snapshots for ${NODE_NAME} (keeping last ${RETAIN})..."
+# Prune across the whole cluster prefix, not just this node's: every server's
+# snapshot holds the same etcd data, and a replaced server's prefix would
+# otherwise never be pruned (its hostname never runs this script again).
+echo "[$(date -u)] Pruning old snapshots for ${CLUSTER} (keeping last ${RETAIN})..."
 oci os object list \
   --namespace "${NAMESPACE}" \
   --bucket-name "${BUCKET}" \
-  --prefix "${NODE_PREFIX}/" \
+  --prefix "${CLUSTER_PREFIX}/" \
   --fields name,timeCreated \
   --all \
   --query "sort_by(data, &\"time-created\")[:-${RETAIN}].name" \

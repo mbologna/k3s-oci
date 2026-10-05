@@ -19,11 +19,9 @@ spec:
       helm:
         valuesObject:
           defaultSettings:
-            # 2 replicas: tolerates 1-node loss with ~33% less write amplification than 3.
-            # With 50 GB boot-only volumes (~30 GB usable after OS/images), 3 replicas
-            # leaves only ~20-30 GB cluster-wide PVC capacity. 2 replicas recovers usable
-            # storage while still surviving a single node failure.
-            # Use the longhorn-replicated-3 StorageClass for explicitly critical PVCs.
+            # 2 replicas = one per node on the 2-node Always Free topology; a volume
+            # survives the loss of either node. More replicas cannot be scheduled
+            # (replica soft anti-affinity is off), so do not raise this.
             defaultReplicaCount: 2
             # Ensure Longhorn instance-managers are not evicted under memory pressure
             # ahead of lower-priority user workloads. An evicted instance-manager
@@ -38,6 +36,10 @@ spec:
             # thrashing on short maintenance windows or rolling upgrades: if the drained
             # node comes back within 10 min, no extra replica rebuild IO is triggered.
             replicaReplenishmentWaitInterval: "600"
+            # Upgrade volume engines automatically, one volume per node at a time,
+            # after each chart bump. Otherwise volumes stay on the old engine image
+            # (live-upgradable with 2 healthy replicas) and old images pile up.
+            concurrentAutomaticEngineUpgradePerNodeLimit: 1
           persistence:
             # Make longhorn the default StorageClass so PVCs without explicit
             # storageClassName are satisfied automatically.
@@ -50,15 +52,10 @@ spec:
             jobEnabled: false
     # PostSync hook: sets webhook failurePolicy to Ignore after each Helm sync.
     # The Helm chart resets failurePolicy to Fail on every sync; the hook re-applies
-    # the Ignore patch to prevent the konnectivity 502 issue from breaking startup.
+    # the Ignore patch to prevent the egress-tunnel 502 issue from breaking startup.
     - repoURL: https://github.com/mbologna/k3s-oci.git
       targetRevision: HEAD
       path: gitops/longhorn/webhook-postsync
-    # Extra StorageClass for explicitly critical PVCs requiring 3-replica protection.
-    # Reference with storageClassName: longhorn-replicated-3 on high-value PVCs.
-    - repoURL: https://github.com/mbologna/k3s-oci.git
-      targetRevision: HEAD
-      path: gitops/longhorn/storageclasses
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
@@ -75,7 +72,7 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 5m
-  # konnectivity proxy (k3s HA EgressSelector) cannot route webhook calls to
+  # the k3s egress-selector tunnel (apiserver → agent pods) cannot route webhook calls to
   # pods — returns 502 — causing longhorn-manager to crash-loop at startup.
   # The PostSync hook re-applies failurePolicy:Ignore after each sync.
   # ignoreDifferences prevents ArgoCD from showing OutOfSync.

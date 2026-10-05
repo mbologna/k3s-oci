@@ -278,6 +278,32 @@ claim_first_server_lock() {
 
 
 
+# A replaced single server has no peer to join, so it always --cluster-init's an
+# EMPTY cluster even when the previous server's etcd snapshots sit in the bucket.
+# That is the right default for a fresh deploy but silently discards all cluster
+# state on a replacement — make it loud and print the restore path.
+_warn_if_previous_snapshots_exist() {
+  [[ -z "${ETCD_SNAPSHOT_BUCKET:-}" || -z "${OCI_OBJECT_NAMESPACE:-}" ]] && return 0
+  local latest
+  latest=$(oci os object list \
+    --namespace "${OCI_OBJECT_NAMESPACE}" \
+    --bucket-name "${ETCD_SNAPSHOT_BUCKET}" \
+    --prefix "etcd-snapshots/${CLUSTER_NAME}/" \
+    --fields name,timeCreated --all \
+    --query 'sort_by(data, &"time-created")[-1].name' \
+    --raw-output 2>/dev/null || echo "")
+  [[ -z "${latest}" || "${latest}" == "null" ]] && return 0
+  echo ""
+  echo "  WARNING: etcd snapshots from a previous '${CLUSTER_NAME}' cluster exist in"
+  echo "  oci://${ETCD_SNAPSHOT_BUCKET}/etcd-snapshots/${CLUSTER_NAME}/ — this node is"
+  echo "  initialising a NEW, EMPTY cluster. To restore the previous state instead:"
+  echo "    oci os object get --bucket-name ${ETCD_SNAPSHOT_BUCKET} --name '${latest}' --file /tmp/restore.db"
+  echo "    systemctl stop k3s"
+  echo "    k3s server --cluster-reset --cluster-reset-restore-path=/tmp/restore.db"
+  echo "    systemctl start k3s"
+  echo ""
+}
+
 install_k3s_server() {
   # Pin node identity to the OCI instance's own display name instead of letting
   # k3s default to `hostname` at first start. Without this, any later OS hostname
@@ -298,14 +324,27 @@ install_k3s_server() {
   fi
 
   # Always disable k3s built-in Traefik; Envoy Gateway is managed via ArgoCD.
-  install_params+=("--disable" "traefik")
+  # Disable local-path-provisioner too: Longhorn is the default StorageClass, and
+  # two classes annotated is-default-class makes PVCs without storageClassName
+  # land on whichever the admission plugin picks (node-local, no replicas).
+  install_params+=("--disable" "traefik" "--disable" "local-storage")
+
+  # Kubelet image GC: start pruning at 70% disk instead of 85%. Images, etcd and
+  # Longhorn replicas share the single boot volume; letting images fill it to 85%
+  # costs both capacity and IOPS that etcd needs.
+  install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
+
+  # k3s's built-in etcd snapshot schedule defaults to "0 */12 * * *", the same
+  # minute as the 6-hourly upload cron (setup_etcd_snapshot_upload), so one of
+  # the two failed with "snapshot save already in progress". Offset it.
+  install_params+=("--etcd-snapshot-schedule-cron" "15 */12 * * *")
 
   # Disable leader election for embedded kube-controller-manager, kube-scheduler,
-  # and cloud-controller-manager. On OCI A1.Flex ARM64 (2 vCPU), the combined startup
-  # load from ArgoCD, Rancher Fleet, and cert-manager causes API server latency to
-  # exceed the 10s k3s-internal leader-election timeout, crashing k3s. These
-  # components don't need leader election on a single-server cluster because there is
-  # only one candidate. NOTE: re-enable leader election if scaling to HA (>1 server).
+  # and cloud-controller-manager. With embedded etcd on a single 1-OCPU server, a
+  # few seconds of disk-latency stall (etcd slow fdatasync) makes their lease
+  # renewals time out, and a lost lease is fatal to the whole k3s process. These
+  # components don't need leader election on a single-server cluster because there
+  # is only one candidate. NOTE: re-enable leader election if scaling to HA (>1 server).
   install_params+=("--kube-controller-arg=leader-elect=false")
   install_params+=("--kube-scheduler-arg=leader-elect=false")
   install_params+=("--kube-cloud-controller-arg=leader-elect=false")
@@ -346,6 +385,7 @@ install_k3s_server() {
   fi
 
   if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
+    _warn_if_previous_snapshots_exist
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
@@ -355,16 +395,6 @@ install_k3s_server() {
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
-    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
-    # k3s uses KillMode=process, so shims survive crashes and reconnect all at once on
-    # restart, causing a load spike that exceeds k3s's internal leader-election timeout
-    # and triggers another crash. Killing shims on exit gives k3s a clean slate.
-    mkdir -p /etc/systemd/system/k3s.service.d
-    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
-[Service]
-ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
-CONF
-    systemctl daemon-reload
   else
     echo "==> Joining existing cluster"
 
@@ -436,12 +466,9 @@ CONF
       fi
       echo "==> Patched k3s.service.env: K3S_URL → https://${join_url}:${KUBE_API_PORT:-6443}"
     fi
-    # Install ExecStopPost hook to kill orphaned containerd-shim processes when k3s exits.
-    mkdir -p /etc/systemd/system/k3s.service.d
-    cat > /etc/systemd/system/k3s.service.d/kill-shims.conf <<'CONF'
-[Service]
-ExecStopPost=-/bin/sh -c "pkill -9 containerd-shim; sleep 2"
-CONF
+    # No ExecStopPost shim kill: k3s's KillMode=process deliberately keeps
+    # containerd-shims (i.e. running pods) alive across a k3s restart. Killing
+    # them turns any k3s restart into a restart of every pod on the node.
     systemctl daemon-reload
     echo "==> Starting k3s to join cluster..."
     systemctl start k3s
@@ -483,7 +510,7 @@ install_k3s_server
 
 # Install etcd snapshot upload cron on ALL server nodes (not just the first).
 # The cron runs every 6h: 'k3s etcd-snapshot save' + upload to OCI Object Storage.
-# Running on all 3 servers is safe and idempotent — if the first server is later
+# Running on every server is safe and idempotent — if the first server is later
 # replaced by the instance pool, uploads continue uninterrupted from the survivors.
 setup_etcd_snapshot_upload
 
@@ -500,7 +527,7 @@ if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     node-role.kubernetes.io/control-plane:NoSchedule- \
     node-role.kubernetes.io/etcd:NoSchedule- \
     2>/dev/null || true
-  echo "Control-plane NoSchedule taints removed (if any) -- all 4 nodes schedulable."
+  echo "Control-plane NoSchedule taints removed (if any) -- all nodes schedulable."
 
   # Source bootstrap functions (defined in k3s-bootstrap.sh, prepended by data.tf)
   export PATH="/root/bin:${PATH}"

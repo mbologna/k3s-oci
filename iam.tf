@@ -46,11 +46,6 @@ resource "oci_identity_policy" "k3s" {
     var.enable_object_storage_state ? [
       "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to manage objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${var.cluster_name}-terraform-state'",
     ] : [],
-    # Longhorn backup target: Longhorn controller (and setup scripts) need to
-    # create/read/delete objects in the dedicated backup bucket.
-    var.enable_longhorn_backup ? [
-      "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to manage objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${var.cluster_name}-longhorn-backup'",
-    ] : [],
     # The Object Storage platform service itself needs this to execute lifecycle
     # rules (e.g. purging noncurrent versions) — without it, PutObjectLifecyclePolicy
     # fails with "InsufficientServicePermissions" even though the bucket owner can
