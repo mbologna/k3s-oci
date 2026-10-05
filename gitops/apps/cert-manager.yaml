@@ -59,12 +59,12 @@ spec:
               enabled: false
     # PostSync hook: sets cert-manager webhook failurePolicy to Ignore after each Helm sync.
     # The Helm chart resets failurePolicy to Fail on every sync; the hook re-applies the Ignore
-    # patch so that k3s HA konnectivity 502s during leader transitions/kured reboots don't cause
+    # patch so that k3s egress-tunnel 502s during leader transitions/kured reboots don't cause
     # Certificate/Order/Challenge CRD writes to be rejected by the webhook.
     - repoURL: https://github.com/mbologna/k3s-oci.git
       targetRevision: HEAD
       path: gitops/cert-manager/webhook-postsync
-  # k3s HA konnectivity (EgressSelector) returns 502 for all admission webhook calls.
+  # the k3s egress-selector tunnel (apiserver → agent pods) returns 502 for all admission webhook calls.
   # ignoreDifferences on failurePolicy prevents ArgoCD (SSA) from reverting the PostSync
   # hook's patch between syncs. caBundle is continuously rotated by cert-manager cainjector.
   ignoreDifferences:

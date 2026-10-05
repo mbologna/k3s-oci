@@ -97,6 +97,17 @@ check "always_free_node_count" {
   }
 }
 
+check "always_free_block_storage_budget" {
+  assert {
+    condition = (
+      var.k3s_server_pool_size +
+      (var.k3s_standalone_worker ? 1 : 0) +
+      var.k3s_worker_pool_size
+    ) * var.boot_volume_size_in_gbs <= 200
+    error_message = "Total boot volume size (nodes × boot_volume_size_in_gbs) exceeds the Always Free block storage limit of 200 GB. Reduce boot_volume_size_in_gbs."
+  }
+}
+
 check "expose_ssh_makes_bastion_redundant" {
   assert {
     condition     = !(var.expose_ssh && var.enable_bastion)

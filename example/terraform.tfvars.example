@@ -23,7 +23,8 @@ availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 cluster_name  = "my-k3s"
 environment   = "staging"
 
-# OS images — optional; latest Ubuntu 24.04 Minimal is auto-detected from the tenancy.
+# OS images — optional; the latest Ubuntu image for ubuntu_version is auto-detected.
+# ubuntu_version = "26.04"   # default "24.04"
 # Override if you need a pinned or custom image OCID.
 # Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
 # os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
@@ -61,7 +62,7 @@ k3s_standalone_worker = true
 # server_memory_in_gbs = 6                       # RAM per server node    (total: must be ≤ 12 GB)
 # worker_ocpus         = 1                       # OCPUs for standalone worker
 # worker_memory_in_gbs = 6                       # RAM for standalone worker
-# boot_volume_size_in_gbs = 50                   # Must be exactly 50 — 2×50 GB = 100 GB (200 GB Always Free limit)
+# boot_volume_size_in_gbs = 100                  # 50–100; 2 × 100 GB = 200 GB = the Always Free block storage limit
 
 # ── k3s ───────────────────────────────────────────────────────────────────────
 # k3s_version defaults to "stable" (resolved at plan-time via k3s channel API).
@@ -156,7 +157,8 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # ingress_controller_https_nodeport = 30443
 # k3s_subnet                        = "default_route_table"
 # k3s_extra_server_args             = ["--etcd-arg=election-timeout=5000", "--etcd-arg=heartbeat-interval=1000"]
-# fault_domains                     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+# fault_domains                     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-3"]  # server pool
+# standalone_worker_fault_domain    = "FAULT-DOMAIN-2"                       # keep out of fault_domains
 
 # ── Advanced IAM (change only if names conflict with existing OCI resources) ───
 # oci_identity_dynamic_group_name = "k3s-cluster-dynamic-group"

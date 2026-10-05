@@ -223,6 +223,7 @@ resource "oci_core_instance" "k3s_standalone_worker" {
 
   compartment_id      = var.compartment_ocid
   availability_domain = var.availability_domain
+  fault_domain        = var.standalone_worker_fault_domain
   display_name        = "${var.cluster_name}-standalone-worker"
   freeform_tags       = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
 
@@ -268,19 +269,13 @@ resource "oci_core_instance" "k3s_standalone_worker" {
   }
 
   lifecycle {
-    # metadata: contains user_data (cloud-init) — not re-applied after first boot
-    # source_details: OCI provider import does not fully reconstruct nested source_details
-    # attributes, causing spurious ForceNew after tofu import. Safe to ignore because
-    # boot_volume_size_in_gbs and source_id are immutable post-creation anyway.
-    # metadata: contains user_data (cloud-init) — not re-applied after first boot.
-    # source_details, create_vnic_details: OCI provider does not reconstruct these
-    # nested blocks on import (API returns VNIC/boot-volume data via separate endpoints).
-    # All three blocks are effectively immutable post-creation, so ignoring drift is safe.
-    # The standalone worker is created via OCI CLI to work around a tls: bad record MAC
-    # bug in the OCI Terraform provider (Go HTTP/2 issue on the /instances endpoint).
-    # After import, all drift is suppressed so Terraform never modifies or destroys it.
-    ignore_changes  = all
-    prevent_destroy = false
+    # metadata (cloud-init user_data) is not re-applied after first boot, and the
+    # OCI provider does not reconstruct source_details / create_vnic_details on
+    # import (spurious ForceNew). The worker may also have been created via OCI CLI
+    # (tls: bad record MAC bug in the provider) and imported. All drift is ignored so
+    # Terraform never replaces it — changes such as fault_domain or a boot volume
+    # resize only apply to new instances; do them on a live node via the OCI CLI.
+    ignore_changes = all
   }
 }
 

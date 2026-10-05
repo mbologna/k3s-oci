@@ -45,15 +45,16 @@ if [[ -z "${ACCESS_KEY_ID}" || -z "${SECRET_KEY}" ]]; then
 fi
 
 # --- Determine OCI region ---
-OCI_REGION=$(oci iam region-subscription list --tenancy-id "${COMPARTMENT_OCID}" \
-  --query 'data[?["is-home-region"]==`true`]."region-name" | [0]' \
-  --raw-output 2>/dev/null || \
-  oci iam region list --query 'data[0]."name"' --raw-output 2>/dev/null || \
-  echo "")
+# The bucket lives in the cluster's region, which is not necessarily the tenancy
+# home region. Prefer an explicit OCI_REGION, then the OCI CLI profile's region.
+OCI_REGION="${OCI_REGION:-$(awk -F= -v p="[${OCI_CLI_PROFILE:-DEFAULT}]" \
+  '$0==p{f=1;next} /^\[/{f=0} f && $1~/^region/{gsub(/[ \t]/,"",$2); print $2; exit}' \
+  "${OCI_CLI_CONFIG_FILE:-${HOME}/.oci/config}" 2>/dev/null || true)}"
 
 if [[ -z "${OCI_REGION}" ]]; then
-  read -r -p "Enter OCI region (e.g. eu-frankfurt-1): " OCI_REGION
+  read -r -p "Enter the cluster's OCI region (e.g. eu-frankfurt-1): " OCI_REGION
 fi
+echo "  Region:    ${OCI_REGION} (override with OCI_REGION=...)"
 
 ENDPOINT="https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 BACKUP_TARGET="s3://${BUCKET}@${OCI_REGION}/"
@@ -72,40 +73,29 @@ kubectl create secret generic longhorn-backup-secret \
 echo "  Secret created (with AWS_ENDPOINTS=${ENDPOINT})."
 
 echo ""
-echo "Step 3: Applying Longhorn BackupTarget settings..."
-# Only backup-target and backup-target-credential-secret are valid Settings.
-kubectl apply -f - <<EOF
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: backup-target
-  namespace: longhorn-system
-value: "${BACKUP_TARGET}"
----
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: backup-target-credential-secret
-  namespace: longhorn-system
-value: "longhorn-backup-secret"
-EOF
-echo "  Longhorn settings applied."
+echo "Step 3: Patching the Longhorn BackupTarget 'default'..."
+# Longhorn >= 1.8 uses the BackupTarget CR; the backup-target Settings were removed.
+kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge \
+  -p "{\"spec\":{\"backupTargetURL\":\"${BACKUP_TARGET}\",\"credentialSecret\":\"longhorn-backup-secret\"}}"
+echo "  BackupTarget patched."
 
 echo ""
 echo "Step 4: Verifying backup target connectivity..."
-sleep 10
-BACKUP_AVAILABLE=$(kubectl get setting backup-target-available \
-  -n longhorn-system \
-  -o jsonpath='{.value}' 2>/dev/null || echo "unknown")
+sleep 15
+BACKUP_AVAILABLE=$(kubectl -n longhorn-system get backuptargets.longhorn.io default \
+  -o jsonpath='{.status.available}' 2>/dev/null || echo "unknown")
 
 if [[ "${BACKUP_AVAILABLE}" == "true" ]]; then
   echo "  ✅ Backup target is reachable: ${BACKUP_TARGET}"
 else
-  echo "  ⚠️  Backup target connectivity status: ${BACKUP_AVAILABLE}"
-  echo "     Check Longhorn UI → Settings → Backup → Backup Target for errors."
-  echo "     Common issues: wrong endpoint URL, missing bucket, invalid credentials."
+  echo "  ⚠️  Backup target available=${BACKUP_AVAILABLE:-unknown}"
+  echo "     Check: kubectl -n longhorn-system get backuptargets default -o yaml (status.conditions)"
+  echo "     Common issues: wrong region/endpoint, missing bucket, invalid credentials."
 fi
 
+echo ""
+echo "Optional: schedule weekly backups — kubectl apply -f gitops/longhorn/backup-target.yaml"
+echo "  after uncommenting the RecurringJob there."
 echo ""
 echo "=== Setup complete ==="
 echo "  Backup target: ${BACKUP_TARGET}"

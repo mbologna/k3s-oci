@@ -1,5 +1,6 @@
 # ── Object Storage buckets ────────────────────────────────────────────────────
-# OCI Always Free: 20 GB Object Storage shared across all buckets.
+# OCI Always Free Object Storage: 20 GB on Free Tier accounts, 10 GB once the
+# tenancy is upgraded to Pay As You Go — shared across all buckets.
 
 data "oci_objectstorage_namespace" "k3s" {
   count          = (var.enable_object_storage_state || var.enable_longhorn_backup) ? 1 : 0
@@ -21,8 +22,8 @@ resource "oci_objectstorage_bucket" "terraform_state" {
 
 # Versioning keeps every superseded object (incl. etcd snapshot uploads) as a
 # noncurrent version even after the pruning script "deletes" it — without this
-# policy those versions never actually free space, silently exceeding the 20GB
-# Always Free Object Storage allowance (found 2026-10-01: 489 noncurrent
+# policy those versions never actually free space, silently exceeding the Always
+# Free Object Storage allowance (found 2026-10-01: 489 noncurrent
 # versions / 22.5GB of long-deleted etcd snapshots still billed as live storage).
 resource "oci_objectstorage_object_lifecycle_policy" "terraform_state" {
   count     = var.enable_object_storage_state ? 1 : 0

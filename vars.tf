@@ -104,7 +104,7 @@ variable "my_public_ip_cidr" {
 
 variable "os_family" {
   type        = string
-  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu 24.04 and auto-resolves the image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu (ubuntu_version) and auto-resolves the image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
   default     = "ubuntu"
 
   validation {
@@ -113,9 +113,20 @@ variable "os_family" {
   }
 }
 
+variable "ubuntu_version" {
+  type        = string
+  description = "Ubuntu LTS release for nodes when os_family = \"ubuntu\" and os_image_id is null. \"24.04\" (Noble) is the tested default; \"26.04\" (Resolute) is available on OCI for A1.Flex. Changing it only affects newly created instances — existing nodes ignore image changes."
+  default     = "24.04"
+
+  validation {
+    condition     = contains(["24.04", "26.04"], var.ubuntu_version)
+    error_message = "ubuntu_version must be \"24.04\" or \"26.04\"."
+  }
+}
+
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu 24.04 LTS (Noble) aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu ubuntu_version aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
   default     = null
 
   validation {
@@ -156,19 +167,30 @@ variable "worker_memory_in_gbs" {
 
 variable "boot_volume_size_in_gbs" {
   type        = number
-  description = "Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB for all shapes. With 2 k3s nodes at 50 GB each the total is 100 GB (within the 200 GB Always Free block storage limit). The bastion uses OCI Bastion Service — no VM, no boot volume."
-  default     = 50
+  description = "Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB. Default 100 GB × 2 nodes = 200 GB, exactly the Always Free block storage limit. Boot volume performance scales with size (Balanced: 60 IOPS/GB), and etcd fsync latency on the boot volume is the main stability limit of the server — so use the whole allowance. The bastion uses OCI Bastion Service — no VM, no boot volume."
+  default     = 100
 
   validation {
     condition     = var.boot_volume_size_in_gbs >= 50
-    error_message = "boot_volume_size_in_gbs must be at least 50 GB (OCI minimum). Note: 2 nodes × 50 GB = 100 GB; you have 200 GB Always Free block storage available."
+    error_message = "boot_volume_size_in_gbs must be at least 50 GB (OCI minimum)."
   }
 }
 
 variable "fault_domains" {
   type        = list(string)
-  description = "Fault domains to spread the instance pool across"
-  default     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
+  description = "Fault domains to spread the instance pools across. FAULT-DOMAIN-2 is left out by default because it is reserved for the standalone worker (standalone_worker_fault_domain), so the server and the worker never share hardware."
+  default     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-3"]
+}
+
+variable "standalone_worker_fault_domain" {
+  type        = string
+  description = "Fault domain for the standalone worker. Keep it out of var.fault_domains so the worker and the server land on different physical hardware. Set to null to let OCI choose."
+  default     = "FAULT-DOMAIN-2"
+
+  validation {
+    condition     = var.standalone_worker_fault_domain == null || can(regex("^FAULT-DOMAIN-[1-3]$", var.standalone_worker_fault_domain))
+    error_message = "standalone_worker_fault_domain must be FAULT-DOMAIN-1, FAULT-DOMAIN-2, FAULT-DOMAIN-3, or null."
+  }
 }
 
 # ── Cluster topology ──────────────────────────────────────────────────────────

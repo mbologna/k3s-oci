@@ -1,48 +1,44 @@
 ---
-# Longhorn BackupTarget — configures OCI Object Storage as the backup destination.
+# Longhorn backups to OCI Object Storage (S3-compatible) — template, all commented out.
 #
-# OCI Object Storage is S3-compatible and has a 20 GB Always Free tier.
+# Longhorn >= 1.8 configures the backup destination via the BackupTarget CR named
+# "default" (created by longhorn-manager). The old `backup-target` /
+# `backup-target-credential-secret` Settings no longer exist — do not use them.
 #
-# Prerequisites:
-# 1. Create an OCI Object Storage bucket in your tenancy.
-# 2. Create an OCI Customer Secret Key (S3-compatible) for the backup user.
+# Automated path: set enable_longhorn_backup = true + user_ocid + region in tfvars;
+# cloud-init creates the secret and patches the BackupTarget. Manual path:
+# scripts/setup-longhorn-backup.sh, or the steps below.
+#
+# 1. Create an OCI Customer Secret Key (S3 credentials, max 2 per user):
 #    Console → Identity → Users → <user> → Customer Secret Keys → Generate Secret Key.
-# 3. Create the backup credentials secret INCLUDING AWS_ENDPOINTS:
+# 2. Create the credential secret. AWS_ENDPOINTS is REQUIRED for OCI:
 #    kubectl create secret generic longhorn-backup-secret \
 #      --from-literal=AWS_ACCESS_KEY_ID='<customer-secret-key-id>' \
 #      --from-literal=AWS_SECRET_ACCESS_KEY='<customer-secret-key>' \
 #      --from-literal=AWS_ENDPOINTS='https://<namespace>.compat.objectstorage.<region>.oraclecloud.com' \
 #      -n longhorn-system
+# 3. Point the BackupTarget at the bucket (format s3://<bucket>@<region>/):
+#    kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge \
+#      -p '{"spec":{"backupTargetURL":"s3://<cluster>-longhorn-backup@<region>/","credentialSecret":"longhorn-backup-secret"}}'
+#    Check: kubectl -n longhorn-system get backuptargets   (AVAILABLE should be true)
+# 4. Optionally uncomment the RecurringJob below and copy it into a path ArgoCD
+#    syncs (or kubectl apply it) to back up every volume in the "default" group weekly.
 #
-#    NOTE: AWS_ENDPOINTS is REQUIRED for OCI S3-compatible storage. Longhorn reads
-#    the custom endpoint from this key inside the credential secret — there is NO
-#    's3-compatible-endpoint' Longhorn Setting. The endpoint is NOT a separate Setting.
-#
-# 4. Update the backupTarget URL below with your region and namespace:
-#    Format: s3://<bucket-name>@<region>/<subfolder>
-#    OCI S3-compatible endpoint: https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
-#
-# 5. Uncomment this file and commit to enable backups.
-#
-# Example for Frankfurt (eu-frankfurt-1), namespace "axabcdefg", bucket "k3s-longhorn-backup":
-#   backupTarget: s3://k3s-longhorn-backup@eu-frankfurt-1/
-#   backupTargetCredentialSecret: longhorn-backup-secret
-#   (endpoint is in the secret AWS_ENDPOINTS key, not a separate Setting)
+# Budget: the backup bucket shares the Object Storage free tier with the state
+# bucket (20 GB on Free Tier accounts, 10 GB on Pay As You Go). Longhorn backups
+# are incremental, but keep `retain` low and watch the bucket size.
 #
 # See: https://longhorn.io/docs/latest/snapshots-and-backups/backup-and-restore/set-backup-target/
-#
-# NOTE: Longhorn Setting CRD uses `value` at the top level, NOT under `spec`.
 
 # apiVersion: longhorn.io/v1beta2
-# kind: Setting
+# kind: RecurringJob
 # metadata:
-#   name: backup-target
+#   name: weekly-backup
 #   namespace: longhorn-system
-# value: "s3://<your-bucket>@<your-region>/"
-# ---
-# apiVersion: longhorn.io/v1beta2
-# kind: Setting
-# metadata:
-#   name: backup-target-credential-secret
-#   namespace: longhorn-system
-# value: "longhorn-backup-secret"
+# spec:
+#   task: backup
+#   cron: "0 3 * * 0"
+#   groups:
+#     - default
+#   retain: 4
+#   concurrency: 1

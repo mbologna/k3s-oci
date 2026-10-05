@@ -1,7 +1,7 @@
 ---
 # PostSync hook: set Longhorn webhook failurePolicy to Ignore after every sync.
 #
-# Why: k3s HA konnectivity proxy (EgressSelector) cannot route webhook calls
+# Why: the k3s egress-selector tunnel (apiserver → agent pods) cannot route webhook calls
 # to pods — returns 502. With failurePolicy:Fail (the Helm default), any
 # Longhorn CRD operation fails when the webhook is temporarily unreachable,
 # causing longhorn-manager to crash-loop on startup.

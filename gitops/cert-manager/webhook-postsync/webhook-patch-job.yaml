@@ -1,7 +1,7 @@
 ---
 # PostSync hook: set cert-manager webhook failurePolicy to Ignore after every sync.
 #
-# Why: k3s HA konnectivity proxy (EgressSelector) cannot route webhook calls
+# Why: the k3s egress-selector tunnel (apiserver → agent pods) cannot route webhook calls
 # to pods — returns 502. With failurePolicy:Fail (the Helm default), any
 # write to cert-manager CRDs (Certificate, Issuer, ClusterIssuer, Order, Challenge)
 # fails when the webhook is temporarily unreachable — stalling certificate

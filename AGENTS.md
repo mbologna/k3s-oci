@@ -16,7 +16,7 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu 24.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
+| OS | Ubuntu 24.04 LTS (aarch64) — default; 26.04 via `var.ubuntu_version`. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Envoy Gateway (Gateway API) |
 | Logging | OCI Unified Logging (optional) |
@@ -30,14 +30,14 @@ do not introduce resources that incur cost.
 | Resource | Free allowance | This module |
 |---|---|---|
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 standalone worker |
-| Block storage | 200 GB | 2 × 50 GB boot volumes = 100 GB; bastion is OCI Bastion Service (managed, no VM, no storage) |
+| Block storage | 200 GB | 2 × 100 GB boot volumes = 200 GB (`boot_volume_size_in_gbs = 100`, enforced by a `checks.tf` budget check); bastion is OCI Bastion Service (managed, no VM, no storage) |
 | NLB | 1 | 1 public NLB |
 | Flex LB | 1 × 10 Mbps | 1 internal LB |
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
-| Object Storage | 20 GB | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
+| Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
 | Vault (shared) | Software keys + 150 secrets | 2–5 secrets — k3s_token, longhorn_ui_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
-| Volume backups | 5 total | 4 — one per node, weekly, 1-week retention (`enable_backup = true`) |
+| Volume backups | 5 total | 2 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
@@ -55,10 +55,10 @@ moved.tf         — moved{} blocks for in-flight resource renames; cleared afte
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group and Policy (scoped to cluster_name tag, includes log-content and secret-family)
+iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, secret-family, state-bucket objects)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
-lb.tf            — Internal Flexible LB (kubeapi HA)
+lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
 vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 2–5 cluster secrets: k3s_token, longhorn_ui_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true
@@ -83,7 +83,7 @@ files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_docker
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target template, taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for k3s HA konnectivity 502)
+gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for k3s HA konnectivity 502)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
@@ -105,7 +105,7 @@ renovate.json    — Automated dependency updates
   ```
 - Run `tofu fmt -recursive` (or `terraform fmt -recursive`) before committing — CI enforces it.
 - `terraform validate` runs against both the root module and `example/` — keep both valid.
-- The `lifecycle { prevent_destroy = true }` on both load balancers is intentional; do not remove it.
+- Both load balancers have `prevent_destroy = false` so `tofu destroy` works for full rebuilds (the NLB IP changes on rebuild — sslip.io hostnames are recomputed). Only the Vault and its key use `prevent_destroy = true`.
 - **When renaming a resource**, always add a `moved {}` block so existing states don't require `terraform state mv`:
   ```hcl
   moved {
@@ -240,25 +240,32 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 
 - Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
 - Do not add Oracle Linux support — Ubuntu 24.04 LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
-- Do not remove `lifecycle { prevent_destroy = true }` from load balancers
+- Do not remove `lifecycle { prevent_destroy = true }` from the Vault or its key
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
 - Do not break the `terraform validate` step — `server-vars.sh.tpl` / `agent-vars.sh.tpl` vars must match what `data.tf` passes
-- **Do not suggest terminating TLS at the OCI load balancer** — the public-facing LB is the OCI NLB (`nlb.tf`), which operates at L4 TCP only (`protocol = "TCP"`) and cannot inspect or terminate TLS. The one free OCI Flexible LB allocation (L7, TLS-capable) is consumed by the internal kubeapi HA LB (`lb.tf`). TLS must be terminated at Envoy Gateway. cert-manager + Let's Encrypt handles certificate issuance and renewal automatically.
+- **Do not suggest terminating TLS at the OCI load balancer** — the public-facing LB is the OCI NLB (`nlb.tf`), which operates at L4 TCP only (`protocol = "TCP"`) and cannot inspect or terminate TLS. The one free OCI Flexible LB allocation (L7, TLS-capable) is consumed by the internal kubeapi LB (`lb.tf`). TLS must be terminated at Envoy Gateway. cert-manager + Let's Encrypt handles certificate issuance and renewal automatically.
 - **Do not add nginx or other ingress controllers** — Envoy Gateway (Gateway API) is the ingress implementation. All HTTP/HTTPS routing uses standard `HTTPRoute`, `Gateway`, and `GatewayClass` resources.
-- **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across all 4 nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and user workloads coexist safely.
+- **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across both nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and ordinary user workloads coexist — but see "Server disk latency" below: IO-heavy batch jobs must stay off the server.
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
-  the security boundary at the hypervisor level, independent of the OS firewall.
-- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the three cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
+  the security boundary at the hypervisor level, independent of the OS firewall. UFW's default
+  `22/tcp LIMIT` also rate-limits the NLB SSH health checks from the subnet, marking backends
+  CRITICAL. **fail2ban is fine** (use an nftables banaction, not `ufw`, and ignore the VCN CIDR).
+- **Do not add `pkill containerd-shim` (or any shim-killing `ExecStopPost`) to the k3s unit.**
+  k3s uses `KillMode=process` so pods survive a k3s restart; killing the shims turns every
+  k3s restart (including a leader-election-lost exit) into a restart of every pod on the node.
+- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–5 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
 - **Vault and key have `prevent_destroy = true`** — OCI DEFAULT vaults have a low per-tenancy limit and take a minimum of 7 days to fully delete (the `PENDING_DELETION` state counts against quota). `prevent_destroy` keeps the vault alive across `tofu destroy`/`tofu apply` cycles. If you genuinely need to delete the vault, remove the `lifecycle` block or run `tofu state rm` first.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
 - **Do not reduce `boot_volume_size_in_gbs` below 50 GB** — OCI requires ≥ 50 GB for boot
-  volumes on all shapes (A1.Flex and E2.1.Micro alike). 4 × 50 GB = 200 GB exactly fills the
-  Always Free block storage limit. Do not suggest 47 GB as an optimisation — it is not valid.
+  volumes on all shapes (A1.Flex and E2.1.Micro alike). The default 2 × 100 GB = 200 GB exactly
+  fills the Always Free block storage limit. Do not shrink it to "save" storage: boot volume
+  IOPS/throughput scale with size, and etcd fsync latency is the server's main stability limit.
+  Do not suggest 47 GB as an optimisation — it is not valid.
 
 ## Special implementation notes
 
@@ -282,10 +289,10 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
 
 ### Longhorn storage
-- Replica count is **explicitly pinned to 2** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=2` and `persistence.defaultClassReplicaCount=2`. Do not rely on the upstream chart default. **Do not increase the default back to 3** — with 50 GB boot-only volumes (~30 GB usable after OS/images/etcd), 3 replicas leaves only ~20-30 GB cluster-wide PVC capacity.
+- Replica count is **explicitly pinned to 2** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=2` and `persistence.defaultClassReplicaCount=2`. Do not rely on the upstream chart default. With 2 nodes and hard replica anti-affinity, a third replica can never be scheduled — **do not increase it**.
 - Longhorn is managed entirely by ArgoCD (`gitops/apps/longhorn.yaml`). Cloud-init does NOT install Longhorn.
-- With 4 nodes and 2 replicas, any single node can be lost without PVC data loss. A second concurrent node loss leaves only 1 replica (at-risk). Use `longhorn-replicated-3` StorageClass (`gitops/longhorn/storageclasses/`) for critical PVCs that must survive 2 simultaneous node losses.
-- The etcd HA ceiling applies independently: losing 2 control-plane nodes loses etcd quorum regardless of Longhorn replica count.
+- With 2 nodes and 2 replicas, either node can be lost without PVC data loss (one replica per node). There is no 3-replica StorageClass — it would be unschedulable. Off-cluster protection comes from Longhorn backups (`enable_longhorn_backup`).
+- etcd is single-node: losing the server's boot volume means restoring from an etcd snapshot, regardless of Longhorn replicas.
 
 ### Longhorn UI BasicAuth
 - Password is generated by `random_password.longhorn_ui_password` in `data.tf` and exported by
@@ -369,7 +376,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores three secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (when `var.dockerhub_password` is set).
+- Stores 2–3 secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (only when `var.dockerhub_password` is set); +2 Tailscale OAuth secrets when `enable_tailscale = true`.
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
@@ -403,8 +410,8 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 ### Object Storage Buckets (`objectstorage.tf`)
 - `data.oci_objectstorage_namespace.k3s` is created when **either** `enable_object_storage_state` or `enable_longhorn_backup` is true — both buckets share it.
 - **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. S3-compatible endpoint and bucket name in `terraform_state_backend` output.
-- **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. The `longhorn_backup_setup` output prints the three steps to connect Longhorn (Customer Secret Key → kubectl secret → uncomment `gitops/longhorn/backup-target.yaml`).
-- Both buckets share the 20 GB Always Free Object Storage allowance. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
+- **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. The `longhorn_backup_setup` output prints the three steps to connect Longhorn (Customer Secret Key → `longhorn-backup-secret` with `AWS_ENDPOINTS` → patch the `backuptargets.longhorn.io/default` CR). Longhorn ≥ 1.8 has no `backup-target` Setting — always use the BackupTarget CR. Nodes need no IAM grant on this bucket (Longhorn authenticates with the Customer Secret Key).
+- Both buckets share the Always Free Object Storage allowance — 20 GB on Free Tier accounts, but only **10 GB once the tenancy is upgraded to Pay As You Go**. Both buckets have a lifecycle rule purging noncurrent versions after 2 days; without it, pruned etcd snapshots kept being billed. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
 - Users need OCI Customer Secret Keys (S3 credentials) to use either bucket — these are user-created in the Console and not managed by Terraform.
 
 ### MySQL HeatWave (`mysql.tf`)
@@ -546,7 +553,8 @@ The following variables have explicit format validation to prevent late-apply OC
 - `os_image_id`: must start with `ocid1.image.` if set
 - `oci_core_vcn_dns_label`, `public_subnet_dns_label`, `private_subnet_dns_label`: `^[a-zA-Z0-9]{1,15}$` — OCI DNS label limits (no hyphens, max 15 chars)
 - `boot_volume_size_in_gbs`: must be `>= 50` (OCI hard minimum)
-- `k3s_server_pool_size`: must be odd positive integer (etcd quorum)
+- `k3s_server_pool_size`: must be odd positive integer (etcd quorum; Always Free only fits 1)
+- `standalone_worker_fault_domain`: `FAULT-DOMAIN-[1-3]` or null
 
 When adding a new variable that maps to an OCI resource name or OCID, add a `validation {}` block.
 
@@ -560,8 +568,11 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 
 ### etcd Snapshots (`enable_etcd_snapshots`)
 - Controlled by `enable_etcd_snapshots` variable (default: `true`). Requires `enable_object_storage_state = true`.
-- Cloud-init installs `/usr/local/bin/etcd-snapshot-upload.sh` + cron job on the first server (every 6h).
-- Snapshots are uploaded to `${cluster_name}-terraform-state` bucket under `etcd-snapshots/${CLUSTER_NAME}/` using OCI CLI instance_principal auth — **no Customer Secret Keys required**.
+- Cloud-init installs `/usr/local/bin/etcd-snapshot-upload.sh` + cron job on every server (every 6h, at :00–:04).
+- k3s's built-in snapshot schedule is moved to `15 */12 * * *` (`--etcd-snapshot-schedule-cron`) — the default `0 */12 * * *` collides with the upload cron and fails with "snapshot save already in progress". Do not align the two schedules.
+- Snapshots are uploaded to `${cluster_name}-terraform-state` bucket under `etcd-snapshots/${CLUSTER_NAME}/<hostname>/` using OCI CLI instance_principal auth — **no Customer Secret Keys required**.
+- Pruning keeps the newest `etcd_snapshot_retention` objects across the whole `etcd-snapshots/${CLUSTER_NAME}/` prefix (not per hostname), so prefixes of replaced servers are cleaned up too. There is deliberately no age-based expiry rule: it would delete the last restore points of a cluster that has been down for a while.
+- When a single server bootstraps a fresh cluster (`--cluster-init`) and snapshots already exist in the bucket, `_warn_if_previous_snapshots_exist()` logs a loud WARNING with the `k3s server --cluster-reset --cluster-reset-restore-path` restore steps — a replaced server otherwise silently starts an empty cluster.
 - IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
 - Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
 - These snapshots are the primary recovery path for split-brain and etcd quorum loss. See `README.md#split-brain-recovery`.
@@ -572,25 +583,38 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - If the lock already exists and the holder's instance is still RUNNING, the node switches to join mode (resolving the holder's IP from `LOCK_HOLDER_OCID`) instead of aborting with exit 1 — this handles TIMECREATED-tie scenarios where two nodes elect themselves simultaneously.
 - Stale locks (different cluster name, or holder instance terminated) are automatically overwritten. A cluster-reachability probe (`_probe_existing_cluster()`) prevents re-init if a live cluster is still reachable after reclaim.
 - On a deliberate full rebuild (destroy + apply), delete the stale lock: `oci os object delete --bucket-name ${cluster_name}-terraform-state --name cluster-init-lock --force`.
-- When Object Storage is not configured (`ETCD_SNAPSHOT_BUCKET` empty), the lock is skipped and the TIMECREATED election alone determines the first server.
+- When Object Storage is not configured (`CLUSTER_LOCK_BUCKET` empty), the lock is skipped and the TIMECREATED election alone determines the first server.
 
 ### Fail-closed split-brain fallback
 - `install_k3s_server()` in `k3s-server.sh`: when `IS_FIRST_SERVER=false`, joining nodes **abort** if `FIRST_SERVER_IP` is empty (OCI API failure during election), instead of falling back to `K3S_URL` (the internal LB).
 - **Do NOT reintroduce `${FIRST_SERVER_IP:-${K3S_URL}}`** — that fallback is the exact path that caused the documented split-brain issues. The internal LB routes to UNKNOWN-state backends for ~30s after creation, which can route a joining server's bootstrap to another uninitialised node.
 
 ### Longhorn replica count
-- Default replica count is **2** (down from 3). With 50 GB boot-only volumes (~30 GB usable after OS/images/etcd), 3 replicas leaves only ~20-30 GB cluster-wide PVC capacity.
-- Use `storageClassName: longhorn-replicated-3` (defined in `gitops/longhorn/storageclasses/`) for explicitly critical PVCs requiring 3-replica protection.
-- **Do not increase the default back to 3** without acknowledging the storage budget impact.
+- Default replica count is **2** — one replica per node on the 2-node topology. **Do not increase it**: a third replica is unschedulable with 2 nodes.
+- Do not add a PodDisruptionBudget for `longhorn-manager`: it is a DaemonSet (drains skip it), and `minAvailable: 2` on 2 nodes allows zero disruptions.
 
 ### Longhorn sync-wave
 - `gitops/apps/longhorn.yaml` has `argocd.argoproj.io/sync-wave: "-1"` — **do not remove**. This ensures Longhorn converges and its StorageClass is ready before any wave-0 app that provisions PVCs. Without it, PVCs from those apps sit Pending for 10-30 minutes on first boot.
 
 ### Upgrade plan PDB behaviour
-- `gitops/system-upgrade/plans.yaml` does NOT use `disableEviction: true` — **do not add it back**. With `disableEviction`, the server and agent upgrade plans can drain nodes simultaneously, reducing Longhorn to 1 replica during rebuild. Without it, the `longhorn-manager minAvailable: 2` PDB prevents concurrent drains.
+- `gitops/system-upgrade/plans.yaml` does NOT use `disableEviction: true` — **do not add it back**. With `disableEviction`, PDBs are bypassed during upgrade drains. Serialization comes from `concurrency: 1`, the kured lock, and Longhorn's auto-generated instance-manager PDBs.
+
+### Server disk latency (main failure mode)
+- etcd lives on the server's boot volume, shared with container images, Longhorn replicas and logs. When
+  another workload saturates the volume, etcd logs `slow fdatasync` (seconds), apiserver requests stall,
+  and k3s exits with `leaderelection lost for k3s`; systemd restarts it. Observed on a live cluster when
+  IO-heavy CronJobs (Renovate, CI runners) were scheduled on the server.
+- Mitigations in this module: 100 GB boot volumes (2× the IOPS of 50 GB), `--leader-elect=false` for
+  the single-server controller-manager/scheduler, kubelet image GC at 70 %/55 % instead of 85 %/80 %,
+  and no shim-killing ExecStopPost (a k3s restart no longer restarts every pod).
+- Consumer guidance: pin IO-heavy batch workloads (CI runners, Renovate, image builds) off the
+  server with **required** node affinity `node-role.kubernetes.io/control-plane DoesNotExist`.
+  `preferred` affinity is not enough — when the worker is full the scheduler falls back to the server.
+- Do not switch to the SQLite datastore to "fix" this: SQLite's WAL fsync suffers the same latency,
+  and you lose `k3s etcd-snapshot` and the snapshot upload path.
 
 ### Internal LB health check
-- `lb.tf` uses **HTTPS** health check on `/readyz` (not HTTP, not TCP). The k3s apiserver is TLS-only (no plaintext HTTP listener since Kubernetes 1.20); a plaintext HTTP probe to port 6443 fails the TLS handshake and never returns 200, leaving all backends permanently UNHEALTHY. OCI's HTTPS health checker performs a TLS handshake then the HTTP GET without verifying the backend certificate. A server with dead etcd fails `/readyz` but passes TCP. **Do not change to HTTP or TCP** — HTTP breaks because apiserver is TLS-only; TCP would keep dead-etcd servers in the backend rotation.
+- `lb.tf` uses a **TCP** health check on the kubeapi port. The OCI flexible LB rejects `HTTPS` as a health-check protocol ("No enum constant for HTTPS"), and a plaintext `HTTP` probe can never pass against the TLS-only apiserver. **Do not change it to HTTP.** TCP cannot detect a server whose etcd is dead but whose port is open — irrelevant with a single server, but worth knowing if the pool ever grows.
 
 ### First-server bootstrap SPOF (accepted constraint)
 - If the TIMECREATED-oldest server crashes or hangs **after** the OCI instance reaches RUNNING

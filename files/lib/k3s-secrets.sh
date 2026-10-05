@@ -135,7 +135,7 @@ EOF
 }
 
 # setup_longhorn_backup_target
-# Applies the Longhorn BackupTarget, credential secret reference, and S3 endpoint settings.
+# Points the Longhorn BackupTarget CR at the backup bucket + credential secret.
 # Must be called AFTER Longhorn CRDs are available (i.e. after ArgoCD syncs longhorn app).
 # Called from run_bootstrap() alongside ingress configuration (both wait for ArgoCD convergence).
 
@@ -147,37 +147,29 @@ setup_longhorn_backup_target() {
     return 0
   fi
 
-  # Wait for Longhorn CRDs to be available (Longhorn is deployed by ArgoCD)
+  if [[ -z "${OCI_REGION:-}" ]]; then
+    echo "WARNING: OCI_REGION is empty — cannot build the S3 backup target URL. Backup target setup skipped."
+    return 0
+  fi
+
+  # Longhorn >= 1.8 configures the target via the BackupTarget CR named "default"
+  # (created by longhorn-manager); the old backup-target Settings no longer exist.
+  # The S3 endpoint comes from AWS_ENDPOINTS in the credential secret.
   local max_wait=60 attempt=0
-  echo "Waiting for Longhorn CRDs (longhorn-system) ..."
-  until kubectl get crd settings.longhorn.io &>/dev/null 2>&1; do
+  echo "Waiting for Longhorn BackupTarget 'default' (longhorn-system) ..."
+  until kubectl -n longhorn-system get backuptargets.longhorn.io default &>/dev/null; do
     attempt=$(( attempt + 1 ))
     if [[ ${attempt} -ge ${max_wait} ]]; then
-      echo "WARNING: Longhorn CRDs not ready after ${max_wait} attempts — backup target setup deferred."
-      echo "  Run: kubectl apply -f gitops/longhorn/backup-target.yaml (after filling in values)"
+      echo "WARNING: Longhorn BackupTarget not ready after ${max_wait} attempts — backup target setup deferred."
+      echo "  Run: scripts/setup-longhorn-backup.sh, or follow gitops/longhorn/backup-target.yaml"
       return 0
     fi
     sleep 15
   done
 
-  echo "Applying Longhorn BackupTarget settings..."
-  # Only backup-target and backup-target-credential-secret are valid Longhorn Settings
-  # for S3 backup. The endpoint is supplied via AWS_ENDPOINTS in the credential secret
-  # (not a separate Setting — 's3-compatible-endpoint' does not exist in Longhorn).
-  kubectl apply -f - <<EOF
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: backup-target
-  namespace: longhorn-system
-value: "s3://${LONGHORN_BACKUP_BUCKET}@${OCI_REGION:-${OCI_OBJECT_NAMESPACE}}/"
----
-apiVersion: longhorn.io/v1beta2
-kind: Setting
-metadata:
-  name: backup-target-credential-secret
-  namespace: longhorn-system
-value: "longhorn-backup-secret"
-EOF
-  echo "Longhorn BackupTarget configured: s3://${LONGHORN_BACKUP_BUCKET} (endpoint in secret AWS_ENDPOINTS)"
+  local target_url="s3://${LONGHORN_BACKUP_BUCKET}@${OCI_REGION}/"
+  echo "Patching Longhorn BackupTarget 'default' → ${target_url}"
+  kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge \
+    -p "{\"spec\":{\"backupTargetURL\":\"${target_url}\",\"credentialSecret\":\"longhorn-backup-secret\"}}"
+  echo "Longhorn BackupTarget configured: ${target_url} (endpoint in secret AWS_ENDPOINTS)"
 }

@@ -247,14 +247,14 @@ data "oci_core_instance" "k3s_workers" {
   instance_id = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
 
-# ── k3s node image (Ubuntu 24.04 aarch64 — A1.Flex) ──────────────────────────
+# ── k3s node image (Ubuntu LTS aarch64 — A1.Flex) ──────────────────────────
 # Auto-resolved from tenancy when os_family = "ubuntu" and os_image_id is not set.
 # For os_family = "opensuse", set os_image_id explicitly (use scripts/import-opensuse-aarch64.sh).
 data "oci_core_images" "k3s_nodes" {
   count                    = var.os_family == "ubuntu" && var.os_image_id == null ? 1 : 0
   compartment_id           = var.tenancy_ocid
   operating_system         = "Canonical Ubuntu"
-  operating_system_version = "24.04"
+  operating_system_version = var.ubuntu_version
   shape                    = var.compute_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
@@ -262,7 +262,7 @@ data "oci_core_images" "k3s_nodes" {
   lifecycle {
     postcondition {
       condition     = length(self.images) > 0
-      error_message = "No Ubuntu 24.04 image found for shape ${var.compute_shape} in tenancy. Set os_image_id explicitly."
+      error_message = "No Ubuntu ${var.ubuntu_version} image found for shape ${var.compute_shape} in tenancy. Set os_image_id explicitly."
     }
   }
 }

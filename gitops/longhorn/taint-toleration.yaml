@@ -5,7 +5,7 @@
 #
 # NOTE: This module does NOT taint any nodes by default. Cloud-init actively
 # REMOVES the control-plane NoSchedule taints added by k3s so that user workloads
-# schedule across all 4 nodes. No variable like worker_node_taints exists.
+# schedule across both nodes. No variable like worker_node_taints exists.
 #
 # This file is an OPTIONAL template — only apply it if you manually taint a node
 # (e.g. kubectl taint nodes <node> key=value:NoSchedule) and need Longhorn
