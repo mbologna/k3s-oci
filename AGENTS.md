@@ -36,7 +36,7 @@ do not introduce resources that incur cost.
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | 2–5 secrets — k3s_token, longhorn_ui_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`) |
+| Vault (shared) | Software keys + 150 secrets | 2–6 secrets — k3s_token, longhorn_ui_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`); +1 Longhorn backup secret key (`create_longhorn_backup_user = true`) |
 | Volume backups | 5 total | 2 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -55,13 +55,13 @@ moved.tf         — moved{} blocks for in-flight resource renames; cleared afte
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, secret-family, state-bucket objects)
+iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, secret-family, state-bucket objects); Longhorn backup service user/group/policy (create_longhorn_backup_user)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
-vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 2–5 cluster secrets: k3s_token, longhorn_ui_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 2–6 cluster secrets: k3s_token, longhorn_ui_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true; +longhorn backup secret key when Terraform owns that key
 objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, mysql_endpoint, vault_id, tailscale_vault_secret_names)
@@ -88,7 +88,7 @@ gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application te
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage
-Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just fmt, just validate
+Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
 renovate.json    — Automated dependency updates
@@ -200,7 +200,8 @@ shellcheck --severity=warning \
   files/lib/k3s-external-secrets.sh \
   files/lib/k3s-argocd.sh \
   files/lib/k3s-agent.sh \
-  scripts/clean-oci-resources.sh
+  scripts/clean-oci-resources.sh \
+  scripts/teardown-keep-data.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
@@ -234,11 +235,29 @@ Set `KEEP_BUCKETS=true` to leave the `${CLUSTER_NAME}-terraform-state` and `${CL
 buckets (etcd snapshots, Longhorn backups) in place. You need them to restore a rebuilt cluster. Run
 `tofu state rm` on them before `tofu destroy`, and re-import them afterwards: bucket ID
 `n/<namespace>/b/<name>`, lifecycle policy ID `n/<namespace>/b/<name>/l`.
+The clean script also deletes the `${CLUSTER_NAME}-longhorn-backup` IAM user (with its keys) and group
+(`create_longhorn_backup_user`); set `TENANCY_OCID` when `COMPARTMENT_OCID` is not the tenancy root.
 
 Set `KEEP_VAULT=true` to leave the `${CLUSTER_NAME}-vault` vault and its secrets untouched (recommended:
 the vault has `prevent_destroy`, and a deleted vault blocks the quota for 7+ days). Re-import it into
 the fresh state before `tofu apply` (`tofu import 'module.<name>.oci_kms_vault.k3s[0]' <vault_ocid>`,
 the key as `managementEndpoint/<mgmt_endpoint>/keys/<key_ocid>`, plus every module-managed secret).
+
+### `scripts/teardown-keep-data.sh` — rebuild keeping vault + buckets
+
+**When to use:** a full rebuild that must keep the Vault (key + secrets) and both buckets (etcd snapshots,
+Longhorn backups). It does the `state rm` → `tofu destroy` → `clean-oci-resources.sh` (KEEP_VAULT +
+KEEP_BUCKETS) → cancel deletions → `tofu import` sequence. Import IDs come from `tofu show -json`
+and are saved in `$TF_DIR/.teardown-keep-data.tsv` (gitignored, no secrets). `IMPORT_ONLY=true` resumes
+from it. `CLEAN_CMD` lets a wrapper add its own cleanup (e.g. Tailscale devices).
+
+```bash
+COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just teardown-keep-data
+```
+
+After the rebuild the new server logs the "previous etcd snapshots exist" warning (expected — the bucket
+survived). The old snapshots stay restorable until the new cluster has uploaded `etcd_snapshot_retention`
+snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapshots/<cluster>/` prefix.
 
 > **Vault quota:** OCI vaults have a 7-day minimum deletion grace period and count against the
 > ~5-vault compartment limit even while `PENDING_DELETION`. If `tofu apply` fails with a vault
@@ -375,7 +394,7 @@ the key as `managementEndpoint/<mgmt_endpoint>/keys/<key_ocid>`, plus every modu
 
 ### Tailscale operator (`enable_tailscale`)
 - Controlled by `enable_tailscale` variable (default: `false`). Requires `enable_vault = true`.
-- Stores two Vault secrets: `${cluster_name}-tailscale-oauth-client-id` and `${cluster_name}-tailscale-oauth-client-secret`.
+- Stores two Vault secrets: `${cluster_name}-tailscale-oauth-client-id` and `${cluster_name}-tailscale-client-secret` (sic — not `-oauth-client-secret`).
 - Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth — scope `Devices → Write (devices:core:write)`, allowed tag `tag:k8s-operator`. Scopes cannot be changed after creation.
 - `tailscale_vault_secret_names` output shows the generated secret names; reference these in `platform/<cluster>/tailscale-operator/oauth-secret.yaml` ExternalSecret.
 - The Tailscale operator Helm chart + RBAC is NOT bootstrapped by cloud-init — it is deployed by ArgoCD using the manifests in the consumer repo (`clusters/<cluster>/tailscale-operator.yaml`).
@@ -386,7 +405,7 @@ the key as `managementEndpoint/<mgmt_endpoint>/keys/<key_ocid>`, plus every modu
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores 2–3 secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (only when `var.dockerhub_password` is set); +2 Tailscale OAuth secrets when `enable_tailscale = true`.
+- Stores 2–3 secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (only when `var.dockerhub_password` is set); +2 Tailscale OAuth secrets when `enable_tailscale = true`; +1 `${cluster_name}-longhorn-backup-secret-key` when Terraform owns the Longhorn backup key.
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
@@ -405,12 +424,15 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 - **MySQL admin password** (`MYSQL_ADMIN_PASSWORD`): Only present when `enable_mysql = true`.
   The MySQL DB system is in the private subnet with no internet path. The password is also
   already present in a Kubernetes Secret cluster-wide. Risk accepted.
-- **Longhorn backup S3 key** (`LONGHORN_BACKUP_SECRET_KEY`): Only present when
-  `enable_longhorn_backup = true` and `var.user_ocid` is set. This is an OCI Customer Secret
-  Key auto-generated by `oci_identity_customer_secret_key` for `var.user_ocid`. A Customer Secret
-  Key is **not** bucket-scoped — it carries every permission of that user. Point `user_ocid` at a
-  dedicated service user whose group policy only allows `manage objects` / `read buckets`
-  `where target.bucket.name='<cluster>-longhorn-backup'`, never at an admin. Risk accepted with that setup.
+- **Longhorn backup S3 key** (`LONGHORN_BACKUP_SECRET_KEY`): Only present when Terraform owns
+  the key (`create_longhorn_backup_user = true` or `var.user_ocid` set) **and** `enable_vault = false`.
+  With `enable_vault = true` the secret half is stored as `${cluster_name}-longhorn-backup-secret-key`
+  (`oci_vault_secret.longhorn_backup_secret_key`) and fetched by `pre_create_secrets()` via
+  `VAULT_SECRET_ID_LONGHORN_BACKUP_KEY`; only the (non-secret) access key ID stays in user-data.
+  A Customer Secret Key is **not** bucket-scoped — it carries every permission of its user.
+  `create_longhorn_backup_user` creates a user whose group policy only allows `read buckets` /
+  `manage objects` `where target.bucket.name='<cluster>-longhorn-backup'` and whose capabilities
+  allow nothing but Customer Secret Keys. If you use `user_ocid` instead, point it at such a user, never at an admin.
 
 ### Boot Volume Backups (`backup.tf`)
 - Controlled by `enable_backup` variable (default: `true`).
@@ -422,7 +444,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 ### Object Storage Buckets (`objectstorage.tf`)
 - `data.oci_objectstorage_namespace.k3s` is created when **either** `enable_object_storage_state` or `enable_longhorn_backup` is true — both buckets share it.
 - **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. Despite the name it holds etcd snapshots and the leader lock. **Do not recommend storing Terraform state in it**: nodes have `manage objects` on it, the state contains every cluster secret, and destroy/clean delete it. The README documents a separate, module-external state bucket configured via a gitignored `backend_override.tf`.
-- **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. The `longhorn_backup_setup` output prints the three steps to connect Longhorn (Customer Secret Key → `longhorn-backup-secret` with `AWS_ENDPOINTS` → patch the `backuptargets.longhorn.io/default` CR). Longhorn ≥ 1.8 has no `backup-target` Setting — always use the BackupTarget CR. Nodes need no IAM grant on this bucket (Longhorn authenticates with the Customer Secret Key).
+- **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. With `create_longhorn_backup_user = true` (resources in `iam.tf`: user, capabilities, group, membership, policy — all `${cluster_name}-longhorn-backup`) cloud-init wires everything: `longhorn-backup-secret` with `AWS_ENDPOINTS`, the `backuptargets.longhorn.io/default` CR, and the `daily-backup` (`longhorn_backup_schedule`, `longhorn_backup_retain`) + `weekly-snapshot-cleanup` RecurringJobs via SSA (`setup_longhorn_backup_target()` in `k3s-secrets.sh`). Otherwise the `longhorn_backup_setup` output prints the three manual steps (Customer Secret Key → `longhorn-backup-secret` with `AWS_ENDPOINTS` → patch the `backuptargets.longhorn.io/default` CR). Longhorn ≥ 1.8 has no `backup-target` Setting — always use the BackupTarget CR. Nodes need no IAM grant on this bucket (Longhorn authenticates with the Customer Secret Key).
 - Both buckets share the Always Free Object Storage allowance — 20 GB on Free Tier accounts, but only **10 GB once the tenancy is upgraded to Pay As You Go**. Both buckets have a lifecycle rule purging noncurrent versions after 2 days; without it, pruned etcd snapshots kept being billed. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
 - Users need OCI Customer Secret Keys (S3 credentials) to use either bucket. Keys inherit all rights of their user, so keys placed in the cluster must belong to a bucket-scoped service user.
 
@@ -552,6 +574,8 @@ before any OCI API call is made:
 - `enable_dns01_challenge = true` requires `cloudflare_api_token != null`
 - `enable_external_dns = true` requires `cloudflare_api_token`, `cloudflare_zone_id`, and `external_dns_domain_filter`
 - `enable_tailscale = true` requires `enable_vault = true` and both `tailscale_oauth_client_id` and `tailscale_oauth_client_secret` set
+- `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
+- automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
 
 These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
 Do not remove these checks.

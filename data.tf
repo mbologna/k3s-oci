@@ -128,12 +128,15 @@ locals {
     cluster_lock_bucket    = var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
     enable_longhorn_backup = var.enable_longhorn_backup
     longhorn_backup_bucket = var.enable_longhorn_backup ? "${var.cluster_name}-longhorn-backup" : ""
-    # S3-compatible endpoint for Longhorn backup: auto-set when user_ocid is provided.
-    # region is required when enable_longhorn_backup && user_ocid != null (enforced by
-    # the longhorn_backup_requires_region check block in checks.tf).
-    longhorn_backup_endpoint   = var.enable_longhorn_backup && var.user_ocid != null ? "https://${local.oci_object_namespace}.compat.objectstorage.${var.region}.oraclecloud.com" : ""
-    longhorn_backup_access_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].id, "") : ""
-    longhorn_backup_secret_key = var.enable_longhorn_backup && var.user_ocid != null ? try(oci_identity_customer_secret_key.longhorn_backup[0].key, "") : ""
+    # S3-compatible endpoint + key: set when Terraform owns the key (create_longhorn_backup_user
+    # or user_ocid). region is required then (longhorn_backup_requires_region check).
+    longhorn_backup_endpoint   = local.longhorn_backup_automated ? "https://${local.oci_object_namespace}.compat.objectstorage.${var.region}.oraclecloud.com" : ""
+    longhorn_backup_access_key = local.longhorn_backup_automated ? oci_identity_customer_secret_key.longhorn_backup[0].id : ""
+    # Secret key: plaintext only when vault is disabled; fetched from Vault otherwise.
+    longhorn_backup_secret_key          = local.longhorn_backup_automated && !var.enable_vault ? oci_identity_customer_secret_key.longhorn_backup[0].key : ""
+    vault_secret_id_longhorn_backup_key = local.longhorn_backup_automated && var.enable_vault ? oci_vault_secret.longhorn_backup_secret_key[0].id : ""
+    longhorn_backup_schedule            = var.longhorn_backup_schedule
+    longhorn_backup_retain              = var.longhorn_backup_retain
   }
 
   # Hostname vars: IP-specific, derived at plan time from the NLB IP

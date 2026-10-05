@@ -93,6 +93,11 @@ locals {
   # Used by cloud-init for etcd snapshot uploads and Longhorn backup target wiring.
   oci_object_namespace = (var.enable_object_storage_state || var.enable_longhorn_backup) ? data.oci_objectstorage_namespace.k3s[0].namespace : ""
 
+  # Longhorn backup wiring is automatic when Terraform owns the S3 key: either for the
+  # module's own bucket-scoped service user or for a caller-supplied user_ocid.
+  create_longhorn_backup_user = var.enable_longhorn_backup && var.create_longhorn_backup_user
+  longhorn_backup_automated   = var.enable_longhorn_backup && (var.create_longhorn_backup_user || var.user_ocid != null)
+
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────
 
   _kubeconfig_hint_bastion = templatefile("${path.module}/files/kubeconfig-hint-bastion.tpl", {

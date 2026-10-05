@@ -60,6 +60,7 @@ jobs:
         files/lib/k3s-argocd.sh
         files/lib/k3s-agent.sh
         scripts/clean-oci-resources.sh
+        scripts/teardown-keep-data.sh
         scripts/import-opensuse-aarch64.sh
         scripts/setup-longhorn-backup.sh
         gitops/update-repo-url.sh

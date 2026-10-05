@@ -117,6 +117,14 @@ EOF
   # The Longhorn BackupTarget is applied later in setup_longhorn_backup_target()
   # after Longhorn CRDs are available.
   if [[ "${ENABLE_LONGHORN_BACKUP:-false}" == "true" ]] && [[ -n "${LONGHORN_BACKUP_ACCESS_KEY:-}" ]]; then
+    # The secret key comes from Vault when enable_vault = true (empty in user-data).
+    if [[ -n "${VAULT_SECRET_ID_LONGHORN_BACKUP_KEY:-}" ]]; then
+      echo "Fetching Longhorn backup S3 secret key from OCI Vault..."
+      if ! LONGHORN_BACKUP_SECRET_KEY=$(fetch_from_vault "${VAULT_SECRET_ID_LONGHORN_BACKUP_KEY}"); then
+        echo "ERROR: Failed to fetch Longhorn backup secret key from OCI Vault." >&2; exit 1
+      fi
+    fi
+    [[ -z "${LONGHORN_BACKUP_SECRET_KEY:-}" ]] && { echo "ERROR: LONGHORN_BACKUP_SECRET_KEY is empty — cannot create longhorn-backup-secret." >&2; exit 1; }
     kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n longhorn-system -f - <<EOF
 apiVersion: v1
@@ -135,7 +143,8 @@ EOF
 }
 
 # setup_longhorn_backup_target
-# Points the Longhorn BackupTarget CR at the backup bucket + credential secret.
+# Points the Longhorn BackupTarget CR at the backup bucket + credential secret, then
+# applies the default daily-backup and weekly-snapshot-cleanup RecurringJobs.
 # Must be called AFTER Longhorn CRDs are available (i.e. after ArgoCD syncs longhorn app).
 # Called from run_bootstrap() alongside ingress configuration (both wait for ArgoCD convergence).
 
@@ -172,4 +181,41 @@ setup_longhorn_backup_target() {
   kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge \
     -p "{\"spec\":{\"backupTargetURL\":\"${target_url}\",\"credentialSecret\":\"longhorn-backup-secret\"}}"
   echo "Longhorn BackupTarget configured: ${target_url} (endpoint in secret AWS_ENDPOINTS)"
+
+  # Default schedule for every volume in the "default" group (all volumes without an
+  # explicit recurring-job label). `retain` is the automatic cleanup: Longhorn deletes
+  # the oldest backup and its unreferenced blocks after each run. Do not add an
+  # age-based Object Storage lifecycle rule on backupstore/ — expiring blocks
+  # underneath Longhorn corrupts the incremental chain.
+  # SSA with the cloud-init field manager: a user can take over these jobs from git.
+  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: daily-backup
+  namespace: longhorn-system
+spec:
+  task: backup
+  cron: "${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *}"
+  groups:
+    - default
+  retain: ${LONGHORN_BACKUP_RETAIN:-7}
+  concurrency: 1
+---
+# Removes system-generated snapshots (e.g. left over from replica rebuilds) that no
+# backup job owns, keeping each volume's snapshot chain and disk use short.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: weekly-snapshot-cleanup
+  namespace: longhorn-system
+spec:
+  task: snapshot-cleanup
+  cron: "0 1 * * 0"
+  groups:
+    - default
+  retain: 0
+  concurrency: 1
+EOF
+  echo "Longhorn RecurringJobs applied: daily-backup (${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *} UTC, retain ${LONGHORN_BACKUP_RETAIN:-7}), weekly-snapshot-cleanup."
 }

@@ -117,8 +117,22 @@ check "expose_ssh_makes_bastion_redundant" {
 
 check "longhorn_backup_requires_region" {
   assert {
-    condition     = !(var.enable_longhorn_backup && var.user_ocid != null) || var.region != null
-    error_message = "enable_longhorn_backup = true with user_ocid set requires region to be explicitly set. The S3-compatible endpoint URL is region-specific; omitting it would silently use the wrong endpoint and fail all backups."
+    condition     = !local.longhorn_backup_automated || var.region != null
+    error_message = "Automatic Longhorn backup wiring (create_longhorn_backup_user = true or user_ocid set) requires region to be explicitly set. The S3-compatible endpoint URL is region-specific; omitting it would silently use the wrong endpoint and fail all backups."
+  }
+}
+
+check "longhorn_backup_user_exclusive" {
+  assert {
+    condition     = !(var.create_longhorn_backup_user && var.user_ocid != null)
+    error_message = "create_longhorn_backup_user = true and user_ocid are mutually exclusive: the module creates its own bucket-scoped service user. Unset user_ocid."
+  }
+}
+
+check "longhorn_backup_user_requires_backup" {
+  assert {
+    condition     = !var.create_longhorn_backup_user || var.enable_longhorn_backup
+    error_message = "create_longhorn_backup_user = true requires enable_longhorn_backup = true (the service user's policy is scoped to the backup bucket)."
   }
 }
 

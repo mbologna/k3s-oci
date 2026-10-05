@@ -88,15 +88,18 @@ export OCI_OBJECT_NAMESPACE="${oci_object_namespace}"
 # is not accidentally disabled by toggling the etcd snapshots feature flag.
 export CLUSTER_LOCK_BUCKET="${cluster_lock_bucket}"
 
-# -- Longhorn backup target (requires enable_longhorn_backup + user_ocid set) -----
-# When user_ocid is set, Terraform creates a Customer Secret Key and cloud-init
-# auto-wires the Longhorn BackupTarget. LONGHORN_BACKUP_* vars are empty when
-# enable_longhorn_backup = false or user_ocid is not set (manual wiring required).
+# -- Longhorn backup target (requires enable_longhorn_backup + create_longhorn_backup_user or user_ocid) --
+# When Terraform owns the S3 key, cloud-init wires the Longhorn BackupTarget and the
+# default RecurringJobs. LONGHORN_BACKUP_ENDPOINT/ACCESS_KEY are empty otherwise
+# (manual wiring). The secret key is empty when it is fetched from Vault instead.
 export ENABLE_LONGHORN_BACKUP="${enable_longhorn_backup ? "true" : "false"}"
 export LONGHORN_BACKUP_BUCKET="${longhorn_backup_bucket}"
 export LONGHORN_BACKUP_ENDPOINT="${longhorn_backup_endpoint}"
 export LONGHORN_BACKUP_ACCESS_KEY="${longhorn_backup_access_key}"
 export LONGHORN_BACKUP_SECRET_KEY="${longhorn_backup_secret_key}"
+export VAULT_SECRET_ID_LONGHORN_BACKUP_KEY="${vault_secret_id_longhorn_backup_key}"
+export LONGHORN_BACKUP_SCHEDULE="${longhorn_backup_schedule}"
+export LONGHORN_BACKUP_RETAIN="${longhorn_backup_retain}"
 
 # -- Shared SSH host key (base64-encoded to survive multi-line export) ----------
 export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"

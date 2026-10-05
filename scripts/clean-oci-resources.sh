@@ -26,6 +26,9 @@ COMPARTMENT="$COMPARTMENT_OCID"
 CLUSTER="${CLUSTER_NAME:-k3s-oci}"
 KEEP_VAULT="${KEEP_VAULT:-false}"
 KEEP_BUCKETS="${KEEP_BUCKETS:-false}"
+# IAM users/groups live in the tenancy root; defaults to COMPARTMENT_OCID (which is
+# the tenancy when the cluster is deployed in the root compartment).
+TENANCY="${TENANCY_OCID:-$COMPARTMENT}"
 
 log() { echo "[clean-oci-resources] $*"; }
 
@@ -322,7 +325,7 @@ for BASTION_ID in $(oci bastion bastion list --compartment-id "$COMPARTMENT" \
   oci bastion bastion delete --bastion-id "$BASTION_ID" --force 2>/dev/null || true
 done
 
-# 9. IAM (dynamic group + policy)
+# 9. IAM (dynamic group, policies, Longhorn backup service user + group)
 log "9. IAM..."
 for DG_ID in $(oci iam dynamic-group list --compartment-id "$COMPARTMENT" \
   --query "data[?contains(name, '${CLUSTER}') || contains(name, 'k3s')].id" \
@@ -340,5 +343,30 @@ for POLICY_ID in $(oci iam policy list --compartment-id "$COMPARTMENT" \
   log "  Deleting policy $POLICY_NAME ($POLICY_ID)..."
   oci iam policy delete --policy-id "$POLICY_ID" --force 2>/dev/null || true
 done
+
+# Longhorn backup service user + group (create_longhorn_backup_user). IAM users and
+# groups live in the tenancy root; exact name only — never touch other users.
+SVC_NAME="${CLUSTER}-longhorn-backup"
+USER_ID=$(oci iam user list --compartment-id "$TENANCY" --all \
+  --query "data[?name=='${SVC_NAME}'].id | [0]" --raw-output 2>/dev/null || true)
+if [ -n "$USER_ID" ] && [ "$USER_ID" != "null" ]; then
+  for KEY_ID in $(oci iam customer-secret-key list --user-id "$USER_ID" \
+    --query 'data[].id' --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+    log "  Deleting customer secret key $KEY_ID of user $SVC_NAME..."
+    oci iam customer-secret-key delete --user-id "$USER_ID" --customer-secret-key-id "$KEY_ID" --force 2>/dev/null || true
+  done
+  for MEMBER_GROUP_ID in $(oci iam user list-groups --user-id "$USER_ID" --all \
+    --query 'data[].id' --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+    oci iam group remove-user --user-id "$USER_ID" --group-id "$MEMBER_GROUP_ID" --force 2>/dev/null || true
+  done
+  log "  Deleting user $SVC_NAME ($USER_ID)..."
+  oci iam user delete --user-id "$USER_ID" --force 2>/dev/null || true
+fi
+GROUP_ID=$(oci iam group list --compartment-id "$TENANCY" --all \
+  --query "data[?name=='${SVC_NAME}'].id | [0]" --raw-output 2>/dev/null || true)
+if [ -n "$GROUP_ID" ] && [ "$GROUP_ID" != "null" ]; then
+  log "  Deleting group $SVC_NAME ($GROUP_ID)..."
+  oci iam group delete --group-id "$GROUP_ID" --force 2>/dev/null || true
+fi
 
 log "OCI resource cleanup complete."

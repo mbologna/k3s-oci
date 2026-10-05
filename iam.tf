@@ -58,3 +58,57 @@ resource "oci_identity_policy" "k3s" {
 
   freeform_tags = local.common_tags
 }
+
+# ── Longhorn backup service user (create_longhorn_backup_user) ─────────────────
+# Longhorn authenticates to the S3-compatible endpoint with a Customer Secret Key.
+# Such a key carries ALL of its user's rights and ends up inside the cluster, so it
+# must belong to a user that can do nothing but read/write the backup bucket.
+# IAM users, groups and policies are free.
+resource "oci_identity_user" "longhorn_backup" {
+  count          = local.create_longhorn_backup_user ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.cluster_name}-longhorn-backup"
+  description    = "Longhorn backups for k3s cluster '${var.cluster_name}' (S3 access to ${var.cluster_name}-longhorn-backup only)"
+
+  freeform_tags = local.common_tags
+}
+
+# S3 credentials only: no console password, API keys, auth tokens or SMTP.
+resource "oci_identity_user_capabilities_management" "longhorn_backup" {
+  count                        = local.create_longhorn_backup_user ? 1 : 0
+  user_id                      = oci_identity_user.longhorn_backup[0].id
+  can_use_api_keys             = false
+  can_use_auth_tokens          = false
+  can_use_console_password     = false
+  can_use_customer_secret_keys = true
+  can_use_smtp_credentials     = false
+}
+
+resource "oci_identity_group" "longhorn_backup" {
+  count          = local.create_longhorn_backup_user ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.cluster_name}-longhorn-backup"
+  description    = "S3 writers for ${var.cluster_name}-longhorn-backup"
+
+  freeform_tags = local.common_tags
+}
+
+resource "oci_identity_user_group_membership" "longhorn_backup" {
+  count    = local.create_longhorn_backup_user ? 1 : 0
+  group_id = oci_identity_group.longhorn_backup[0].id
+  user_id  = oci_identity_user.longhorn_backup[0].id
+}
+
+resource "oci_identity_policy" "longhorn_backup" {
+  count          = local.create_longhorn_backup_user ? 1 : 0
+  compartment_id = var.compartment_ocid
+  name           = "${var.cluster_name}-longhorn-backup"
+  description    = "Longhorn backup service user: ${var.cluster_name}-longhorn-backup bucket only"
+
+  statements = [
+    for verb in ["read buckets", "manage objects"] :
+    "allow group ${oci_identity_group.longhorn_backup[0].name} to ${verb} in compartment id ${var.compartment_ocid} where target.bucket.name = '${var.cluster_name}-longhorn-backup'"
+  ]
+
+  freeform_tags = local.common_tags
+}

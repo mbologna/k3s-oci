@@ -90,6 +90,11 @@ variable "enable_longhorn_backup" {
   default = true
 }
 
+variable "create_longhorn_backup_user" {
+  type    = bool
+  default = false
+}
+
 variable "enable_oci_logging" {
   type    = bool
   default = false
@@ -415,6 +420,7 @@ module "k3s_cluster" {
   enable_vault                      = var.enable_vault
   enable_object_storage_state       = var.enable_object_storage_state
   enable_longhorn_backup            = var.enable_longhorn_backup
+  create_longhorn_backup_user       = var.create_longhorn_backup_user
   enable_mysql                      = var.enable_mysql
   mysql_admin_username              = var.mysql_admin_username
   mysql_shape                       = var.mysql_shape
