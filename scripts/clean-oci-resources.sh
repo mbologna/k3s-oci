@@ -16,12 +16,16 @@
 # KEEP_VAULT=true skips the vault and its secrets: the module's vault has
 # prevent_destroy, the tenancy allows few DEFAULT vaults, and a deleted vault
 # blocks quota for 7+ days. Re-import it into the fresh state before tofu apply.
+# KEEP_BUCKETS=true skips the <cluster>-terraform-state and <cluster>-longhorn-backup
+# buckets, so etcd snapshots and Longhorn backups survive a rebuild (they are the
+# restore source). Re-import both buckets and their lifecycle policies before tofu apply.
 set -euo pipefail
 
 : "${COMPARTMENT_OCID:?COMPARTMENT_OCID must be set (your OCI tenancy or compartment OCID)}"
 COMPARTMENT="$COMPARTMENT_OCID"
 CLUSTER="${CLUSTER_NAME:-k3s-oci}"
 KEEP_VAULT="${KEEP_VAULT:-false}"
+KEEP_BUCKETS="${KEEP_BUCKETS:-false}"
 
 log() { echo "[clean-oci-resources] $*"; }
 
@@ -101,7 +105,9 @@ fi
 # 0-bucket. Delete orphaned object storage buckets
 log "0-bucket. Object Storage buckets..."
 OS_NAMESPACE=$(oci os ns get --query 'data' --raw-output 2>/dev/null || true)
-if [ -n "$OS_NAMESPACE" ]; then
+if [ "$KEEP_BUCKETS" = "true" ]; then
+  log "  KEEP_BUCKETS=true — leaving ${CLUSTER}-terraform-state and ${CLUSTER}-longhorn-backup in place"
+elif [ -n "$OS_NAMESPACE" ]; then
   for bucket_name in "${CLUSTER}-terraform-state" "${CLUSTER}-longhorn-backup"; do
     if oci os bucket get --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" &>/dev/null 2>&1; then
       log "  Emptying and deleting $bucket_name..."

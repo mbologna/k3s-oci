@@ -396,30 +396,51 @@ This keeps the cluster fully patched with zero manual intervention and no concur
 
 ## Remote Terraform state (OCI Object Storage)
 
-With `enable_object_storage_state = true` (the default), a versioned OCI Object Storage bucket is created automatically. After `terraform apply`, get the ready-to-use backend config:
+`enable_object_storage_state = true` (the default) creates the versioned `<cluster_name>-terraform-state`
+bucket. **It holds etcd snapshots and the leader lock — do not store your Terraform state in it:**
+
+- The nodes have `manage objects` on that bucket, and the state contains every cluster secret
+  (k3s token, Longhorn UI password, OAuth secrets, …). A compromised node could read it.
+- `scripts/clean-oci-resources.sh` and `tofu destroy` delete the bucket together with the cluster.
+
+Keep the state in a separate bucket, created outside this module, that the nodes have no IAM grant on:
 
 ```bash
-terraform output -json terraform_state_backend
+oci os bucket create -c <compartment_ocid> --name <cluster_name>-tofu-state \
+  --versioning Enabled --public-access-type NoPublicAccess
 ```
 
-Use it in your `terraform { backend "s3" {} }` block (requires an OCI Customer Secret Key for S3 credentials):
+Then point the S3 backend at it from a gitignored `backend_override.tf` next to your module call
+(`*_override.tf` is already in this repo's `.gitignore`):
 
 ```hcl
 terraform {
   backend "s3" {
-    bucket                      = "<cluster_name>-terraform-state"
+    bucket                      = "<cluster_name>-tofu-state"
     key                         = "terraform.tfstate"
     region                      = "<your-region>"                     # e.g. eu-frankfurt-1
-    endpoint                    = "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
+    profile                     = "oci-tofu-state"                    # ~/.aws/credentials
+    endpoints                   = { s3 = "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com" }
+    use_path_style              = true
+    use_lockfile                = true                                # OpenTofu >= 1.10 / Terraform >= 1.11
     skip_region_validation      = true
     skip_credentials_validation = true
+    skip_requesting_account_id  = true
     skip_metadata_api_check     = true
-    force_path_style            = true
+    skip_s3_checksum            = true
   }
 }
 ```
 
-> Generate OCI Customer Secret Keys under **Identity → Users → your user → Customer Secret Keys**. The bucket name and namespace endpoint are in `terraform output terraform_state_backend`.
+Migrate an existing local state with `tofu init -migrate-state`, then check that `tofu plan` reports no changes.
+The namespace is in `terraform output terraform_state_backend`.
+
+> **S3 credentials are OCI Customer Secret Keys** (**Identity → Users → <user> → Customer Secret Keys**).
+> A key is **not** scoped to a bucket: it carries every permission of the user it belongs to. A key that
+> only lives on your laptop can belong to your own user. Any key stored *inside* the cluster (such as
+> Longhorn backups) must belong to a dedicated service user. Put that user in a group whose policy is limited
+> to one bucket: `Allow group <g> to manage objects in tenancy where target.bucket.name='<bucket>'`
+> (plus `read buckets` with the same condition). New keys take about 5 minutes to work on the S3 endpoint.
 
 ## Always Free budget
 
