@@ -65,11 +65,11 @@ output "kubeconfig_hint" {
 }
 
 output "terraform_state_backend" {
-  description = "S3-compatible backend config snippet for storing Terraform state in the provisioned OCI Object Storage bucket. Replace <region> and add S3 credentials (OCI Customer Secret Key)."
+  description = "Name and namespace of the etcd-snapshot / leader-lock bucket. Do NOT store Terraform state in it: nodes can write it and destroy/clean delete it. Use a separate bucket (see README: Remote Terraform state); the namespace is the same."
   value = var.enable_object_storage_state ? {
     bucket    = oci_objectstorage_bucket.terraform_state[0].name
     namespace = data.oci_objectstorage_namespace.k3s[0].namespace
-    hint      = "Add to your backend block: endpoint = https://${data.oci_objectstorage_namespace.k3s[0].namespace}.compat.objectstorage.<region>.oraclecloud.com"
+    hint      = "Keep Terraform state in a separate bucket the nodes cannot read; S3 endpoint: https://${data.oci_objectstorage_namespace.k3s[0].namespace}.compat.objectstorage.<region>.oraclecloud.com"
   } : null
 }
 
