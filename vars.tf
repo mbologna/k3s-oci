@@ -104,7 +104,7 @@ variable "my_public_ip_cidr" {
 
 variable "os_family" {
   type        = string
-  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu (ubuntu_version) and auto-resolves the image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu 26.04 LTS and auto-resolves the latest image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
   default     = "ubuntu"
 
   validation {
@@ -113,20 +113,9 @@ variable "os_family" {
   }
 }
 
-variable "ubuntu_version" {
-  type        = string
-  description = "Ubuntu LTS release for nodes when os_family = \"ubuntu\" and os_image_id is null. \"24.04\" (Noble) is the tested default; \"26.04\" (Resolute) is available on OCI for A1.Flex. Changing it only affects newly created instances — existing nodes ignore image changes."
-  default     = "24.04"
-
-  validation {
-    condition     = contains(["24.04", "26.04"], var.ubuntu_version)
-    error_message = "ubuntu_version must be \"24.04\" or \"26.04\"."
-  }
-}
-
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu ubuntu_version aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu 26.04 aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
   default     = null
 
   validation {

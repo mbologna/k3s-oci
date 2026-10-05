@@ -12,10 +12,6 @@ variable "os_family" {
   type    = string
   default = "ubuntu"
 }
-variable "ubuntu_version" {
-  type    = string
-  default = "24.04"
-}
 variable "certmanager_email_address" { type = string }
 
 # Optional explicit API key auth — when null, the OCI provider reads from ~/.oci/config.
@@ -406,7 +402,6 @@ module "k3s_cluster" {
   environment                       = var.environment
   os_image_id                       = var.os_image_id
   os_family                         = var.os_family
-  ubuntu_version                    = var.ubuntu_version
   certmanager_email_address         = var.certmanager_email_address
   k3s_server_pool_size              = var.k3s_server_pool_size
   k3s_worker_pool_size              = var.k3s_worker_pool_size

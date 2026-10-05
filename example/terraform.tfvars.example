@@ -23,8 +23,7 @@ availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 cluster_name  = "my-k3s"
 environment   = "staging"
 
-# OS images — optional; the latest Ubuntu image for ubuntu_version is auto-detected.
-# ubuntu_version = "26.04"   # default "24.04"
+# OS images — optional; the latest Ubuntu 26.04 image is auto-detected.
 # Override if you need a pinned or custom image OCID.
 # Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
 # os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
