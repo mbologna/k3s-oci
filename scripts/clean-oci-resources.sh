@@ -13,11 +13,15 @@
 # Conflict errors (409/412 — VNIC still attached) are retried with waits; this
 # happens when OCI instances are TERMINATED but VNICs haven't been fully released yet.
 # Run from anywhere — requires oci CLI and COMPARTMENT_OCID env var.
+# KEEP_VAULT=true skips the vault and its secrets: the module's vault has
+# prevent_destroy, the tenancy allows few DEFAULT vaults, and a deleted vault
+# blocks quota for 7+ days. Re-import it into the fresh state before tofu apply.
 set -euo pipefail
 
 : "${COMPARTMENT_OCID:?COMPARTMENT_OCID must be set (your OCI tenancy or compartment OCID)}"
 COMPARTMENT="$COMPARTMENT_OCID"
 CLUSTER="${CLUSTER_NAME:-k3s-oci}"
+KEEP_VAULT="${KEEP_VAULT:-false}"
 
 log() { echo "[clean-oci-resources] $*"; }
 
@@ -69,25 +73,29 @@ done
 # tofu apply creates a fresh vault; if the quota (~5) is hit, wait for old ones
 # to fully delete or request a service limit increase.
 log "0-vault. OCI Vaults..."
-VAULT_IDS=$(oci kms management vault list --compartment-id "$COMPARTMENT" \
-  --query "data[?\"display-name\"=='${CLUSTER}-vault' && \"lifecycle-state\"=='ACTIVE'] | [].id" \
-  --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null || true)
-VAULT_COUNT=0
-for vault_id in $VAULT_IDS; do
-  VAULT_COUNT=$((VAULT_COUNT + 1))
-  log "  Scheduling vault for deletion: $vault_id"
-  # Delete all secrets in the vault first
-  for secret_id in $(oci vault secret list --compartment-id "$COMPARTMENT" \
-    --vault-id "$vault_id" \
-    --query "data[?\"lifecycle-state\"!='DELETED' && \"lifecycle-state\"!='PENDING_DELETION'].id" \
-    --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
-    log "    Scheduling secret for deletion: $secret_id"
-    oci vault secret schedule-secret-deletion --secret-id "$secret_id" 2>/dev/null || true
+if [ "$KEEP_VAULT" = "true" ]; then
+  log "  KEEP_VAULT=true — leaving ${CLUSTER}-vault and its secrets in place"
+else
+  VAULT_IDS=$(oci kms management vault list --compartment-id "$COMPARTMENT" \
+    --query "data[?\"display-name\"=='${CLUSTER}-vault' && \"lifecycle-state\"=='ACTIVE'] | [].id" \
+    --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null || true)
+  VAULT_COUNT=0
+  for vault_id in $VAULT_IDS; do
+    VAULT_COUNT=$((VAULT_COUNT + 1))
+    log "  Scheduling vault for deletion: $vault_id"
+    # Delete all secrets in the vault first
+    for secret_id in $(oci vault secret list --compartment-id "$COMPARTMENT" \
+      --vault-id "$vault_id" \
+      --query "data[?\"lifecycle-state\"!='DELETED' && \"lifecycle-state\"!='PENDING_DELETION'].id" \
+      --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+      log "    Scheduling secret for deletion: $secret_id"
+      oci vault secret schedule-secret-deletion --secret-id "$secret_id" 2>/dev/null || true
+    done
+    oci kms management vault schedule-deletion --vault-id "$vault_id" 2>/dev/null || true
   done
-  oci kms management vault schedule-deletion --vault-id "$vault_id" 2>/dev/null || true
-done
-if [ "$VAULT_COUNT" -eq 0 ]; then
-  log "  No vaults to clean up"
+  if [ "$VAULT_COUNT" -eq 0 ]; then
+    log "  No vaults to clean up"
+  fi
 fi
 
 # 0-bucket. Delete orphaned object storage buckets
@@ -97,8 +105,15 @@ if [ -n "$OS_NAMESPACE" ]; then
   for bucket_name in "${CLUSTER}-terraform-state" "${CLUSTER}-longhorn-backup"; do
     if oci os bucket get --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" &>/dev/null 2>&1; then
       log "  Emptying and deleting $bucket_name..."
-      # Delete all objects (required before bucket delete)
+      # Delete all objects AND noncurrent versions (versioned buckets refuse
+      # deletion while any version remains; bulk-delete only removes current ones)
       oci os object bulk-delete --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" --force 2>/dev/null || true
+      oci os object list-object-versions --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" --all 2>/dev/null |
+        jq -r '(.data // [])[] | [.name, ."version-id"] | @tsv' 2>/dev/null |
+        while IFS=$'\t' read -r name version_id; do
+          oci os object delete --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" \
+            --object-name "$name" --version-id "$version_id" --force 2>/dev/null || true
+        done
       oci os bucket delete --bucket-name "$bucket_name" --namespace-name "$OS_NAMESPACE" --force 2>/dev/null || true
     else
       log "  $bucket_name: not found, skipping"

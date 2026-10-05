@@ -4,8 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`gitops_https_token` / `gitops_ssh_private_key` were stored in Vault without base64
+  encoding** while the secret was declared `content_type = "BASE64"`. cloud-init's
+  `fetch_from_vault()` base64-decodes every secret, so an HTTPS token arrived as garbage
+  and ArgoCD could not clone the repo. Both are now wrapped in `base64encode()` like the
+  other secrets. If you worked around this by passing a pre-encoded SSH key, pass the raw
+  PEM/OpenSSH key instead (the stored secret content stays identical).
+
 ### Removed
 
+- **Ubuntu 24.04 support dropped — nodes now run Ubuntu 26.04 LTS.** The image data source
+  is pinned to `operating_system_version = "26.04"` and the short-lived `ubuntu_version`
+  variable is removed (drop it from your module block). Existing nodes keep their image
+  (`ignore_changes`); only rebuilt instances move to 26.04.
 - **Monitoring stack removed entirely** (kube-prometheus-stack: Prometheus + Grafana +
   Alertmanager, plus the OCI Notifications/Alertmanager integration). The module no longer
   deploys any metrics/dashboards/alerting stack — gatus-style external uptime checks and

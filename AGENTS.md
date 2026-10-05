@@ -16,7 +16,7 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu 24.04 LTS (aarch64) — default; 26.04 via `var.ubuntu_version`. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
+| OS | Ubuntu 26.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Envoy Gateway (Gateway API) |
 | Logging | OCI Unified Logging (optional) |
@@ -123,7 +123,7 @@ renovate.json    — Automated dependency updates
   ShellCheck runs on these files without workarounds (`# shellcheck disable=SC2154` is the
   only suppression, covering vars exported by the prepended template header).
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
-- Ubuntu 24.04 is the default OS (`var.os_family = "ubuntu"`). openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support.
+- Ubuntu 26.04 is the default OS (`var.os_family = "ubuntu"`); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support.
 - Always use `set -euo pipefail` at the top of each file.
 
 ### Adding a new stack component
@@ -230,6 +230,11 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster \
 COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-resources
 ```
 
+Set `KEEP_VAULT=true` to leave the `${CLUSTER_NAME}-vault` vault and its secrets untouched (recommended:
+the vault has `prevent_destroy`, and a deleted vault blocks the quota for 7+ days). Re-import it into
+the fresh state before `tofu apply` (`tofu import 'module.<name>.oci_kms_vault.k3s[0]' <vault_ocid>`,
+the key as `managementEndpoint/<mgmt_endpoint>/keys/<key_ocid>`, plus every module-managed secret).
+
 > **Vault quota:** OCI vaults have a 7-day minimum deletion grace period and count against the
 > ~5-vault compartment limit even while `PENDING_DELETION`. If `tofu apply` fails with a vault
 > quota error, wait for old vaults to fully delete or request a service limit increase.
@@ -239,7 +244,7 @@ COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just clean-oci-re
 ## What NOT to do
 
 - Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
-- Do not add Oracle Linux support — Ubuntu 24.04 LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
+- Do not add Oracle Linux support — Ubuntu 26.04 LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
 - Do not remove `lifecycle { prevent_destroy = true }` from the Vault or its key
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables
