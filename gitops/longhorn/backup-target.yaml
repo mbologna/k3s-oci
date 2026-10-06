@@ -5,12 +5,15 @@
 # "default" (created by longhorn-manager). The old `backup-target` /
 # `backup-target-credential-secret` Settings no longer exist — do not use them.
 #
-# Automated path: set enable_longhorn_backup = true + user_ocid + region in tfvars;
-# cloud-init creates the secret and patches the BackupTarget. Manual path:
-# scripts/setup-longhorn-backup.sh, or the steps below.
+# Automated path: set enable_longhorn_backup = true + create_longhorn_backup_user = true
+# + region in tfvars; cloud-init creates the secret, patches the BackupTarget and applies
+# the daily-backup RecurringJob. Manual path: scripts/setup-longhorn-backup.sh, or the
+# steps below.
 #
-# 1. Create an OCI Customer Secret Key (S3 credentials, max 2 per user):
-#    Console → Identity → Users → <user> → Customer Secret Keys → Generate Secret Key.
+# 1. Create an OCI Customer Secret Key (S3 credentials, max 2 per user) for a service
+#    user limited to this bucket — the key carries all of its user's rights, so never
+#    use an admin user:
+#    Console → Identity → Users → <service-user> → Customer Secret Keys → Generate Secret Key.
 # 2. Create the credential secret. AWS_ENDPOINTS is REQUIRED for OCI:
 #    kubectl create secret generic longhorn-backup-secret \
 #      --from-literal=AWS_ACCESS_KEY_ID='<customer-secret-key-id>' \

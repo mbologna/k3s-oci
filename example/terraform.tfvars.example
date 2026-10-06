@@ -4,7 +4,7 @@
 # If you hit intermittent "tls: bad record MAC" errors during apply, run:
 #   GODEBUG=http2client=0 tofu apply
 # This disables Go's HTTP/2 client and forces HTTP/1.1 for OCI API calls.
-# The .envrc file in this directory sets it automatically if you use direnv.
+# The Justfile recipes (just plan, just apply, ...) set it automatically.
 
 # OCI Authentication
 # user_ocid, fingerprint, private_key_path are optional when ~/.oci/config exists
@@ -75,8 +75,8 @@ enable_bastion = false             # Not needed when expose_ssh=true (avoids lin
 
 # ── Always Free add-ons (enabled by default) ──────────────────────────────────
 # enable_vault                = true   # Store k3s_token/longhorn passwords in OCI Vault (software keys, free)
-# enable_backup               = true   # Weekly boot volume backups, 1-week retention (max 4/5 free backups)
-# enable_object_storage_state = true   # Versioned Object Storage bucket for Terraform state (S3-compatible)
+# enable_backup               = true   # Weekly boot volume backups, 1-week retention (2 of the 5 free backups)
+# enable_object_storage_state = true   # Versioned bucket for etcd snapshots + the leader lock (not for tofu state)
 # enable_longhorn_backup      = true   # Dedicated Object Storage bucket for Longhorn PVC backups (see longhorn_backup_setup output)
 # create_longhorn_backup_user = true   # Module-managed IAM user scoped to the backup bucket: auto-wires backups + daily RecurringJob
 
@@ -94,7 +94,7 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # ── GitOps ────────────────────────────────────────────────────────────────────
 # Set to your fork URL so ArgoCD pulls from the right repository:
 # gitops_repo_url = "https://github.com/your-org/k3s-oci.git"
-# gitops_ssh_private_key = "<base64-encoded-PEM>"  # For private git repos; stored in OCI Vault when enable_vault=true
+# gitops_ssh_private_key = "<raw PEM/OpenSSH private key, not base64>"  # Deploy key for private git repos; stored in OCI Vault when enable_vault=true
 
 # ── External DNS (Cloudflare) ─────────────────────────────────────────────────
 # Automatically creates/updates DNS records for Ingress/Service resources.
@@ -107,10 +107,6 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # Sync OCI Vault secrets into Kubernetes Secrets via ExternalSecret CRs.
 # Requires enable_vault = true.
 # enable_external_secrets = false
-
-# ── Debug ─────────────────────────────────────────────────────────────────────
-# Enable bash set -x trace mode in cloud-init scripts. Do NOT use in production.
-# trace_enabled = false
 
 # ── Tailscale operator ────────────────────────────────────────────────────────
 # Store Tailscale OAuth credentials in OCI Vault so the operator ExternalSecret
@@ -126,7 +122,7 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 
 # ── DNS-01 ACME challenge (Cloudflare) ────────────────────────────────────────
 # Use Cloudflare DNS-01 solver instead of HTTP-01 for cert-manager.
-# Enables wildcard certs (*.example.com); requires enable_external_dns = true.
+# Enables wildcard certs (*.example.com); requires only cloudflare_api_token (Zone:DNS:Edit).
 # enable_dns01_challenge = false
 
 # ── kured maintenance window ──────────────────────────────────────────────────
@@ -136,12 +132,6 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # ── DockerHub credentials (avoids anonymous pull rate limits) ─────────────────
 # dockerhub_username = "your-dockerhub-username"
 # dockerhub_password = "your-dockerhub-pat"   # Personal Access Token (read-only is sufficient)
-
-# ── Chart versions (managed by Renovate — only override to pin) ───────────────
-# gateway_api_version            = "v1.5.1"
-# certmanager_chart_version      = "v1.20.2"
-# argocd_chart_version           = "9.5.9"
-# external_secrets_chart_version = "2.4.1"
 
 # ── Advanced networking (change only if defaults conflict with your VCN) ───────
 # oci_core_vcn_cidr                 = "10.0.0.0/16"

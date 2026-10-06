@@ -336,28 +336,6 @@ variable "dockerhub_password" {
   default   = ""
 }
 
-# ── Chart versions ────────────────────────────────────────────────────────────
-
-variable "gateway_api_version" {
-  type    = string
-  default = "v1.5.1"
-}
-
-variable "certmanager_chart_version" {
-  type    = string
-  default = "v1.20.2"
-}
-
-variable "argocd_chart_version" {
-  type    = string
-  default = "9.5.9"
-}
-
-variable "external_secrets_chart_version" {
-  type    = string
-  default = "2.4.1"
-}
-
 # ── GitOps ────────────────────────────────────────────────────────────────────
 
 variable "argocd_hostname" {
@@ -471,10 +449,6 @@ module "k3s_cluster" {
   longhorn_ui_username              = var.longhorn_ui_username
   dockerhub_username                = var.dockerhub_username
   dockerhub_password                = var.dockerhub_password
-  gateway_api_version               = var.gateway_api_version
-  certmanager_chart_version         = var.certmanager_chart_version
-  argocd_chart_version              = var.argocd_chart_version
-  external_secrets_chart_version    = var.external_secrets_chart_version
 }
 
 output "k3s_servers_private_ips" { value = module.k3s_cluster.k3s_servers_private_ips }

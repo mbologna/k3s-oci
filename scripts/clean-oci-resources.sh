@@ -6,7 +6,7 @@
 # Deletion order matters (children before parents):
 #   logging agents → log groups → instance pools → instances → LBs →
 #   MySQL → vault secrets → vaults → buckets → backup policies →
-#   notification topics → subnets → route tables → NAT/IGW →
+#   subnets → route tables → NAT/IGW →
 #   security lists → NSGs → VCN → IAM
 #
 # Idempotent: skips any resource not found.
@@ -34,7 +34,7 @@ log() { echo "[clean-oci-resources] $*"; }
 
 log "Cleaning orphaned $CLUSTER OCI resources..."
 
-# ── Pre-networking: logging, MySQL, vaults, buckets, backups, notifications ───
+# ── Pre-networking: logging, MySQL, vaults, buckets, backups ─────────────────
 
 # 0-log. Delete logging agent configurations, logs, and log groups
 log "0-log. Logging resources..."
@@ -139,18 +139,6 @@ if [ -n "$BACKUP_POLICY_ID" ] && [ "$BACKUP_POLICY_ID" != "null" ]; then
   oci bv volume-backup-policy delete --policy-id "$BACKUP_POLICY_ID" --force 2>/dev/null || true
 else
   log "  ${CLUSTER}-weekly-backup: not found, skipping"
-fi
-
-# 0-notify. Delete notification topics
-log "0-notify. Notification topics..."
-TOPIC_ID=$(oci ons topic list --compartment-id "$COMPARTMENT" \
-  --query "data[?name=='${CLUSTER}-alerts' && \"lifecycle-state\"!='DELETED'].\"topic-id\" | [0]" \
-  --raw-output 2>/dev/null || true)
-if [ -n "$TOPIC_ID" ] && [ "$TOPIC_ID" != "null" ]; then
-  log "  Deleting ${CLUSTER}-alerts ($TOPIC_ID)..."
-  oci ons topic delete --topic-id "$TOPIC_ID" --force 2>/dev/null || true
-else
-  log "  ${CLUSTER}-alerts: not found, skipping"
 fi
 
 # ── Compute and networking ────────────────────────────────────────────────────
