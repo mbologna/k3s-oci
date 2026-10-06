@@ -98,7 +98,7 @@ locals {
     enable_dns01_challenge  = var.enable_dns01_challenge
   }
 
-  # Optional integrations (Cloudflare, MySQL, Notifications, DockerHub)
+  # Optional integrations (Cloudflare, MySQL, DockerHub)
   _server_optional_vars = {
     # Cloudflare: plaintext only when vault is disabled; vault secret ID used otherwise.
     cloudflare_api_token       = var.enable_vault ? "" : coalesce(var.cloudflare_api_token, "")
@@ -155,9 +155,8 @@ locals {
     trace_enabled = var.trace_enabled
   }
 
-  # OS family vars: controls bootstrap script selection and SSH user.
+  # OS vars: SSH user and key (the bootstrap script itself is selected by var.os_family below).
   _server_os_vars = {
-    os_family      = var.os_family
     os_user        = local.os_user
     ssh_public_key = local.ssh_public_key
   }
@@ -216,7 +215,6 @@ data "cloudinit_config" "k3s_worker" {
     content = join("\n", [
       templatefile("${path.module}/files/agent-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
         trace_enabled  = var.trace_enabled
-        os_family      = var.os_family
         os_user        = local.os_user
         ssh_public_key = local.ssh_public_key
       })),

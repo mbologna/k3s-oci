@@ -2,7 +2,8 @@
 # lib/k3s-external-secrets.sh -- External Secrets Operator install + ClusterSecretStore.
 # Installed at bootstrap so the CRD exists before ArgoCD creates ExternalSecret resources.
 # Bootstrap also creates the ClusterSecretStore pointing to OCI Vault via instance_principal.
-# ArgoCD adopts the Helm release via gitops/apps/external-secrets.yaml.
+# ArgoCD adopts the Helm release via gitops/optional/external-secrets.yaml (only when
+# enable_external_secrets = true -- see create_optional_apps() in k3s-argocd.sh).
 # Pure bash -- no Terraform interpolation.
 #
 # shellcheck disable=SC2154

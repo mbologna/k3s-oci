@@ -108,8 +108,7 @@ export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 # -- Extra k3s server args (space-separated, appended to install command) ------
 export K3S_EXTRA_SERVER_ARGS="${k3s_extra_server_args}"
 
-# -- OS family and default SSH user --------------------------------------------
-export OS_FAMILY="${os_family}"
+# -- Default SSH user ----------------------------------------------------------
 export OS_USER="${os_user}"
 # SSH_PUBLIC_KEY is used by bootstrap-opensuse.sh to inject the key directly,
 # because openSUSE cloud-init does not read OCI metadata ssh_authorized_keys.

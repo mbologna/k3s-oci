@@ -4,8 +4,9 @@
 # Usage (run from repo root after forking):
 #   bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
 #
-# This updates all ArgoCD Application manifests in gitops/apps/ so they point
-# to your fork instead of the upstream repo.
+# This updates every ArgoCD Application manifest under gitops/ (apps/, optional/
+# and the */application-template.yaml files) so they point to your fork instead
+# of the upstream repo.
 
 set -euo pipefail
 
@@ -24,19 +25,21 @@ if [[ "$NEW_URL" == "$OLD_URL" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APPS_DIR="$SCRIPT_DIR/apps"
-OPTIONAL_DIR="$SCRIPT_DIR/optional"
 
-for dir in "$APPS_DIR" "$OPTIONAL_DIR"; do
-  echo "Updating repoURL in $dir ..."
-  find "$dir" -name "*.yaml" -exec \
-    sed -i.bak "s|$OLD_URL|$NEW_URL|g" {} \;
-  find "$dir" -name "*.bak" -delete
+mapfile -t FILES < <(grep -rlF --include='*.yaml' "$OLD_URL" "$SCRIPT_DIR" || true)
+if [[ ${#FILES[@]} -eq 0 ]]; then
+  echo "No manifests reference $OLD_URL — nothing to do."
+  exit 0
+fi
+
+for f in "${FILES[@]}"; do
+  sed -i.bak "s|$OLD_URL|$NEW_URL|g" "$f"
+  rm -f "$f.bak"
 done
 
 echo "Done. Updated files:"
-grep -rl "$NEW_URL" "$APPS_DIR" "$OPTIONAL_DIR"
+printf '  %s\n' "${FILES[@]#"$SCRIPT_DIR"/}"
 
 echo ""
 echo "Commit the changes:"
-echo "  git add gitops/apps/ gitops/optional/ && git commit -m 'chore: update gitops repoURL to $NEW_URL'"
+echo "  git add gitops/ && git commit -m 'chore: update gitops repoURL to $NEW_URL'"

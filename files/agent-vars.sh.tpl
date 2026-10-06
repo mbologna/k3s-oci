@@ -23,8 +23,7 @@ export VAULT_SECRET_ID_K3S_TOKEN="${vault_secret_id_k3s_token}"
 export SSH_HOST_KEY_PRIVATE_B64="${ssh_host_key_private_b64}"
 export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 
-# -- OS family and default SSH user --------------------------------------------
-export OS_FAMILY="${os_family}"
+# -- Default SSH user ----------------------------------------------------------
 export OS_USER="${os_user}"
 # SSH_PUBLIC_KEY is used by bootstrap-opensuse.sh to inject the key directly,
 # because openSUSE cloud-init does not read OCI metadata ssh_authorized_keys.

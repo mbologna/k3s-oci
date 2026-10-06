@@ -32,11 +32,11 @@ deploy:
 
 # Fetch kubeconfig via OCI Bastion or direct NLB SSH (auto-detected)
 kubeconfig:
-    ./example/get-kubeconfig.sh
+    cd example && ./get-kubeconfig.sh
 
-# SSH into a cluster node via OCI Bastion (node: server1/server2/server3/worker or IP)
+# SSH into a cluster node via OCI Bastion or the NLB (node: server/worker or a private IP)
 ssh node="worker":
-    ./example/ssh-node.sh {{node}}
+    cd example && ./ssh-node.sh {{node}}
 
 # Update ArgoCD gitops repo URL in all manifests after forking
 update-gitops-url url:
@@ -81,9 +81,11 @@ kubeconfig-hint:
 readme:
     just docs
 
-# Run ShellCheck on all cloud-init lib scripts and helper scripts
+# Run ShellCheck on all cloud-init lib scripts and helper scripts (same list as ci.yml)
 shellcheck:
     shellcheck --severity=warning \
+        files/lib/bootstrap-ubuntu.sh \
+        files/lib/bootstrap-opensuse.sh \
         files/lib/common.sh \
         files/lib/k3s-server.sh \
         files/lib/k3s-bootstrap.sh \
@@ -93,7 +95,12 @@ shellcheck:
         files/lib/k3s-argocd.sh \
         files/lib/k3s-agent.sh \
         scripts/clean-oci-resources.sh \
-        scripts/teardown-keep-data.sh
+        scripts/teardown-keep-data.sh \
+        scripts/import-opensuse-aarch64.sh \
+        scripts/setup-longhorn-backup.sh \
+        gitops/update-repo-url.sh \
+        example/get-kubeconfig.sh \
+        example/ssh-node.sh
 
 # Run YAML lint on gitops/ and .github/workflows/
 yamllint:

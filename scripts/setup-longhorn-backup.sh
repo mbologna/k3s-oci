@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # scripts/setup-longhorn-backup.sh
 # Interactive helper to wire Longhorn backups to OCI Object Storage.
-# Use this when user_ocid is not set in tfvars (manual Customer Secret Key workflow).
+# Use this when neither create_longhorn_backup_user nor user_ocid is set in tfvars
+# (manual Customer Secret Key workflow). Prefer create_longhorn_backup_user = true:
+# Terraform then creates a bucket-scoped service user and cloud-init does all of this.
 #
 # Usage:
 #   COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx ./scripts/setup-longhorn-backup.sh
@@ -30,7 +32,13 @@ echo "  Bucket:    ${BUCKET}"
 # --- Get or read Customer Secret Key ---
 echo ""
 echo "Step 1: Customer Secret Key"
-echo "  Go to: OCI Console → Identity → Users → <your-user> → Customer Secret Keys"
+echo "  A Customer Secret Key carries EVERY permission of its user and is stored in the"
+echo "  cluster — never generate it for an admin user. Use a service user whose only"
+echo "  group policy is:"
+echo "    Allow group <group> to read buckets in tenancy where target.bucket.name='${BUCKET}'"
+echo "    Allow group <group> to manage objects in tenancy where target.bucket.name='${BUCKET}'"
+echo "  (create_longhorn_backup_user = true in tfvars creates exactly this for you.)"
+echo "  Then: OCI Console → Identity → Users → <service-user> → Customer Secret Keys"
 echo "  Click 'Generate Secret Key', name it '${CLUSTER_NAME}-longhorn-backup'"
 echo "  Copy both the Access Key and Secret immediately (secret shown once)."
 echo ""
@@ -94,18 +102,29 @@ else
 fi
 
 echo ""
-echo "Optional: schedule weekly backups — kubectl apply -f gitops/longhorn/backup-target.yaml"
-echo "  after uncommenting the RecurringJob there."
+echo "Step 5: Applying the daily-backup RecurringJob (same as the automated path)..."
+# Backs up every volume in the "default" group (all volumes unless relabelled).
+kubectl apply -f - <<EOF
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: daily-backup
+  namespace: longhorn-system
+spec:
+  task: backup
+  cron: "${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *}"
+  groups:
+    - default
+  retain: ${LONGHORN_BACKUP_RETAIN:-7}
+  concurrency: 1
+EOF
+
 echo ""
 echo "=== Setup complete ==="
 echo "  Backup target: ${BACKUP_TARGET}"
 echo "  S3 endpoint:   ${ENDPOINT}"
 echo "  Credentials:   longhorn-backup-secret (in longhorn-system)"
+echo "  Schedule:      daily-backup (${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *} UTC, retain ${LONGHORN_BACKUP_RETAIN:-7})"
 echo ""
-echo "To trigger an immediate backup of a volume:"
-echo "  kubectl -n longhorn-system create -f - <<EOF"
-echo "  apiVersion: longhorn.io/v1beta2"
-echo "  kind: BackupVolume"
-echo "  metadata:"
-echo "    name: <pvc-name>"
-echo "  EOF"
+echo "To back up a volume right away: Longhorn UI → Volume → <volume> → Create Backup."
+echo "List backups: kubectl -n longhorn-system get backups.longhorn.io"
