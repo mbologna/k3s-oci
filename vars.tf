@@ -606,12 +606,14 @@ variable "enable_dns01_challenge" {
 variable "gateway_api_version" {
   type        = string
   description = "Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config."
+  # Keep in step with the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in
+  # envoyproxy/gateway go.mod): ArgoCD's envoy-gateway app re-applies its own CRDs.
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.5.1"
+  default = "v1.6.1"
 
   validation {
     condition     = length(var.gateway_api_version) > 0 && can(regex("^[v0-9]", var.gateway_api_version))
-    error_message = "gateway_api_version must be non-empty and start with 'v' or a digit (e.g. 'v1.5.1')."
+    error_message = "gateway_api_version must be non-empty and start with 'v' or a digit (e.g. 'v1.6.1')."
   }
 }
 
