@@ -2,7 +2,10 @@
 
 ## Supported versions
 
-Only the latest commit on `main` is actively maintained. There are no versioned releases.
+Releases follow [semantic versioning](https://semver.org) and are listed on the
+[Releases page](https://github.com/mbologna/k3s-oci/releases). Security fixes land on `main`
+and ship in the next release; only the latest minor version is supported — pin
+`?ref=vX.Y.Z` and upgrade to the newest release to receive fixes.
 
 ## Reporting a vulnerability
 
@@ -39,7 +42,7 @@ Out of scope:
   user-data (accessible via IMDSv2 from within the instance). **Mitigation:** set
   `enable_vault = true` to store secrets in an OCI Vault (DEFAULT type, software-protected,
   Always Free) and have nodes fetch them at boot via instance_principal — secrets are never
-  embedded in user-data. When `enable_vault = false` (default), the trade-off is accepted
+  embedded in user-data. With `enable_vault = false` (the default is `true`), the trade-off is accepted
   given the private-subnet placement and OCI NSG boundary.
 - **Self-signed bootstrap CA**: k3s generates its own cluster CA at bootstrap time.
   Rotate it if the cluster is long-lived and you require compliance with your CA policy.
