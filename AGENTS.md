@@ -229,6 +229,22 @@ trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terrafor
 terraform-docs .
 ```
 
+## Releases and branch protection
+
+- `main` is protected by the `main` ruleset: the `terraform / …` CI checks must pass, no
+  force-push, no deletion. Repository admins bypass it (direct pushes keep working); Renovate
+  and other PRs only merge after CI is green.
+- Releases are cut by release-please (`.github/workflows/release-please.yml`,
+  `release-please-config.json`, `.release-please-manifest.json`). Conventional commits drive the
+  version: `fix:` → patch, `feat:` → minor, `!` / `BREAKING CHANGE:` → major; `docs:`, `chore:`,
+  `ci:` do not release. Write commit subjects as changelog entries.
+- release-please keeps a `chore(main): release X.Y.Z` PR open that updates `CHANGELOG.md`,
+  the manifest and `version.txt`. Merging it creates the `vX.Y.Z` tag and GitHub release.
+  The PR is opened with `GITHUB_TOKEN`, so no CI runs on it: an admin merges it with the
+  ruleset bypass (it only touches release metadata).
+- Do not edit the release sections of `CHANGELOG.md` by hand; add context to the commit body
+  instead (or edit the release PR before merging).
+
 ## Troubleshooting scripts
 
 A helper script in `scripts/` addresses common failure modes. It requires `COMPARTMENT_OCID`
