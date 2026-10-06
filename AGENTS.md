@@ -197,7 +197,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
-| terraform-docs | fails on diff in PRs; auto-committed on push to main |
+| terraform-docs | fails on diff in fork PRs; same-repo PRs get an auto-commit (not Renovate's, and not on `main` — see Releases and branch protection) |
 
 Run all checks locally before pushing:
 ```bash
@@ -242,6 +242,16 @@ terraform-docs .
   the manifest and `version.txt`. Merging it creates the `vX.Y.Z` tag and GitHub release.
   The PR is opened with `GITHUB_TOKEN`, so no CI runs on it: an admin merges it with the
   ruleset bypass (it only touches release metadata).
+- release-please needs the repo setting *Allow GitHub Actions to create and approve pull
+  requests* (Settings → Actions → General); without it the workflow fails with
+  "GitHub Actions is not permitted to create or approve pull requests".
+- The ruleset cannot exempt `GITHUB_TOKEN` (personal repos cannot add the GitHub Actions app as
+  a bypass actor), so the terraform-docs job's README auto-commit to `main` is rejected. Renovate
+  PRs skip the README update, so after merging one that changes a `vars.tf` default, run
+  `terraform-docs .` (and revert the separator churn) and push the result as an admin.
+- `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
+  (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`). Renovate does not automerge
+  gateway-api; merge a bump only when the pinned Envoy Gateway release ships that version.
 - Do not edit the release sections of `CHANGELOG.md` by hand; add context to the commit body
   instead (or edit the release PR before merging).
 
@@ -429,7 +439,8 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ### terraform-docs
 - README Variables and Outputs sections are auto-generated between `<!-- BEGIN_TF_DOCS -->`
   and `<!-- END_TF_DOCS -->` markers.
-- CI (`terraform-docs` job) auto-commits README if the content drifts (git-push mode).
+- CI (`terraform-docs` job) auto-commits README drift on same-repo PR branches; on `main` the
+  ruleset rejects that push, so regenerate locally (see Releases and branch protection).
 - Run `terraform-docs .` locally before pushing to avoid an extra CI commit.
 - Config is in `.terraform-docs.yml` (inject mode, sort by name).
 
