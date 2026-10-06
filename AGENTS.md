@@ -197,7 +197,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
-| terraform-docs | fails on diff in fork PRs; same-repo PRs get an auto-commit (not Renovate's, and not on `main` — see Releases and branch protection) |
+| terraform-docs | fails on diff in fork PRs; auto-committed on same-repo PR branches (except Renovate's) and on push to `main` |
 
 Run all checks locally before pushing:
 ```bash
@@ -231,9 +231,13 @@ terraform-docs .
 
 ## Releases and branch protection
 
-- `main` is protected by the `main` ruleset: the `terraform / …` CI checks must pass, no
-  force-push, no deletion. Repository admins bypass it (direct pushes keep working); Renovate
-  and other PRs only merge after CI is green.
+- `main` is protected by the `main` ruleset: no force-push, no deletion; repository admins bypass
+  it. It deliberately does not require status checks: it could not exempt `GITHUB_TOKEN` (personal
+  repos cannot add the GitHub Actions app as a bypass actor), which would reject the terraform-docs
+  job's README auto-commit to `main`.
+- Renovate waits for CI because `renovate.json` sets `internalChecksAsSuccess: false`. The shared
+  preset sets it to `true`, which let Renovate count its own stability-days check as green and
+  automerge before the CI run had even started. Do not remove the override.
 - Releases are cut by release-please (`.github/workflows/release-please.yml`,
   `release-please-config.json`, `.release-please-manifest.json`). Conventional commits drive the
   version: `fix:` → patch, `feat:` → minor, `!` / `BREAKING CHANGE:` → major; `docs:`, `chore:`,
@@ -245,10 +249,6 @@ terraform-docs .
 - release-please needs the repo setting *Allow GitHub Actions to create and approve pull
   requests* (Settings → Actions → General); without it the workflow fails with
   "GitHub Actions is not permitted to create or approve pull requests".
-- The ruleset cannot exempt `GITHUB_TOKEN` (personal repos cannot add the GitHub Actions app as
-  a bypass actor), so the terraform-docs job's README auto-commit to `main` is rejected. Renovate
-  PRs skip the README update, so after merging one that changes a `vars.tf` default, run
-  `terraform-docs .` (and revert the separator churn) and push the result as an admin.
 - `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
   (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`). Renovate does not automerge
   gateway-api; merge a bump only when the pinned Envoy Gateway release ships that version.
@@ -439,8 +439,8 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ### terraform-docs
 - README Variables and Outputs sections are auto-generated between `<!-- BEGIN_TF_DOCS -->`
   and `<!-- END_TF_DOCS -->` markers.
-- CI (`terraform-docs` job) auto-commits README drift on same-repo PR branches; on `main` the
-  ruleset rejects that push, so regenerate locally (see Releases and branch protection).
+- CI (`terraform-docs` job) auto-commits README drift on same-repo PR branches (except Renovate's)
+  and on push to `main` (this is how Renovate version bumps reach the README defaults table).
 - Run `terraform-docs .` locally before pushing to avoid an extra CI commit.
 - Config is in `.terraform-docs.yml` (inject mode, sort by name).
 

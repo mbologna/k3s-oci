@@ -3,6 +3,7 @@
   "extends": [
     "github>mbologna/.github//renovate-config.json"
   ],
+  "internalChecksAsSuccess": false,
   "packageRules": [
     {
       "description": "Group all Terraform provider updates into one PR; require manual review",
