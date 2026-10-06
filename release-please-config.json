@@ -7,7 +7,10 @@
       "release-type": "simple",
       "package-name": "k3s-oci",
       "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": false
+      "bump-minor-pre-major": false,
+      "extra-files": [
+        "README.md"
+      ]
     }
   }
 }
