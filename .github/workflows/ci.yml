@@ -7,7 +7,11 @@ name: CI
       - "**.tf"
       - "files/**"
       - "gitops/**"
-      - ".github/workflows/**"
+      - "scripts/**"
+      - "example/**"
+      - ".github/**"
+      - "release-please-config.json"
+      - ".release-please-manifest.json"
       - ".tflint.hcl"
       - ".terraform-docs.yml"
       - "README.md"
@@ -15,20 +19,10 @@ name: CI
       - "AGENTS.md"
       - "Justfile"
       - "renovate.json"
+  # No paths filter on pull_request: the ruleset requires these checks, and a
+  # filtered-out PR would never report them and stay blocked.
   pull_request:
     branches: [main]
-    paths:
-      - "**.tf"
-      - "files/**"
-      - "gitops/**"
-      - ".github/workflows/**"
-      - ".tflint.hcl"
-      - ".terraform-docs.yml"
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "Justfile"
-      - "renovate.json"
   schedule:
     - cron: "0 4 * * 0"
 

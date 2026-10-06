@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "a05eb4aeb09e5ca078de8e02d2cd9409fb7406d9",
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "k3s-oci",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false
+    }
+  }
+}
