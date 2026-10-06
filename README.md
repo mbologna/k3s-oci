@@ -55,7 +55,7 @@ optional · Always Free"]
     Internet -->|HTTP / HTTPS| NLB
     NLB -->|"Envoy Gateway NodePorts :30080 / :30443"| CP & W
     NLB -. "kubeapi :6443
-expose_kubeapi=true" .-> ILB
+expose_kubeapi=true" .-> CP
     NLB -. "SSH :22
 expose_ssh=true" .-> CP & W
     ILB --> CP
@@ -71,11 +71,11 @@ Both A1.Flex instances live in a **private subnet** with no public IPs. Internet
 
 **Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on both nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
 
-**Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP.
+**Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP; the optional public kubeapi listener on the NLB targets the server directly.
 
 **Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across both identically-sized nodes.
 
-> **Note:** OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to 2 OCPUs/12 GB. The topology is now 1 control-plane + 1 standalone worker. etcd is single-node (no HA quorum); the cluster does not tolerate control-plane loss without manual recovery from an etcd snapshot. The server and worker are placed in different fault domains (`fault_domains` / `standalone_worker_fault_domain`).
+The server and worker run in different fault domains (`fault_domains` / `standalone_worker_fault_domain`). Why there are only two nodes and what a single etcd node means: see [Why this topology](#why-this-topology) and [Failure tolerance](#failure-tolerance).
 
 ## Quickstart
 
@@ -97,7 +97,7 @@ To consume the module from your own configuration, pin a release tag
 
 ```hcl
 module "k3s" {
-  source = "github.com/mbologna/k3s-oci?ref=v1.0.0"
+  source = "github.com/mbologna/k3s-oci?ref=v1.0.1" # x-release-please-version
   # ... see example/main.tf for the full variable list
 }
 ```
@@ -125,8 +125,8 @@ This prints the exact steps for your configuration. If `enable_bastion = true` (
 
 ```bash
 cd example && ./get-kubeconfig.sh
-export KUBECONFIG=~/.kube/k3s-oci.yaml
-kubectl get nodes
+export KUBECONFIG=~/.kube/clusters/config_oci_k3s   # override with KUBECONFIG_OUT=...
+kubectl get nodes                                   # context: k3s-oci
 ```
 
 > `enable_bastion` defaults to `true`. It uses OCI Bastion Service, a managed SSH proxy with no VM, no boot volume, and no cost. Without it, nodes are only reachable via OCI serial console (`terraform output kubeconfig_hint` explains all options).
@@ -328,22 +328,7 @@ curl https://hello-web.<NLB_IP>.sslip.io/
 
 ### Resilience: spread replicas across nodes
 
-Use `topologySpreadConstraints` to ensure pod replicas land on different nodes:
-
-```yaml
-spec:
-  template:
-    spec:
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app: <your-app>
-```
-
-With 4 identically-sized nodes, 2 replicas survive any single node failure. Envoy Gateway runs as a DaemonSet with `maxUnavailable: 1`, so ingress remains up on the other 3 nodes throughout any single-node drain or failure.
+Run `replicas ≥ 2` with `topologySpreadConstraints` on `kubernetes.io/hostname` so losing one node never takes all replicas down. Envoy Gateway already runs on both nodes, so ingress survives a single-node drain or failure. See [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes) for the snippet and a matching PodDisruptionBudget.
 
 ## GitOps — App of Apps
 
@@ -366,7 +351,7 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 2. **Update all `repoURL` references** to point to your fork:
    ```bash
    bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
-   git add gitops/apps/ && git commit -m "chore: update gitops repoURL"
+   git add gitops/ && git commit -m "chore: update gitops repoURL"
    git push
    ```
 
@@ -404,7 +389,7 @@ This keeps the cluster fully patched with zero manual intervention and no concur
 
 ## Dependency updates (Renovate)
 
-[Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable with the [Renovate GitHub App](https://github.com/apps/renovate) or the self-hosted workflow at `.github/workflows/renovate.yml` (requires a `RENOVATE_TOKEN` secret with `repo` scope).
+[Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable it on your fork with the [Renovate GitHub App](https://github.com/apps/renovate); `renovate.json` extends a shared preset you may want to replace with your own.
 
 ## Remote Terraform state (OCI Object Storage)
 
@@ -538,9 +523,9 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions — schedules on both nodes |
 
-> **Why control-plane runs user workloads:** k3s ≥ 1.24 automatically taints control-plane nodes with `NoSchedule`. This setup removes that taint at cluster init so both identically-sized nodes are available.
+> **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume.
 >
-> **Recommendation:** use `replicas ≥ 2` with `topologySpreadConstraints` (see [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes)) to spread pods across nodes.
+> **Recommendation:** use `replicas ≥ 2` with [topologySpreadConstraints](#resilience-spread-replicas-across-nodes) to spread pods across nodes.
 
 ## Why this topology
 
@@ -570,7 +555,7 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
 | Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; the default 2 × 100 GB uses the whole 200 GB free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
-| openSUSE (or other non-Ubuntu Linux) as the base OS | OCI provides no native openSUSE ARM platform image. **openSUSE Leap 16.0 is now supported** via `os_family = "opensuse"` + a custom-imported UEFI image. See [Choosing an OS](#choosing-an-os) below. Other distros remain unsupported. |
+| Oracle Linux or other distros as the base OS | Only Ubuntu 26.04 (default) and openSUSE Leap 16.0 have bootstrap code; see [Choosing an OS](#choosing-an-os) below |
 
 ### Choosing an OS
 
@@ -686,8 +671,6 @@ It has `prevent_destroy = false` (so `tofu destroy` works for full rebuilds); if
 - With a custom domain + `enable_external_dns = true`, ExternalDNS updates DNS automatically and cert-manager auto-renews
 
 **If using sslip.io defaults**, run `tofu apply` again after NLB recreation: `local.argocd_hostname` recomputes automatically from the new IP, cloud-init re-creates the Gateway listeners and certificates, and cert-manager reissues via Let's Encrypt.
-
-> The first-server TIMECREATED election is stable in practice but not contractually guaranteed when pool instances share the same creation timestamp. In the rare case of a timestamp tie, `jq | first` returns a stable (but undefined) ordering based on API response. The atomic leader lock (`cluster-init-lock` in the state bucket) provides the final safety guarantee independent of election ordering.
 
 ## License
 

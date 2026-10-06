@@ -672,7 +672,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - When a single server bootstraps a fresh cluster (`--cluster-init`) and snapshots already exist in the bucket, `_warn_if_previous_snapshots_exist()` logs a loud WARNING with the `k3s server --cluster-reset --cluster-reset-restore-path` restore steps — a replaced server otherwise silently starts an empty cluster.
 - IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
 - Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
-- These snapshots are the primary recovery path for split-brain and etcd quorum loss. See `README.md#split-brain-recovery`.
+- These snapshots are the primary recovery path for split-brain and etcd quorum loss. The server logs the restore steps when it finds old snapshots (see README "After a rebuild that kept the buckets").
 
 ### Atomic leader lock (`--cluster-init` safety)
 - `claim_first_server_lock()` in `files/lib/k3s-server.sh` uses **`oci os object put --no-overwrite`** to OCI Object Storage before running `--cluster-init`. `--no-overwrite` maps to server-side If-None-Match: * and is the correct native atomic conditional-create primitive — it exits non-zero when the object already exists. **Do NOT use `--if-none-match` (not a valid CLI flag) or `oci raw-request --request-body-file` (also not a valid flag).**
