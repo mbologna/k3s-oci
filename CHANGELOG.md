@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.0.0](https://github.com/mbologna/k3s-oci/releases/tag/v1.0.0) (2026-10-06)
+
+First tagged release. Pin it with `source = "github.com/mbologna/k3s-oci?ref=v1.0.0"`.
+It covers everything up to this point: the 1 server + 1 worker Always Free topology on
+Ubuntu 26.04, Envoy Gateway, Longhorn with Object Storage backups, ArgoCD, cert-manager,
+OCI Vault, etcd snapshots and the keep-data rebuild path. Later releases are cut by
+release-please from conventional commits.
 
 ### Fixed
 
