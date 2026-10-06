@@ -36,7 +36,7 @@ do not introduce resources that incur cost.
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | 2–6 secrets — k3s_token, longhorn_ui_password, dockerhub_password (`enable_vault = true`); +2 Tailscale OAuth (`enable_tailscale = true`); +1 Longhorn backup secret key (`create_longhorn_backup_user = true`) |
+| Vault (shared) | Software keys + 150 secrets | 2–9 secrets (`enable_vault = true`) — see the OCI Vault section for the full list |
 | Volume backups | 5 total | 2 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -61,8 +61,9 @@ compute.tf       — Instance pool (servers), pool (workers), standalone extra w
 lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
-vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key), 2–6 cluster secrets: k3s_token, longhorn_ui_password, dockerhub_password (when set); +tailscale OAuth pair when enable_tailscale = true; +longhorn backup secret key when Terraform owns that key
-objectstorage.tf — Versioned Object Storage bucket for Terraform state (enable_object_storage_state)
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key) + 2–9 cluster secrets (full list in the OCI Vault section)
+objectstorage.tf — Versioned buckets: <cluster>-terraform-state (etcd snapshots + leader lock, NOT tofu state; enable_object_storage_state) and <cluster>-longhorn-backup (enable_longhorn_backup), each with a noncurrent-version lifecycle rule
+bastion.tf       — OCI Bastion Service (managed, no VM; enable_bastion)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, mysql_endpoint, vault_id, tailscale_vault_secret_names)
 files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file with Terraform ${var} syntax
@@ -78,18 +79,30 @@ files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longho
 files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
 files/lib/k3s-external-secrets.sh — pure bash: install_external_secrets() — ESO Helm + ClusterSecretStore
 files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_dockerhub_secret(), create_optional_app(),
-                                    create_optional_apps(), configure_app_ingress(),
+                                    create_optional_apps(), create_external_dns_app(), configure_app_ingress(),
                                     configure_argocd_ingress(), configure_longhorn_ingress()
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
-gitops/network-policies/     — Default-deny NetworkPolicies (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for k3s HA konnectivity 502)
+gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only)
+gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
+gitops/pdbs/                 — PodDisruptionBudgets for ArgoCD / cert-manager (pdbs.yaml App)
+gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
+gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
+gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)
+gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for webhook 502s via the k3s egress tunnel)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
-example/         — Example module usage
+example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/)
+scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
+scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
+scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
+scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
+CHANGELOG.md     — release notes; maintained by release-please from conventional commits
+SECURITY.md      — supported versions + vulnerability reporting
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
+.tflint.hcl / .trivyignore       — tflint rules; accepted Trivy findings (each with a justification)
 .terraform-docs.yml          — terraform-docs config (inject mode; CI auto-commits README updates)
 renovate.json    — Automated dependency updates
 ```
@@ -120,11 +133,14 @@ renovate.json    — Automated dependency updates
   templatefiles. They export all Terraform-resolved values as bash `export KEY="value"`.
   `${var}` is Terraform interpolation; these files render to a plain bash variable header.
 - **`files/lib/*.sh`** are pure bash — no Terraform syntax, no `$${var}` escaping.
-  ShellCheck runs on these files without workarounds (`# shellcheck disable=SC2154` is the
-  only suppression, covering vars exported by the prepended template header).
+  ShellCheck runs on these files without workarounds: `# shellcheck disable=SC2154` covers vars
+  exported by the prepended template header, plus two documented inline `SC2097,SC2098`
+  suppressions on the `K3S_URL="" sh -s -` installer calls in `k3s-server.sh` / `k3s-agent.sh`.
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
 - Ubuntu 26.04 is the default OS (`var.os_family = "ubuntu"`); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support.
-- Always use `set -euo pipefail` at the top of each file.
+- Standalone scripts (`scripts/`, `example/*.sh`, `gitops/update-repo-url.sh`) start with `set -euo pipefail`.
+  The bootstrap files (`common.sh`, `bootstrap-*.sh`) set it for the assembled cloud-init script; the other
+  `files/lib/*.sh` files only define functions and inherit it — do not add it there.
 
 ### Adding a new stack component
 If the component must be bootstrapped before ArgoCD starts (e.g. it provides a CRD that
@@ -177,7 +193,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | Terraform validate (example) | same, in `example/` |
 | OpenTofu validate (root + example) | same as above but with `tofu` |
 | tflint | `tflint --init && tflint --recursive` (pinned version, Renovate-managed; auto-discovers `.tflint.hcl`) |
-| ShellCheck | `shellcheck --severity=warning files/*.sh scripts/*.sh` |
+| ShellCheck | `just shellcheck` (same file list as `shellcheck_files` in `ci.yml`) |
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
@@ -201,7 +217,12 @@ shellcheck --severity=warning \
   files/lib/k3s-argocd.sh \
   files/lib/k3s-agent.sh \
   scripts/clean-oci-resources.sh \
-  scripts/teardown-keep-data.sh
+  scripts/teardown-keep-data.sh \
+  scripts/import-opensuse-aarch64.sh \
+  scripts/setup-longhorn-backup.sh \
+  gitops/update-repo-url.sh \
+  example/get-kubeconfig.sh \
+  example/ssh-node.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
@@ -285,7 +306,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Do not add `pkill containerd-shim` (or any shim-killing `ExecStopPost`) to the k3s unit.**
   k3s uses `KillMode=process` so pods survive a k3s restart; killing the shims turns every
   k3s restart (including a leader-election-lost exit) into a restart of every pod on the node.
-- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–5 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
+- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–9 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
 - **Vault and key have `prevent_destroy = true`** — OCI DEFAULT vaults have a low per-tenancy limit and take a minimum of 7 days to fully delete (the `PENDING_DELETION` state counts against quota). `prevent_destroy` keeps the vault alive across `tofu destroy`/`tofu apply` cycles. If you genuinely need to delete the vault, remove the `lifecycle` block or run `tofu state rm` first.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
@@ -338,7 +359,8 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   This must happen at bootstrap time — the email cannot be in git without manual editing.
 - `gitops/cert-manager/` contains template ClusterIssuers and an ArgoCD Application template.
 - To enable ArgoCD management of ClusterIssuers: update the email in `cluster-issuers.yaml`,
-  then copy `application-template.yaml` to `gitops/apps/cert-manager.yaml`.
+  then copy `application-template.yaml` to `gitops/apps/cert-manager-issuers.yaml`
+  (`gitops/apps/cert-manager.yaml` is the cert-manager Helm release — do not overwrite it).
 - Do NOT place the template in `gitops/apps/` as-is — it contains `changeme@example.com`.
 
 ### Cloud-init structure (`files/`)
@@ -347,7 +369,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), bootstrap-{ubuntu,opensuse}.sh, file(lib/common.sh), ...])` to
   produce a single cloud-init script. The OS-specific bootstrap file is selected by `var.os_family`. The rendered vars header is prepended, making all
   `export KEY="value"` statements available to the lib scripts at runtime.
-- **Bootstrap script split**: `k3s-bootstrap.sh` is now a ~45-line orchestrator. Concerns live in
+- **Bootstrap script split**: `k3s-bootstrap.sh` is a ~60-line orchestrator. Concerns live in
   focused sub-scripts (all pure bash, concatenated in order before `k3s-bootstrap.sh` in `data.tf`):
   - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, MySQL, Cloudflare
   - `k3s-cert-manager.sh` — `install_certmanager()`: cert-manager Helm + ClusterIssuers
@@ -364,18 +386,21 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
   - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_argocd_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
 - **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
-  system-upgrade-controller, external-dns Helm — all in `gitops/apps/*.yaml`.
+  system-upgrade-controller — all in `gitops/apps/*.yaml`. The opt-in components live in
+  `gitops/optional/` and get an Application only when their flag is on: ESO through the
+  `optional-external-secrets` wrapper, external-dns through `create_external_dns_app()`.
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
   `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
   removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
-- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the five
+- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the eight
   vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `k3s_token`, `k3s_url`,
-  `vault_secret_id_k3s_token`). The server templatefile call uses `merge(local.k3s_common_cloud_init_vars, {...server-only...})`; the agent call passes the local directly.
+  `kube_api_port`, `vault_secret_id_k3s_token`, `ssh_host_key_private_b64`, `ssh_host_key_public`). The server templatefile call uses `merge(local.k3s_common_cloud_init_vars, {...server-only...})`; the agent call passes the local directly.
 - **Flannel interface resolution**: `resolve_flannel_params()` in `common.sh` sets `LOCAL_IP` and
   `FLANNEL_IFACE` (exported) when `K3S_SUBNET` is not `default_route_table`. Called by both
   `install_k3s_server()` and `install_k3s_agent()`; server adds `--advertise-address` too.
 - **ShellCheck**: `# shellcheck disable=SC2154` at the top of each lib/ file covers exported vars
-  from the prepended template header. No other suppressions are needed.
+  from the prepended template header. The only other suppressions are the two inline
+  `SC2097,SC2098` ones on the k3s installer calls (intentional `K3S_URL=""` env override).
 
 ### OCI Logging (`logging.tf`)
 - Controlled by `enable_oci_logging` variable (default: `true`).
@@ -405,7 +430,15 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores 2–3 secrets by default: `k3s_token`, `longhorn_ui_password`, and `dockerhub_password` (only when `var.dockerhub_password` is set); +2 Tailscale OAuth secrets when `enable_tailscale = true`; +1 `${cluster_name}-longhorn-backup-secret-key` when Terraform owns the Longhorn backup key.
+- Stores 2–9 secrets, all named `${cluster_name}-<suffix>` (same table as the README's "OCI Vault secrets"):
+  | Suffix | Created when |
+  |---|---|
+  | `k3s-token`, `longhorn-ui-password` | always (`oci_vault_secret.cluster` for_each) |
+  | `dockerhub-password` | `dockerhub_password != ""` |
+  | `gitops-ssh-key` / `gitops-https-token` | `gitops_ssh_private_key` / `gitops_https_token` set |
+  | `cloudflare-api-token` | `cloudflare_api_token != null` |
+  | `tailscale-oauth-client-id`, `tailscale-client-secret` | `enable_tailscale = true` |
+  | `longhorn-backup-secret-key` | Terraform owns the key (`create_longhorn_backup_user` or `user_ocid`) |
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
@@ -509,9 +542,10 @@ configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [r
        "https-myapp"
    }
    ```
-6. Call it from `run_bootstrap()` in `k3s-bootstrap.sh` with error-check:
+6. Call it from `run_bootstrap()` in `k3s-bootstrap.sh`. Ingress setup is non-fatal (the
+   cluster works without it), so follow the existing pattern and only warn:
    ```bash
-   configure_myapp_ingress || { echo "ERROR: configure_myapp_ingress failed"; exit 1; }
+   configure_myapp_ingress || echo "WARNING: configure_myapp_ingress failed — cluster is functional; ingress can be retried via cloud-init."
    ```
 7. Add `ignoreDifferences` for the new listener in `gitops/apps/gateway-config.yaml`
    — it's already covered by the `jqPathExpression` targeting `https-*` listener names.
@@ -658,10 +692,10 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
   joining servers wait 30 minutes then exit 1. OCI instance pools do not auto-replace a RUNNING
   instance whose cloud-init hung.
 - **Manual recovery:** In the OCI Console, terminate the hung node. The instance pool will
-  replace it; the new instance will be newer by TIMECREATED and will join as a normal follower.
-  If the pool has ≥ 2 surviving nodes with a live cluster lock, the next-oldest will claim the
-  lock and run `--cluster-init`. If fewer than 2 nodes survive, rebuild with
-  `scripts/clean-oci-resources.sh`.
+  replace it. With the single-server pool the replacement finds the lock held by a terminated
+  instance, reclaims it and runs `--cluster-init` (restore etcd from a snapshot if the old
+  server had data — see the etcd Snapshots section). If that fails, rebuild with
+  `just teardown-keep-data`.
 - This window is narrow (typically 2–4 min) and self-correcting for most transient OCI API
   failures (cloud-init retries internally). Do not add a "promote next-oldest if leader IP
   never answers" fallback without careful analysis — it reintroduces split-brain risk.

@@ -1,8 +1,8 @@
 # ── OCI Vault (software-protected keys — Always Free) ─────────────────────────
 # Always Free: all software-protected master encryption key versions + 150 secrets.
-# Stores k3s_token and longhorn_ui_password as Vault
-# secrets fetched by cloud-init via OCI CLI instance_principal auth at boot.
-# This removes plaintext secrets from instance user-data (cloud-init).
+# Stores every cluster secret (2 always + up to 7 optional, see the README's
+# "OCI Vault secrets" table) as Vault secrets fetched by cloud-init via OCI CLI
+# instance_principal auth at boot. This removes plaintext secrets from user-data.
 
 resource "oci_kms_vault" "k3s" {
   count          = var.enable_vault ? 1 : 0
@@ -39,9 +39,9 @@ resource "oci_kms_key" "k3s" {
 }
 
 # ── Cluster secrets (for_each over a shared map) ──────────────────────────────
-# Collapses k3s_token and longhorn_ui_password into one
-# resource. The conditional secrets (tailscale, gitops_ssh_key) remain separate
-# because they have different enable conditions.
+# Collapses the two always-present secrets (k3s_token, longhorn_ui_password) into
+# one resource. The conditional secrets below stay separate because each has its
+# own enable condition.
 
 locals {
   cluster_vault_secrets = var.enable_vault ? {

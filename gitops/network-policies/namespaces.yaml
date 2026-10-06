@@ -1,0 +1,21 @@
+---
+# Namespaces of the optional features (enable_external_dns, enable_external_secrets).
+# ArgoCD's CreateNamespace=true only creates the Application's destination namespace,
+# so these must exist for the NetworkPolicies in external-dns.yaml / external-secrets.yaml
+# to apply. Empty namespaces with default-deny policies are harmless until pods appear.
+# Prune=false: removing this file must never delete a namespace that holds a workload.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false

@@ -20,9 +20,8 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      # CreateNamespace=true: optional feature namespaces (external-dns, external-secrets)
-      # receive their NetworkPolicies even before the feature helm chart creates the namespace.
-      # An empty namespace with NetworkPolicies is harmless until pods appear.
+      # The optional feature namespaces (external-dns, external-secrets) are created by
+      # gitops/network-policies/namespaces.yaml — CreateNamespace only covers "default".
       - CreateNamespace=true
     retry:
       limit: 5

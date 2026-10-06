@@ -548,7 +548,7 @@ variable "mysql_admin_username" {
 
 variable "enable_vault" {
   type        = bool
-  description = "Store cluster secrets (k3s_token, longhorn_ui_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance_principal at boot — plaintext values are removed from cloud-init user-data."
+  description = "Store cluster secrets in OCI Vault (Always Free: software keys + 150 secrets): k3s_token and longhorn_ui_password always, plus dockerhub/gitops/cloudflare/tailscale/longhorn-backup credentials when those are set (2-9 secrets, see README). Nodes fetch them via OCI CLI instance_principal at boot, so plaintext values are removed from cloud-init user-data."
   default     = true
 }
 

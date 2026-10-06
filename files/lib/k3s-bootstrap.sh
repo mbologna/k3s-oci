@@ -16,7 +16,7 @@
 #   - Longhorn Helm install       -> gitops/apps/longhorn.yaml
 #   - kured Helm install          -> gitops/apps/kured.yaml
 #   - system-upgrade-controller   -> gitops/apps/system-upgrade-controller.yaml
-#   - external-dns Helm install   -> gitops/apps/external-dns.yaml
+#   - external-dns Helm install   -> Application created by create_external_dns_app()
 #
 # shellcheck disable=SC2154
 
