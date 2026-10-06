@@ -9,16 +9,18 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Single control plane**: 1 control-plane node with embedded etcd + 1 standalone worker (OCI Always Free 2 OCPU / 12 GB limit)
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
-- **Envoy Gateway ingress (Gateway API)**: DaemonSet with `system-cluster-critical` priority and `PodDisruptionBudget maxUnavailable: 1`; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
+- **Envoy Gateway ingress (Gateway API)**: one Envoy proxy per node (DaemonSet) with `system-cluster-critical` priority; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
 - **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
 - **Configurable OS** (`os_family`): Ubuntu 26.04 LTS (default, OCI-native image auto-resolved) or openSUSE Leap 16.0 (custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`)
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
-- **Cluster-scoped IAM**: dynamic group and policy scoped to nodes tagged with the cluster name, not every instance in the compartment
+- **Compartment-scoped IAM**: the dynamic group matches instances in the cluster's compartment (tag matching breaks instance_principal for pool members), and the policy grants only narrow verbs (read instances, read secrets, push logs, write objects in the cluster bucket)
 - **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
 - **Direct SSH via NLB** (`expose_ssh = true`): expose port 22 on the public NLB restricted to `my_public_ip_cidr`; eliminates the need for OCI Bastion sessions for day-to-day access
 - **OCI Vault** (`enable_vault = true`): cluster secrets in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
 - **Boot volume backups** (`enable_backup = true`): weekly full backups, 1-week retention, within the 5-backup Always Free limit
-- **Object Storage state bucket** (`enable_object_storage_state = true`): versioned OCI Object Storage for Terraform state; S3-compatible endpoint in `terraform_state_backend` output
+- **etcd snapshots to Object Storage** (`enable_object_storage_state = true`, `enable_etcd_snapshots = true`): a versioned bucket holds the 6-hourly etcd snapshots and the first-server leader lock (not your Terraform state, see [Remote Terraform state](#remote-terraform-state-oci-object-storage))
+- **Longhorn backups to Object Storage** (`enable_longhorn_backup = true`): a second versioned bucket; with `create_longhorn_backup_user = true` the module creates a bucket-scoped service user and cloud-init wires the BackupTarget and a daily backup job
+- **Rebuild without data loss** (`just teardown-keep-data`): destroys the cluster but keeps the Vault and both buckets, then re-imports them so the next apply reuses them
 - **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
 - **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from HTTPRoute hostnames
 - **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate
@@ -90,14 +92,24 @@ $EDITOR example/terraform.tfvars
 cd example && tofu init && tofu apply
 ```
 
+To consume the module from your own configuration, pin a release tag
+(see [Releases](https://github.com/mbologna/k3s-oci/releases) and `CHANGELOG.md`):
+
+```hcl
+module "k3s" {
+  source = "github.com/mbologna/k3s-oci?ref=v1.0.0"
+  # ... see example/main.tf for the full variable list
+}
+```
+
 A `Justfile` is included for common operations (requires [just](https://github.com/casey/just)):
 
 ```bash
 just init        # tofu init in example/
 just plan        # tofu plan in example/
 just apply       # tofu apply in example/
-just kubeconfig  # fetch kubeconfig via OCI Bastion
-just ssh worker  # SSH into a node (server1/server2/server3/worker)
+just kubeconfig  # fetch kubeconfig via OCI Bastion or the NLB (expose_ssh)
+just ssh worker  # SSH into a node (server/worker or a private IP)
 just fmt         # tofu fmt -recursive
 ```
 
@@ -136,11 +148,11 @@ OCI provides two load balancer products with very different capabilities:
 | OSI layer | **L4 (TCP passthrough)** | L7 (HTTP/HTTPS aware) |
 | TLS termination | ❌ Not possible | ✅ Yes |
 | Always Free | **1 NLB** | 1 × 10 Mbps |
-| Used here | `nlb.tf`: public internet traffic | `lb.tf`: internal kubeapi HA VIP |
+| Used here | `nlb.tf`: public internet traffic | `lb.tf`: internal kubeapi endpoint |
 
 The public-facing load balancer is the **NLB**. It forwards raw TCP streams with `protocol = "TCP"`, so it has no knowledge of TLS, HTTP headers, or certificates. TLS **must** be terminated by something behind it.
 
-The **Flexible LB** *could* terminate TLS, but the one free allocation is already consumed by the kubeapi HA load balancer. Even if it were available, using OCI to manage certificates would break the automatic cert-manager + Let's Encrypt renewal cycle.
+The **Flexible LB** *could* terminate TLS, but the one free allocation is already consumed by the internal kubeapi load balancer. Even if it were available, using OCI to manage certificates would break the automatic cert-manager + Let's Encrypt renewal cycle.
 
 The current flow is: Internet → NLB (TCP passthrough, preserves client IPs) → Envoy Gateway NodePort → TLS terminate → route to app pod.
 
@@ -474,10 +486,27 @@ Delete them in the Longhorn UI.
 | Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
-| Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: Terraform state + Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **2–6 secrets**: k3s_token, longhorn_ui_password, optional dockerhub_password, +2 Tailscale OAuth, +1 Longhorn backup key (`enable_vault = true`) |
+| Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: etcd snapshots + leader lock, and Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
+| Vault (shared) | Software keys + 150 secrets | **2–9 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
+
+### OCI Vault secrets
+
+With `enable_vault = true` every cluster secret below lives in the Vault and nodes fetch it
+at boot (instance_principal); with `enable_vault = false` it is passed in user-data instead.
+
+| Secret name | Created when |
+|---|---|
+| `<cluster>-k3s-token` | always |
+| `<cluster>-longhorn-ui-password` | always |
+| `<cluster>-dockerhub-password` | `dockerhub_password` set |
+| `<cluster>-gitops-ssh-key` | `gitops_ssh_private_key` set |
+| `<cluster>-gitops-https-token` | `gitops_https_token` set |
+| `<cluster>-cloudflare-api-token` | `cloudflare_api_token` set |
+| `<cluster>-tailscale-oauth-client-id` | `enable_tailscale = true` |
+| `<cluster>-tailscale-client-secret` | `enable_tailscale = true` |
+| `<cluster>-longhorn-backup-secret-key` | `create_longhorn_backup_user = true` or `user_ocid` set |
 
 > ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
 
@@ -696,7 +725,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_enable_object_storage_state"></a> [enable\_object\_storage\_state](#input\_enable\_object\_storage\_state) | Provision an Always Free OCI Object Storage bucket for storing Terraform/OpenTofu state (S3-compatible API). See the terraform\_state\_backend output for the backend configuration snippet. | `bool` | `true` | no |
 | <a name="input_enable_oci_logging"></a> [enable\_oci\_logging](#input\_enable\_oci\_logging) | Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month). | `bool` | `true` | no |
 | <a name="input_enable_tailscale"></a> [enable\_tailscale](#input\_enable\_tailscale) | Store Tailscale Kubernetes operator OAuth credentials in OCI Vault so the<br/>tailscale-operator ExternalSecret can sync them into the cluster without<br/>committing secrets to git. Requires enable\_vault = true.<br/>Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth<br/>with scope Devices → Write (devices:core:write) and allowed tag tag:k8s-operator. | `bool` | `false` | no |
-| <a name="input_enable_vault"></a> [enable\_vault](#input\_enable\_vault) | Store cluster secrets (k3s\_token, longhorn\_ui\_password) in OCI Vault (Always Free: software keys + 150 secrets). Nodes fetch secrets via OCI CLI instance\_principal at boot — plaintext values are removed from cloud-init user-data. | `bool` | `true` | no |
+| <a name="input_enable_vault"></a> [enable\_vault](#input\_enable\_vault) | Store cluster secrets in OCI Vault (Always Free: software keys + 150 secrets): k3s\_token and longhorn\_ui\_password always, plus dockerhub/gitops/cloudflare/tailscale/longhorn-backup credentials when those are set (2-9 secrets, see README). Nodes fetch them via OCI CLI instance\_principal at boot, so plaintext values are removed from cloud-init user-data. | `bool` | `true` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment label (e.g. staging, production) | `string` | `"staging"` | no |
 | <a name="input_etcd_snapshot_retention"></a> [etcd\_snapshot\_retention](#input\_etcd\_snapshot\_retention) | Number of etcd snapshots to retain in OCI Object Storage per node. Older snapshots are pruned automatically by the cron job. Must be >= 1 (0 would disable pruning and grow the bucket unbounded). | `number` | `5` | no |
 | <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |

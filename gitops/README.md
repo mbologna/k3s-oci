@@ -13,8 +13,6 @@ gitops/
 │   ├── argocd-image-updater.yaml     # ArgoCD Image Updater Helm release
 │   ├── cert-manager.yaml             # cert-manager Helm release
 │   ├── envoy-gateway.yaml            # Envoy Gateway Helm release (OCI registry)
-│   ├── external-dns.yaml             # External DNS Helm release (optional)
-│   ├── external-secrets.yaml         # External Secrets Operator Helm release (optional)
 │   ├── gateway-config.yaml           # Envoy Gateway config manifests (gitops/gateway/)
 │   ├── kured.yaml                    # kured Helm release
 │   ├── longhorn.yaml                 # Longhorn Helm release
@@ -25,12 +23,16 @@ gitops/
 │   └── rate-limit.yaml               # Envoy Gateway BackendTrafficPolicy (100 req/s/IP for ArgoCD UI)
 ├── cert-manager/                     # ClusterIssuer templates (see adoption notes)
 │   ├── cluster-issuers.yaml          # Template — update email before using
-│   └── application-template.yaml    # Copy to apps/ after updating email
+│   ├── application-template.yaml    # Copy to apps/cert-manager-issuers.yaml after updating email
+│   └── webhook-postsync/             # PostSync hook (same pattern as longhorn/webhook-postsync)
+├── optional/                         # Opt-in Applications, outside the App of Apps scope
+│   ├── external-dns.yaml             # Reference only: cloud-init creates the real app (runtime filters)
+│   └── external-secrets.yaml         # ESO Helm release; wrapped by cloud-init when enable_external_secrets = true
 ├── external-secrets/                 # External Secrets templates
 │   ├── cluster-secret-store-template.yaml  # ClusterSecretStore backed by OCI Vault
 │   └── example-external-secrets.yaml       # Example ExternalSecret CRs
 ├── gateway/                          # Envoy Gateway configuration
-│   ├── envoy-proxy.yaml              # EnvoyProxy: DaemonSet, NodePorts 30080/30443, PDB
+│   ├── envoy-proxy.yaml              # EnvoyProxy: DaemonSet, NodePorts 30080/30443
 │   ├── gateway-class.yaml            # GatewayClass pointing to proxy-config
 │   ├── gateway.yaml                  # Gateway with HTTP listener + commented HTTPS listeners
 │   ├── redirect.yaml                 # HTTP→HTTPS RequestRedirect HTTPRoute
@@ -44,14 +46,21 @@ gitops/
 │       ├── rbac.yaml                 #   ServiceAccount + ClusterRole + ClusterRoleBinding
 │       └── webhook-patch-job.yaml    #   Job with hardened securityContext; backoffLimit:0
 ├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
+│   ├── namespaces.yaml               # external-dns / external-secrets namespaces (so their policies apply)
 │   ├── default-deny.yaml             # default namespace
 │   ├── argocd.yaml                   # argocd namespace (includes port 22 SSH egress for git clone)
 │   ├── cert-manager.yaml             # cert-manager namespace (includes port 80 egress for HTTP-01)
 │   ├── envoy-gateway-system.yaml     # envoy-gateway-system namespace (NodePort ingress + backend egress)
+│   ├── external-dns.yaml             # external-dns namespace (optional feature)
+│   ├── external-secrets.yaml         # external-secrets namespace (optional feature)
+│   ├── kube-system.yaml              # kube-system namespace
 │   ├── longhorn-system.yaml          # longhorn-system namespace
 │   └── system-upgrade.yaml           # system-upgrade namespace
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
+├── system-upgrade/                   # system-upgrade-controller (remote manifests via kustomize) + k3s upgrade Plans
+│   ├── kustomization.yaml
+│   └── plans.yaml
 ├── tailscale-operator/               # Tailscale Operator (opt-in — copy application-template.yaml to apps/)
 │   ├── application-template.yaml    # Template Application — edit cluster_name, then copy to apps/
 │   ├── oauth-secret.yaml            # ExternalSecret: OCI Vault → operator-oauth Secret
@@ -63,13 +72,14 @@ gitops/
 
 ## Forking this repo
 
-All `Application` manifests in `gitops/apps/` contain a hardcoded `repoURL` pointing to
+All `Application` manifests in `gitops/apps/` (and the `*/application-template.yaml`
+files) contain a hardcoded `repoURL` pointing to
 `https://github.com/mbologna/k3s-oci.git`. If you fork the repo, run the helper script
 **once** after cloning to update all references:
 
 ```bash
 bash gitops/update-repo-url.sh https://github.com/your-org/your-fork.git
-git add gitops/apps/ && git commit -m "chore: update gitops repoURL to fork"
+git add gitops/ && git commit -m "chore: update gitops repoURL to fork"
 git push
 ```
 
@@ -92,8 +102,9 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 | Envoy Gateway Helm | ArgoCD (`apps/envoy-gateway.yaml`) | Helm chart, no runtime variables |
 | Longhorn Helm | ArgoCD (`apps/longhorn.yaml`) | Helm chart, no runtime variables |
 | kured Helm | ArgoCD (`apps/kured.yaml`) | Helm chart, no runtime variables |
-| system-upgrade-controller Helm | ArgoCD (`apps/system-upgrade-controller.yaml`) | Helm chart, no runtime variables |
-| external-dns Helm | ArgoCD (`apps/external-dns.yaml`) or optional-external-dns wrapper | Helm chart |
+| system-upgrade-controller + Plans | ArgoCD (`apps/system-upgrade-controller.yaml`) | Remote release manifests via kustomize, no runtime variables |
+| external-dns Helm | ArgoCD, Application created by cloud-init (`create_external_dns_app()`) | Needs runtime domain/zone filters; `optional/external-dns.yaml` is a reference |
+| ESO Helm (adoption) | ArgoCD (`optional/external-secrets.yaml` via the `optional-external-secrets` wrapper) | Only when `enable_external_secrets = true` |
 | All `gitops/gateway/` resources | ArgoCD (`apps/gateway-config.yaml`) | Pure Kubernetes manifests, no runtime values |
 | All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
 | All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |

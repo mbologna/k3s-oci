@@ -1,7 +1,7 @@
 ---
 # Default-deny for the external-dns namespace.
-# Applied when enable_external_dns = true (network-policies ArgoCD app uses CreateNamespace=true,
-# so this is pre-created before the external-dns helm chart deploys pods).
+# Always applied (the namespace comes from namespaces.yaml), so the policy is in place
+# before the external-dns chart deploys pods when enable_external_dns = true.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

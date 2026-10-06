@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **ESO was installed even with `enable_external_secrets = false`**: `gitops/apps/external-secrets.yaml`
+  duplicated `gitops/optional/external-secrets.yaml`. The optional copy is now the only one,
+  so ESO is deployed only through the `optional-external-secrets` wrapper.
+- **`network-policies` could not sync on clusters without the optional features**: the
+  `external-dns` / `external-secrets` namespaces were never created (`CreateNamespace` only
+  covers the destination namespace). `gitops/network-policies/namespaces.yaml` now creates them.
+- **`example/` pinned stale chart versions** (gateway-api, cert-manager, ArgoCD, ESO) that
+  overrode the module's Renovate-tracked defaults. Remove these four variables from your
+  example-based `terraform.tfvars` if you copied them.
+- **`just kubeconfig` / `just ssh` failed from the repo root**; `ssh-node.sh` now also works
+  with `expose_ssh = true` (no bastion) and matches the 1 server + 1 worker topology.
+- `gitops/update-repo-url.sh` also rewrites the `*/application-template.yaml` files.
+- `scripts/setup-longhorn-backup.sh` warns against admin-user keys and applies the
+  `daily-backup` RecurringJob instead of printing a non-working `BackupVolume` example.
+
 - **`gitops_https_token` / `gitops_ssh_private_key` were stored in Vault without base64
   encoding** while the secret was declared `content_type = "BASE64"`. cloud-init's
   `fetch_from_vault()` base64-decodes every secret, so an HTTPS token arrived as garbage
