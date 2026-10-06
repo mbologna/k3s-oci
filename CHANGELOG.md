@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1](https://github.com/mbologna/k3s-oci/compare/v1.0.0...v1.0.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **deps:** accept oci provider 8.x and 9.x in the module ([b5e0c6a](https://github.com/mbologna/k3s-oci/commit/b5e0c6a4f37914c68c46182bd3af0934441c1b0f))
+* install gateway api v1.6.1 crds, matching envoy gateway v1.9.2 ([dc0b0d3](https://github.com/mbologna/k3s-oci/commit/dc0b0d33a63f73fa867239771d9f0dd910f12ea6))
+
 ## [1.0.0](https://github.com/mbologna/k3s-oci/releases/tag/v1.0.0) (2026-10-06)
 
 First tagged release. Pin it with `source = "github.com/mbologna/k3s-oci?ref=v1.0.0"`.
