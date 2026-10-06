@@ -24,6 +24,16 @@
         "patch"
       ],
       "minimumReleaseAge": "1 minute"
+    },
+    {
+      "description": "Gateway API CRDs must match the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod) - no automerge",
+      "matchPackageNames": [
+        "kubernetes-sigs/gateway-api"
+      ],
+      "automerge": false,
+      "prBodyNotes": [
+        "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API version before merging."
+      ]
     }
   ],
   "customManagers": [
