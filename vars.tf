@@ -609,7 +609,7 @@ variable "gateway_api_version" {
   # Keep in step with the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in
   # envoyproxy/gateway go.mod): ArgoCD's envoy-gateway app re-applies its own CRDs.
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.6.1"
+  default = "v1.6.2"
 
   validation {
     condition     = length(var.gateway_api_version) > 0 && can(regex("^[v0-9]", var.gateway_api_version))
