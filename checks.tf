@@ -24,6 +24,13 @@ check "external_secrets_requires_region" {
   }
 }
 
+check "custom_ca_requires_vault" {
+  assert {
+    condition     = var.k3s_ca_vault_secret_id == null || var.enable_vault
+    error_message = "k3s_ca_vault_secret_id requires enable_vault = true (the nodes' read secret-family grant is only added with the Vault)."
+  }
+}
+
 check "dns01_requires_cloudflare_token" {
   assert {
     condition     = !var.enable_dns01_challenge || var.cloudflare_api_token != null

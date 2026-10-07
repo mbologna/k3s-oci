@@ -137,6 +137,26 @@ kubectl get nodes                                   # context: k3s-oci
 > ```
 > This is faster than Bastion sessions and avoids session TTLs. When using `expose_ssh = true` you can set `enable_bastion = false` to skip the Bastion Service resource entirely.
 
+### Stable cluster CA across rebuilds
+
+Every `--cluster-init` normally generates a new cluster CA, so kubeconfigs stored elsewhere
+(a password manager, dotfiles) stop working after a rebuild. To keep them valid, store the CA
+in OCI Vault and set `k3s_ca_vault_secret_id` (requires `enable_vault = true`):
+
+```bash
+# on a running server: export the current CA, so existing kubeconfigs keep working
+sudo tar -czf - -C /var/lib/rancher/k3s/server/tls \
+  server-ca.crt server-ca.key client-ca.crt client-ca.key | base64 -w0 > k3s-ca.b64
+# create a Vault secret whose value is the content of k3s-ca.b64, then:
+#   k3s_ca_vault_secret_id = "<secret OCID>"
+```
+
+The first server extracts the four files before `--cluster-init`. k3s reuses existing CA files
+instead of generating them, so the cluster keeps the same CA. If the secret is set but cannot
+be fetched or extracted, cloud-init aborts instead of minting a new CA. Admin client certs
+signed by `client-ca` (with `O=system:masters`) then survive rebuilds. The secret is created
+outside the module, so `tofu destroy` never deletes it.
+
 ## Deploying a web application
 
 ### Why TLS is terminated at Envoy Gateway, not at the OCI load balancer
@@ -493,6 +513,9 @@ at boot (instance_principal); with `enable_vault = false` it is passed in user-d
 | `<cluster>-tailscale-client-secret` | `enable_tailscale = true` |
 | `<cluster>-longhorn-backup-secret-key` | `create_longhorn_backup_user = true` or `user_ocid` set |
 
+`k3s_ca_vault_secret_id` points at a secret you create yourself (not module-managed); see
+[Stable cluster CA across rebuilds](#stable-cluster-ca-across-rebuilds).
+
 > ⚠️ **Idle reclamation** <a name="-idle-reclamation"></a>: OCI reclaims Always Free instances where CPU, network, and memory stay below 20% for 7 consecutive days. The full stack (Longhorn, ArgoCD, cert-manager, kured) generates enough background activity to keep the cluster alive.
 
 ## Failure tolerance
@@ -727,6 +750,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_https_lb_port"></a> [https\_lb\_port](#input\_https\_lb\_port) | Public HTTPS port on the NLB frontend (default 443). | `number` | `443` | no |
 | <a name="input_ingress_controller_http_nodeport"></a> [ingress\_controller\_http\_nodeport](#input\_ingress\_controller\_http\_nodeport) | NodePort on workers that the ingress controller binds for HTTP traffic | `number` | `30080` | no |
 | <a name="input_ingress_controller_https_nodeport"></a> [ingress\_controller\_https\_nodeport](#input\_ingress\_controller\_https\_nodeport) | NodePort on workers that the ingress controller binds for HTTPS traffic | `number` | `30443` | no |
+| <a name="input_k3s_ca_vault_secret_id"></a> [k3s\_ca\_vault\_secret\_id](#input\_k3s\_ca\_vault\_secret\_id) | OCID of an existing OCI Vault secret holding a base64 tar.gz of k3s CA files (server-ca.crt/.key, client-ca.crt/.key, paths relative to /var/lib/rancher/k3s/server/tls). When set, the first server seeds them before --cluster-init, so the cluster CA (and every kubeconfig signed by it) survives rebuilds. The secret is created outside this module. | `string` | `null` | no |
 | <a name="input_k3s_extra_server_args"></a> [k3s\_extra\_server\_args](#input\_k3s\_extra\_server\_args) | Extra arguments appended to the k3s server install command. Useful for etcd tuning on resource-constrained nodes (e.g. ['--etcd-arg=election-timeout=5000', '--etcd-arg=heartbeat-interval=1000']). | `list(string)` | `[]` | no |
 | <a name="input_k3s_server_pool_size"></a> [k3s\_server\_pool\_size](#input\_k3s\_server\_pool\_size) | Number of k3s control-plane nodes in the instance pool. Always Free allows only 1 (2 OCPUs / 12 GB total split with the standalone worker). Must be an odd number >= 1. | `number` | `1` | no |
 | <a name="input_k3s_standalone_worker"></a> [k3s\_standalone\_worker](#input\_k3s\_standalone\_worker) | When true (default), provisions one worker node as a plain oci\_core\_instance resource.<br/>This is the recommended approach for OCI Always Free tenancies: instance pools route<br/>requests through OCI Capacity Management which can fail for A1.Flex shapes, whereas<br/>a direct oci\_core\_instance reliably claims the free allocation.<br/>Default topology: 1 control-plane node (pool) + 1 standalone worker = 2 OCPUs / 12 GB. | `bool` | `true` | no |

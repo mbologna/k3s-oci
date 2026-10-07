@@ -108,6 +108,9 @@ export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 # -- Extra k3s server args (space-separated, appended to install command) ------
 export K3S_EXTRA_SERVER_ARGS="${k3s_extra_server_args}"
 
+# -- Custom cluster CA: Vault secret with a base64 tar.gz of server/tls CA files --
+export K3S_CA_VAULT_SECRET_ID="${k3s_ca_vault_secret_id}"
+
 # -- Default SSH user ----------------------------------------------------------
 export OS_USER="${os_user}"
 # SSH_PUBLIC_KEY is used by bootstrap-opensuse.sh to inject the key directly,
