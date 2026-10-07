@@ -250,6 +250,17 @@ variable "k3s_extra_server_args" {
   default     = []
 }
 
+variable "k3s_ca_vault_secret_id" {
+  type        = string
+  description = "OCID of an existing OCI Vault secret holding a base64 tar.gz of k3s CA files (server-ca.crt/.key, client-ca.crt/.key, paths relative to /var/lib/rancher/k3s/server/tls). When set, the first server seeds them before --cluster-init, so the cluster CA (and every kubeconfig signed by it) survives rebuilds. The secret is created outside this module."
+  default     = null
+
+  validation {
+    condition     = var.k3s_ca_vault_secret_id == null || startswith(coalesce(var.k3s_ca_vault_secret_id, "-"), "ocid1.vaultsecret.")
+    error_message = "k3s_ca_vault_secret_id must be an OCI Vault secret OCID starting with 'ocid1.vaultsecret.' or null."
+  }
+}
+
 # ── Networking ────────────────────────────────────────────────────────────────
 
 variable "oci_core_vcn_cidr" {

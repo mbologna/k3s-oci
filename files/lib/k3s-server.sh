@@ -304,6 +304,46 @@ _warn_if_previous_snapshots_exist() {
   echo ""
 }
 
+# -- Custom cluster CA -----------------------------------------------------------
+# k3s only generates a CA when its files are missing from server/tls, so seeding
+# them before --cluster-init keeps the CA (and every kubeconfig signed by it)
+# stable across rebuilds. Joining servers get the CAs from the datastore.
+# Fails closed: silently minting a fresh CA would invalidate every kubeconfig.
+K3S_TLS_DIR=/var/lib/rancher/k3s/server/tls
+K3S_CA_FILES=(server-ca.crt server-ca.key client-ca.crt client-ca.key)
+
+seed_custom_ca() {
+  [[ -n "${K3S_CA_VAULT_SECRET_ID:-}" ]] || return 0
+  echo "==> Seeding custom cluster CA from OCI Vault"
+  local bundle
+  if ! bundle=$(fetch_from_vault "${K3S_CA_VAULT_SECRET_ID}"); then
+    echo "ERROR: could not fetch the k3s CA bundle — refusing to mint a new CA."
+    exit 1
+  fi
+  mkdir -p "${K3S_TLS_DIR}"
+  chmod 700 "${K3S_TLS_DIR}"
+  # Extract only the expected members: no path traversal, no stray files.
+  if ! base64 -d <<< "${bundle}" | tar -xzf - -C "${K3S_TLS_DIR}" "${K3S_CA_FILES[@]}"; then
+    echo "ERROR: k3s CA bundle is not a tar.gz with ${K3S_CA_FILES[*]} — refusing to mint a new CA."
+    exit 1
+  fi
+  chmod 600 "${K3S_TLS_DIR}"/*.key
+  K3S_SEEDED_CLIENT_CA_SHA=$(sha256sum "${K3S_TLS_DIR}/client-ca.crt" | cut -d' ' -f1)
+  echo "  seeded ${K3S_CA_FILES[*]} (client-ca sha256 ${K3S_SEEDED_CLIENT_CA_SHA:0:12})"
+}
+
+verify_custom_ca() {
+  [[ -n "${K3S_SEEDED_CLIENT_CA_SHA:-}" ]] || return 0
+  local actual
+  actual=$(sha256sum "${K3S_TLS_DIR}/client-ca.crt" | cut -d' ' -f1)
+  if [[ "${actual}" == "${K3S_SEEDED_CLIENT_CA_SHA}" ]]; then
+    echo "==> Custom CA seeded, hash matches (${actual:0:12})"
+  else
+    echo "ERROR: k3s replaced the seeded client CA (${K3S_SEEDED_CLIENT_CA_SHA:0:12} -> ${actual:0:12});"
+    echo "  kubeconfigs signed by the stored CA will be rejected."
+  fi
+}
+
 install_k3s_server() {
   # Pin node identity to the OCI instance's own display name instead of letting
   # k3s default to `hostname` at first start. Without this, any later OS hostname
@@ -386,6 +426,7 @@ install_k3s_server() {
 
   if [[ "${IS_FIRST_SERVER}" == "true" ]]; then
     _warn_if_previous_snapshots_exist
+    seed_custom_ca
     echo "==> Bootstrapping new cluster (--cluster-init)"
     until curl -sfL https://get.k3s.io | \
         INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
@@ -395,6 +436,7 @@ install_k3s_server() {
       echo "  retrying (${attempt}/${max_attempts}) ..."
       sleep 15
     done
+    verify_custom_ca
   else
     echo "==> Joining existing cluster"
 

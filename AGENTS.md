@@ -73,7 +73,7 @@ files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when
 files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs(), install_oci_cli(), install_helm(), resolve_flannel_params()
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
-files/lib/k3s-server.sh           — pure bash: first-server election, k3s install, main entry point
+files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point
 files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_gateway_api_crds() then run_bootstrap()
 files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, MySQL, Cloudflare secrets
 files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
@@ -469,6 +469,11 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
+- `k3s_ca_vault_secret_id` points at a **user-created** secret (not module-managed, not counted
+  above): a base64 tar.gz of `server-ca.{crt,key}` + `client-ca.{crt,key}`. `seed_custom_ca()` in
+  `k3s-server.sh` extracts it into `/var/lib/rancher/k3s/server/tls` before `--cluster-init` (k3s
+  reuses existing CA files), and `verify_custom_ca()` logs whether k3s kept it. It fails closed: do not
+  add a fallback that lets k3s mint a new CA, since that silently invalidates every stored kubeconfig.
 - Agent script (`files/lib/k3s-agent.sh`) installs OCI CLI and fetches k3s_token from Vault when `VAULT_SECRET_ID_K3S_TOKEN` is non-empty.
 
 ### Accepted plaintext user-data constraints
@@ -635,6 +640,7 @@ before any OCI API call is made:
 - `enable_dns01_challenge = true` requires `cloudflare_api_token != null`
 - `enable_external_dns = true` requires `cloudflare_api_token`, `cloudflare_zone_id`, and `external_dns_domain_filter`
 - `enable_tailscale = true` requires `enable_vault = true` and both `tailscale_oauth_client_id` and `tailscale_oauth_client_secret` set
+- `k3s_ca_vault_secret_id` requires `enable_vault = true`
 - `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
 
