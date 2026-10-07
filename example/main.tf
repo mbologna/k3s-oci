@@ -296,6 +296,11 @@ variable "k3s_extra_server_args" {
   default = []
 }
 
+variable "k3s_ca_vault_secret_id" {
+  type    = string
+  default = null
+}
+
 # ── IAM ───────────────────────────────────────────────────────────────────────
 
 variable "unique_tag_key" {
@@ -442,6 +447,7 @@ module "k3s_cluster" {
   k3s_subnet                        = var.k3s_subnet
   k3s_version                       = var.k3s_version
   k3s_extra_server_args             = var.k3s_extra_server_args
+  k3s_ca_vault_secret_id            = var.k3s_ca_vault_secret_id # gitleaks:allow (an OCID reference, not a secret)
   unique_tag_key                    = var.unique_tag_key
   unique_tag_value                  = var.unique_tag_value
   oci_identity_dynamic_group_name   = var.oci_identity_dynamic_group_name
