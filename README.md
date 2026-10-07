@@ -97,7 +97,7 @@ To consume the module from your own configuration, pin a release tag
 
 ```hcl
 module "k3s" {
-  source = "github.com/mbologna/k3s-oci?ref=v1.0.1" # x-release-please-version
+  source = "github.com/mbologna/k3s-oci?ref=v1.1.0" # x-release-please-version
   # ... see example/main.tf for the full variable list
 }
 ```
