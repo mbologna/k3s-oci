@@ -157,6 +157,9 @@ be fetched or extracted, cloud-init aborts instead of minting a new CA. Admin cl
 signed by `client-ca` (with `O=system:masters`) then survive rebuilds. The secret is created
 outside the module, so `tofu destroy` never deletes it.
 
+Setting it on an existing cluster takes effect at the next full rebuild: instance configurations
+ignore `user_data` changes, so a server the pool relaunches meanwhile still boots without it.
+
 ## Deploying a web application
 
 ### Why TLS is terminated at Envoy Gateway, not at the OCI load balancer

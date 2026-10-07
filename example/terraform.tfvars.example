@@ -147,6 +147,7 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # ingress_controller_https_nodeport = 30443
 # k3s_subnet                        = "default_route_table"
 # k3s_extra_server_args             = ["--etcd-arg=election-timeout=5000", "--etcd-arg=heartbeat-interval=1000"]
+# k3s_ca_vault_secret_id            = "<vault secret OCID>"  # stable cluster CA, see README
 # fault_domains                     = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-3"]  # server pool
 # standalone_worker_fault_domain    = "FAULT-DOMAIN-2"                       # keep out of fault_domains
 
