@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0](https://github.com/mbologna/k3s-oci/compare/v1.0.1...v1.1.0) (2026-10-07)
+
+
+### Features
+
+* allow seeding the k3s cluster ca from oci vault ([253d616](https://github.com/mbologna/k3s-oci/commit/253d6167e0fdbb47f2d02bca8b1c79f170b7e964))
+* **example:** pass k3s_ca_vault_secret_id through ([9ff9541](https://github.com/mbologna/k3s-oci/commit/9ff95412304959fc66d9c1103cb943e730c3576d))
+
 ## [1.0.1](https://github.com/mbologna/k3s-oci/compare/v1.0.0...v1.0.1) (2026-10-06)
 
 
