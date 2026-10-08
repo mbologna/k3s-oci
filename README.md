@@ -225,7 +225,7 @@ spec:
     - port: 80
       targetPort: 80
 ---
-# HTTPRoute — no hostname filter = matches all requests on the http listener
+# HTTPRoute, no hostname filter = matches all requests on the http listener
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -258,7 +258,7 @@ Replace `<NLB_IP>` with the value of `tofu output -raw nlb_ip`.
 ```yaml
 # hello-web-tls.yaml
 ---
-# 1. Certificate — cert-manager issues this via HTTP-01 challenge through Envoy Gateway
+# 1. Certificate, cert-manager issues this via HTTP-01 challenge through Envoy Gateway
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -318,7 +318,7 @@ spec:
             scheme: https
             statusCode: 301
 ---
-# 4. HTTPRoute for the app — attaches to both listeners
+# 4. HTTPRoute for the app, attaches to both listeners
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -338,7 +338,7 @@ spec:
 ```
 
 ```bash
-# Wait for certificate issuance (typically 1–2 minutes)
+# Wait for certificate issuance (typically 1-2 minutes)
 kubectl wait --for=condition=Ready certificate/hello-web-tls -n envoy-gateway-system --timeout=5m
 curl https://hello-web.<NLB_IP>.sslip.io/
 ```
@@ -353,7 +353,7 @@ curl https://hello-web.<NLB_IP>.sslip.io/
 
 Run `replicas ≥ 2` with `topologySpreadConstraints` on `kubernetes.io/hostname` so losing one node never takes all replicas down. Envoy Gateway already runs on both nodes, so ingress survives a single-node drain or failure. See [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes) for the snippet and a matching PodDisruptionBudget.
 
-## GitOps — App of Apps
+## GitOps, App of Apps
 
 The `gitops/` directory contains ArgoCD `Application` manifests managed with the [App of Apps pattern](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/#app-of-apps-pattern).
 
@@ -378,7 +378,7 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
    git push
    ```
 
-3. **Add your ArgoCD `Application` manifests** to `gitops/apps/` — ArgoCD syncs them automatically. Each app can point at any Helm chart registry or any Git repository.
+3. **Add your ArgoCD `Application` manifests** to `gitops/apps/`, ArgoCD syncs them automatically. Each app can point at any Helm chart registry or any Git repository.
 
 > **Deploying for the first time?** Also set `gitops_repo_url` in `terraform.tfvars` before running `tofu apply`, so cloud-init writes the correct fork URL at bootstrap:
 > ```hcl
@@ -391,10 +391,10 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 
 > **Private repos**: two auth methods, both storing the credential in OCI Vault automatically so cloud-init can create the `argocd-repo-gitops` Secret before ArgoCD starts. No manual `argocd repo add` step needed.
 >
-> - **SSH** — set `gitops_ssh_private_key` with your deploy key.
-> - **HTTPS token** — set `gitops_https_username` + `gitops_https_token` (read-only repository scope; ArgoCD never writes). Takes precedence over the SSH key when both are set.
+> - **SSH**: set `gitops_ssh_private_key` with your deploy key.
+> - **HTTPS token**: set `gitops_https_username` + `gitops_https_token` (read-only repository scope; ArgoCD never writes). Takes precedence over the SSH key when both are set.
 >
-> Prefer the HTTPS token if your git host throttles SSH per source IP. ArgoCD is a heavy SSH client — every Application opens its own `git ls-remote` — and the resulting connection bursts can trip such limits and stall GitOps entirely, with apps stuck reporting `sync.revision` as `HEAD` rather than a SHA. Codeberg does this; GitHub and GitLab generally do not.
+> Prefer the HTTPS token if your git host throttles SSH per source IP. ArgoCD is a heavy SSH client, every Application opens its own `git ls-remote`, and the resulting connection bursts can trip such limits and stall GitOps entirely, with apps stuck reporting `sync.revision` as `HEAD` rather than a SHA. Codeberg does this; GitHub and GitLab generally do not.
 >
 > For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
 
@@ -417,7 +417,7 @@ This keeps the cluster fully patched with zero manual intervention and no concur
 ## Remote Terraform state (OCI Object Storage)
 
 `enable_object_storage_state = true` (the default) creates the versioned `<cluster_name>-terraform-state`
-bucket. **It holds etcd snapshots and the leader lock — do not store your Terraform state in it:**
+bucket. **It holds etcd snapshots and the leader lock, do not store your Terraform state in it:**
 
 - The nodes have `manage objects` on that bucket, and the state contains every cluster secret
   (k3s token, Longhorn UI password, OAuth secrets, …). A compromised node could read it.
@@ -489,13 +489,13 @@ Delete them in the Longhorn UI.
 | Resource | Free allowance | This module |
 |---|---|---|
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 worker = **2 OCPUs / 12 GB** |
-| Block storage | 200 GB | 2 × 100 GB = **200 GB** (boot volume IOPS scale with size — the full allowance goes to etcd/image/Longhorn IO) |
+| Block storage | 200 GB | 2 × 100 GB = **200 GB** (boot volume IOPS scale with size, the full allowance goes to etcd/image/Longhorn IO) |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
 | Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi) |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: etcd snapshots + leader lock, and Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **2–9 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
+| Vault (shared) | Software keys + 150 secrets | **2-9 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 
@@ -526,7 +526,7 @@ at boot (instance_principal); with `enable_vault = false` it is passed in user-d
 | Component | Tolerance | What happens on failure |
 |---|---|---|
 | **Worker node failure** | ✅ Full | Workloads reschedule to control-plane (taints removed); Longhorn (2 replicas) keeps storage up |
-| **Control-plane failure** | ❌ None | Single etcd node — cluster becomes unavailable; restore from etcd snapshot |
+| **Control-plane failure** | ❌ None | Single etcd node, cluster becomes unavailable; restore from etcd snapshot |
 | **HTTP/HTTPS ingress** | ✅ Worker loss | Envoy Gateway DaemonSet on control-plane keeps ingress up |
 | **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
 | **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
@@ -547,7 +547,7 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **cert-manager** | ✅ | ✅ | Deployment: schedules on any node |
 | **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **User workloads** | ✅ | ✅ | No restrictions — schedules on both nodes |
+| **User workloads** | ✅ | ✅ | No restrictions, schedules on both nodes |
 
 > **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume.
 >
@@ -555,7 +555,7 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 
 ## Why this topology
 
-OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to **2 OCPUs/12 GB** (max 2 instances). The result is 1 control-plane + 1 standalone worker — no etcd HA, but full use of the free allocation.
+OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB to **2 OCPUs/12 GB** (max 2 instances). The result is 1 control-plane + 1 standalone worker, no etcd HA, but full use of the free allocation.
 
 ### Topology comparison
 
@@ -564,13 +564,13 @@ OCI reduced the A1.Flex Always Free allocation in June 2026 from 4 OCPUs/24 GB t
 | **1 CP + 1 worker (this module)** | ❌ Single node | 2 (taints removed) | ~10 GB | **Only viable option** within 2 OCPU / 12 GB Always Free limit |
 | 2 CP + 0 workers | ❌ 2-node etcd invalid | 2 | ~9 GB | 2-node etcd cannot form quorum; worse than 1 node |
 
-†etcd + kubeapi consume ~300–500 MB RAM and ~100–200m CPU per control-plane node.
+†etcd + kubeapi consume ~300-500 MB RAM and ~100-200m CPU per control-plane node.
 
 ### Why not use the 2 free E2.1.Micro instances as extra workers?
 
 Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 
-1. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700–800 MB, leaving ~200 MB for user workloads
+1. **1 GB RAM**: k3s agent + Longhorn DaemonSet alone consume ~700-800 MB, leaving ~200 MB for user workloads
 2. **1/8 OCPU**: negligible compute; adds operational complexity for near-zero workload benefit
 
 ### Previously rejected alternatives
@@ -606,7 +606,7 @@ OCI has no native openSUSE image. Use the included script to import one before r
 
 The script:
 1. Resolves the latest openSUSE Leap 16.0 Minimal VM Cloud aarch64 QCOW2 from `download.opensuse.org`
-2. Streams the image (~271 MiB) directly into a temporary OCI Object Storage bucket — no local disk required
+2. Streams the image (~271 MiB) directly into a temporary OCI Object Storage bucket, no local disk required
 3. Imports via the OCI REST API with `firmware: UEFI_64` and `launchMode: CUSTOM`
    (the OCI CLI's `oci compute image import` always defaults to BIOS; `UEFI_64` is required for `VM.Standard.A1.Flex`)
 4. Adds `VM.Standard.A1.Flex` shape compatibility
@@ -644,7 +644,7 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 
 #### Using any other OS image
 
-Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic — fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
+Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic, fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
 
 ## Teardown
@@ -712,7 +712,7 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_argocd_chart_version"></a> [argocd\_chart\_version](#input\_argocd\_chart\_version) | ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate. | `string` | `"10.9.5"` | no |
 | <a name="input_argocd_hostname"></a> [argocd\_hostname](#input\_argocd\_hostname) | Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP. | `string` | `null` | no |
 | <a name="input_availability_domain"></a> [availability\_domain](#input\_availability\_domain) | Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1' | `string` | n/a | yes |
-| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB. Default 100 GB × 2 nodes = 200 GB, exactly the Always Free block storage limit. Boot volume performance scales with size (Balanced: 60 IOPS/GB), and etcd fsync latency on the boot volume is the main stability limit of the server — so use the whole allowance. The bastion uses OCI Bastion Service — no VM, no boot volume. | `number` | `100` | no |
+| <a name="input_boot_volume_size_in_gbs"></a> [boot\_volume\_size\_in\_gbs](#input\_boot\_volume\_size\_in\_gbs) | Boot volume size in GB for k3s nodes (servers + workers). OCI minimum is 50 GB. Default 100 GB × 2 nodes = 200 GB, exactly the Always Free block storage limit. Boot volume performance scales with size (Balanced: 60 IOPS/GB), and etcd fsync latency on the boot volume is the main stability limit of the server, so use the whole allowance. The bastion uses OCI Bastion Service, no VM, no boot volume. | `number` | `100` | no |
 | <a name="input_certmanager_chart_version"></a> [certmanager\_chart\_version](#input\_certmanager\_chart\_version) | cert-manager Helm chart version used for the bootstrap install. Must match gitops/apps/cert-manager.yaml targetRevision. Managed by Renovate. | `string` | `"v1.21.2"` | no |
 | <a name="input_certmanager_email_address"></a> [certmanager\_email\_address](#input\_certmanager\_email\_address) | Email address for Let's Encrypt ACME registration. Must be a real address. | `string` | n/a | yes |
 | <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | Cloudflare API token. Required when enable\_external\_dns = true or enable\_dns01\_challenge = true. Create a scoped token at https://dash.cloudflare.com/profile/api-tokens with Zone:DNS:Edit permissions. | `string` | `null` | no |
@@ -739,12 +739,12 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_etcd_snapshot_retention"></a> [etcd\_snapshot\_retention](#input\_etcd\_snapshot\_retention) | Number of etcd snapshots to retain in OCI Object Storage per node. Older snapshots are pruned automatically by the cron job. Must be >= 1 (0 would disable pruning and grow the bucket unbounded). | `number` | `5` | no |
 | <a name="input_expose_kubeapi"></a> [expose\_kubeapi](#input\_expose\_kubeapi) | Expose the Kubernetes API server via the public NLB (restricted to my\_public\_ip\_cidr) | `bool` | `false` | no |
 | <a name="input_expose_ssh"></a> [expose\_ssh](#input\_expose\_ssh) | Expose SSH (port 22) via the public NLB to all cluster nodes (restricted to my\_public\_ip\_cidr). Eliminates the need for OCI Bastion sessions for day-to-day access. | `bool` | `false` | no |
-| <a name="input_external_dns_domain_filter"></a> [external\_dns\_domain\_filter](#input\_external\_dns\_domain\_filter) | Domain filter for external-dns — only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable\_external\_dns = true. | `string` | `null` | no |
+| <a name="input_external_dns_domain_filter"></a> [external\_dns\_domain\_filter](#input\_external\_dns\_domain\_filter) | Domain filter for external-dns, only DNS records under this domain are managed (e.g. 'k3s.example.com'). Required when enable\_external\_dns = true. | `string` | `null` | no |
 | <a name="input_external_secrets_chart_version"></a> [external\_secrets\_chart\_version](#input\_external\_secrets\_chart\_version) | External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate. | `string` | `"2.10.0"` | no |
 | <a name="input_fault_domains"></a> [fault\_domains](#input\_fault\_domains) | Fault domains to spread the instance pools across. FAULT-DOMAIN-2 is left out by default because it is reserved for the standalone worker (standalone\_worker\_fault\_domain), so the server and the worker never share hardware. | `list(string)` | <pre>[<br/>  "FAULT-DOMAIN-1",<br/>  "FAULT-DOMAIN-3"<br/>]</pre> | no |
 | <a name="input_gateway_api_version"></a> [gateway\_api\_version](#input\_gateway\_api\_version) | Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config. | `string` | `"v1.6.2"` | no |
 | <a name="input_github_ssh_keys_username"></a> [github\_ssh\_keys\_username](#input\_github\_ssh\_keys\_username) | GitHub username whose published SSH keys (https://github.com/<username>.keys)<br/>are added to every instance's authorized\_keys at plan time, in addition to<br/>the primary public\_key / public\_key\_path. Leave empty to skip. | `string` | `""` | no |
-| <a name="input_gitops_https_token"></a> [gitops\_https\_token](#input\_gitops\_https\_token) | Access token (or password) for HTTPS auth against a PRIVATE gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret with username/password before ArgoCD starts. Grant read-only repository scope — ArgoCD never writes. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
+| <a name="input_gitops_https_token"></a> [gitops\_https\_token](#input\_gitops\_https\_token) | Access token (or password) for HTTPS auth against a PRIVATE gitops repo. Terraform stores it in OCI Vault; cloud-init fetches it and creates the argocd-repo-gitops Secret with username/password before ArgoCD starts. Grant read-only repository scope, ArgoCD never writes. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
 | <a name="input_gitops_https_username"></a> [gitops\_https\_username](#input\_gitops\_https\_username) | Username for HTTPS auth against a PRIVATE gitops repo. Used with gitops\_https\_token. Leave empty for SSH auth or a public HTTPS repo. | `string` | `""` | no |
 | <a name="input_gitops_path"></a> [gitops\_path](#input\_gitops\_path) | Path within gitops\_repo\_url that ArgoCD uses as the App of Apps source. Default is 'gitops/apps' (k3s-oci native layout). Override when your GitOps repo uses a different directory structure. | `string` | `"gitops/apps"` | no |
 | <a name="input_gitops_repo_url"></a> [gitops\_repo\_url](#input\_gitops\_repo\_url) | Git repository URL for the ArgoCD App of Apps (e.g. https://github.com/your-org/k3s-oci.git). Set this to your fork so ArgoCD pulls from the right repo. | `string` | `"https://github.com/mbologna/k3s-oci.git"` | no |
@@ -769,17 +769,17 @@ MIT. See [LICENSE](LICENSE).
 | <a name="input_mysql_admin_username"></a> [mysql\_admin\_username](#input\_mysql\_admin\_username) | Admin username for the MySQL HeatWave DB system. | `string` | `"admin"` | no |
 | <a name="input_mysql_shape"></a> [mysql\_shape](#input\_mysql\_shape) | MySQL HeatWave shape. 'MySQL.Free' is the Always Free shape. | `string` | `"MySQL.Free"` | no |
 | <a name="input_oci_core_vcn_cidr"></a> [oci\_core\_vcn\_cidr](#input\_oci\_core\_vcn\_cidr) | CIDR block for the VCN | `string` | `"10.0.0.0/16"` | no |
-| <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3svcn"` | no |
-| <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy — the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
-| <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy — the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
-| <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu 26.04 LTS and auto-resolves the latest image. "opensuse" uses openSUSE Leap 16.0 — requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
-| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu 26.04 aarch64 image is resolved automatically. Required when os\_family = "opensuse" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
+| <a name="input_oci_core_vcn_dns_label"></a> [oci\_core\_vcn\_dns\_label](#input\_oci\_core\_vcn\_dns\_label) | DNS label for the VCN (≤15 alphanumeric chars, no hyphens, OCI DNS constraint). | `string` | `"k3svcn"` | no |
+| <a name="input_oci_identity_dynamic_group_name"></a> [oci\_identity\_dynamic\_group\_name](#input\_oci\_identity\_dynamic\_group\_name) | Name for the OCI dynamic group granting instances access to the OCI API.<br/>Must be unique per tenancy, the default 'k3s-cluster-dynamic-group' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-dynamic-group" in your tfvars. | `string` | `"k3s-cluster-dynamic-group"` | no |
+| <a name="input_oci_identity_policy_name"></a> [oci\_identity\_policy\_name](#input\_oci\_identity\_policy\_name) | Name for the OCI IAM policy attached to the dynamic group.<br/>Must be unique per tenancy, the default 'k3s-cluster-policy' collides<br/>if you deploy multiple clusters in the same tenancy. Recommended: set to<br/>"<cluster\_name>-policy" in your tfvars. | `string` | `"k3s-cluster-policy"` | no |
+| <a name="input_os_family"></a> [os\_family](#input\_os\_family) | OS distribution for cluster nodes. "ubuntu" (default) uses OCI-native Ubuntu 26.04 LTS and auto-resolves the latest image. "opensuse" uses openSUSE Leap 16.0, requires os\_image\_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID). | `string` | `"ubuntu"` | no |
+| <a name="input_os_image_id"></a> [os\_image\_id](#input\_os\_image\_id) | OCID of the OS image for A1.Flex nodes. If null and os\_family = "ubuntu", the latest Ubuntu 26.04 aarch64 image is resolved automatically. Required when os\_family = "opensuse", use scripts/import-opensuse-aarch64.sh to import and capture the OCID. | `string` | `null` | no |
 | <a name="input_private_subnet_cidr"></a> [private\_subnet\_cidr](#input\_private\_subnet\_cidr) | CIDR for the private subnet (k3s nodes) | `string` | `"10.0.1.0/24"` | no |
-| <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | DNS label for the private subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3sprivate"` | no |
-| <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path —<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
+| <a name="input_private_subnet_dns_label"></a> [private\_subnet\_dns\_label](#input\_private\_subnet\_dns\_label) | DNS label for the private subnet (≤15 alphanumeric chars, no hyphens, OCI DNS constraint). | `string` | `"k3sprivate"` | no |
+| <a name="input_public_key"></a> [public\_key](#input\_public\_key) | SSH public key content placed on every instance. Preferred over public\_key\_path,<br/>pass the key string directly for CI pipelines where ~/.ssh does not exist.<br/>When null, the key is read from public\_key\_path at plan time. | `string` | `null` | no |
 | <a name="input_public_key_path"></a> [public\_key\_path](#input\_public\_key\_path) | Path to SSH public key file. Used as fallback when public\_key is null. | `string` | `"~/.ssh/id_ed25519.pub"` | no |
 | <a name="input_public_subnet_cidr"></a> [public\_subnet\_cidr](#input\_public\_subnet\_cidr) | CIDR for the public subnet (load balancers and optional bastion) | `string` | `"10.0.0.0/24"` | no |
-| <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | DNS label for the public subnet (≤15 alphanumeric chars, no hyphens — OCI DNS constraint). | `string` | `"k3spublic"` | no |
+| <a name="input_public_subnet_dns_label"></a> [public\_subnet\_dns\_label](#input\_public\_subnet\_dns\_label) | DNS label for the public subnet (≤15 alphanumeric chars, no hyphens, OCI DNS constraint). | `string` | `"k3spublic"` | no |
 | <a name="input_region"></a> [region](#input\_region) | OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable\_external\_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint. | `string` | `null` | no |
 | <a name="input_server_memory_in_gbs"></a> [server\_memory\_in\_gbs](#input\_server\_memory\_in\_gbs) | RAM in GB per control-plane node. Total RAM must not exceed 12 GB (Always Free). | `number` | `6` | no |
 | <a name="input_server_ocpus"></a> [server\_ocpus](#input\_server\_ocpus) | OCPUs per control-plane node. Total OCPUs across all nodes must not exceed 2 (Always Free). | `number` | `1` | no |
