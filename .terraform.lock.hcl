@@ -3,7 +3,7 @@
 
 provider "registry.opentofu.org/hashicorp/cloudinit" {
   version     = "2.4.1"
-  constraints = "~> 2.3"
+  constraints = "~> 2.4"
   hashes = [
     "h1:+W0yP9aNwhxG6GkkvAvXAzR3c6oHFrsn0qKzCcd+Pt4=",
     "h1:5//sVDkThzeCAUR3avaWF5QkFGoGNHQVohk/03XlwDY=",
