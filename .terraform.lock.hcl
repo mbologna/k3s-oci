@@ -151,7 +151,7 @@ provider "registry.opentofu.org/hashicorp/tls" {
 
 provider "registry.opentofu.org/oracle/oci" {
   version     = "9.0.0"
-  constraints = ">= 8.0.0, < 10.0.0"
+  constraints = ">= 9.0.0, < 10.0.0"
   hashes = [
     "h1:BqvLt8C7d7qZBREmzpA9RL7vi+suiiS1SiB9PDhrKU0=",
     "h1:DsjU7vhNl5UJW8ryl4mIaQZhe6r3WEw+vio/hgss7Yg=",
@@ -176,7 +176,6 @@ provider "registry.opentofu.org/oracle/oci" {
     "zh:6b4c09a388325908e2a4bfb9d471ee89368a98065d63abbe43dbafb197c78188",
     "zh:8d816713a14fd48cb587cf460bdd3cd0519865eddfc5fed8995e9e6d7ccf0063",
     "zh:92e3396861a04c36ce35e40733df871b3e8a5105d4d868f0c5a59f94ed08912d",
-    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
     "zh:d38c61e032dd80a1884dbf9c41d01e307d2d08fcbf2eadb1869f76c99630c1c1",
     "zh:d501ee1af33ae860692a298a4feae1b5540844a19f6c83386fe6460542f765d8",
     "zh:f0c623151543854333157698510a8a5ed81c64f611a506394f7f682cfcf571cf",
