@@ -37,9 +37,12 @@ spec:
     # longhorn-manager is a DaemonSet — drain with --ignore-daemonsets never evicts
     # it, so it has no PDB. One-at-a-time guarantees come from:
     #   1. concurrency: 1 in this Plan (SUC only drains one node at a time)
-    #   2. kured distributed lock (prevents concurrent reboots)
-    #   3. Longhorn instance-manager auto-generated PDBs (block drain while replica
-    #      rebuild is in progress — these cover actual data-path pods, not DaemonSets)
+    #   2. Longhorn's nodeDrainPolicy block-if-contains-last-replica
+    #      (gitops/apps/longhorn.yaml): a drain waits while this node holds the
+    #      last healthy replica of any volume
+    # kured's distributed lock does NOT serialise against SUC: it only covers
+    # kured's own reboots. kured instead stands down while an upgrade Job from
+    # this Plan exists (blockingPodSelector in gitops/apps/kured.yaml).
     skipWaitForDeleteTimeout: 60
   upgrade:
     image: rancher/k3s-upgrade
@@ -59,10 +62,10 @@ spec:
   serviceAccountName: system-upgrade
   cordon: true
   drain:
-    # disableEviction removed: same reasoning as server plan — respect PDBs.
-    # Serialization for worker node upgrades comes from concurrency:1 and the
-    # kured distributed lock; Longhorn instance-manager PDBs block drain while
-    # any replica rebuild is pending.
+    # disableEviction removed: same reasoning as server plan, respect PDBs.
+    # Serialization for worker upgrades comes from concurrency: 1 and Longhorn's
+    # last-replica drain policy; kured waits on these Jobs via its
+    # blockingPodSelector rather than its own lock.
     skipWaitForDeleteTimeout: 60
   prepare:
     image: rancher/k3s-upgrade

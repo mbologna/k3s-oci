@@ -408,6 +408,14 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 3. Reboots
 4. Waits for the node to return and uncordons it
 
+kured only reboots on Tuesday, Wednesday and Thursday between 02:15 and 04:15 UTC, after the package
+timers have finished (`gitops/apps/kured.yaml`). Every schedule the module creates is in UTC, so that
+order cannot change at a daylight-saving switch.
+
+k3s itself is upgraded by system-upgrade-controller, which drains nodes as soon as a new release
+reaches the channel. kured's lock does not cover those drains, so kured is configured to wait while
+an upgrade Job is running (`blockingPodSelector: [upgrade.cattle.io/plan]`).
+
 This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
 
 ## Dependency updates (Renovate)

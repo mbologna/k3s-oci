@@ -16,13 +16,32 @@ spec:
       valuesObject:
         configuration:
           rebootSentinelFile: /var/run/reboot-required
-          # Maintenance window: 04:00–06:00 Europe/Rome (DST-safe; always local CET/CEST)
-          # Starts after apt/zypper finishes (00:30–01:00 UTC security + bootstrap upgrades)
-          # so kured reboots a fully-upgraded node. 04:00 Rome = 02:00–03:00 UTC (CET/CEST).
+          # Maintenance window: 02:15-04:15 UTC (03:15-05:15 CET, 04:15-06:15 CEST).
+          #
+          # UTC, like every other schedule this module creates: the package timers
+          # (files/lib/bootstrap-*.sh), the Longhorn recurring jobs and the etcd
+          # snapshot (files/lib/k3s-*.sh) are all UTC, and Longhorn and k3s offer no
+          # timezone setting at all. A window in local time moves an hour against
+          # them at every DST change, so the order "patch, then reboot" holds in
+          # one season and not the other.
+          #
+          # Opens after the latest package run can finish: apt-daily-upgrade fires
+          # at 01:00 UTC with up to 30 min jitter, plus needrestart, so ~01:45.
           # Edit here to change the window; must match NLB maintenance expectations.
-          startTime: "04:00"
-          endTime: "06:00"
-          timeZone: Europe/Rome
+          startTime: "02:15"
+          endTime: "04:15"
+          timeZone: UTC
+          # system-upgrade-controller (gitops/system-upgrade/plans.yaml) also cordons
+          # and drains nodes, on no schedule at all: as soon as a new k3s release
+          # reaches the channel. kured's lock does not cover it, so without this
+          # kured could reboot a node in the middle of a k3s upgrade.
+          #
+          # upgrade.cattle.io/plan, NOT upgrade.cattle.io/controller: the SUC
+          # controller Deployment itself carries the controller label and runs
+          # permanently, so selecting on it would silently block every reboot.
+          # Only the per-node upgrade Job pods carry the plan label.
+          blockingPodSelector:
+            - upgrade.cattle.io/plan
           rebootDays:
             - tue
             - wed
