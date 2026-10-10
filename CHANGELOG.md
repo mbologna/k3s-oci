@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1](https://github.com/mbologna/k3s-oci/compare/v1.1.0...v1.1.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ci:** repin reusable workflows to current .github HEAD ([ed60246](https://github.com/mbologna/k3s-oci/commit/ed6024684195618b4797eb1a2d13a8bdb30bec4f))
+* **kured:** wait for k3s upgrades and schedule reboots in UTC ([d71c33f](https://github.com/mbologna/k3s-oci/commit/d71c33f9d17283044e6ad17e292bd432e448d84f))
+
 ## [1.1.0](https://github.com/mbologna/k3s-oci/compare/v1.0.1...v1.1.0) (2026-10-07)
 
 
