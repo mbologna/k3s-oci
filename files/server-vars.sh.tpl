@@ -107,6 +107,7 @@ export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 
 # -- Extra k3s server args (space-separated, appended to install command) ------
 export K3S_EXTRA_SERVER_ARGS="${k3s_extra_server_args}"
+export K3S_SECRETS_ENCRYPTION="${k3s_secrets_encryption ? "true" : "false"}"
 
 # -- Custom cluster CA: Vault secret with a base64 tar.gz of server/tls CA files --
 export K3S_CA_VAULT_SECRET_ID="${k3s_ca_vault_secret_id}"

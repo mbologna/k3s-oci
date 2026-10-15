@@ -250,6 +250,12 @@ variable "k3s_extra_server_args" {
   default     = []
 }
 
+variable "k3s_secrets_encryption" {
+  type        = bool
+  description = "Start k3s servers with --secrets-encryption, so Secrets are AES-CBC encrypted in etcd and in the etcd snapshots uploaded to Object Storage. Applies at install time only. A cluster started without it needs `k3s secrets-encrypt enable`, a restart with the flag, `k3s secrets-encrypt rotate-keys` and a second restart (https://docs.k3s.io/cli/secrets-encrypt). Never turn it off on an encrypted cluster: its data can't be read without the flag."
+  default     = true
+}
+
 variable "k3s_ca_vault_secret_id" {
   type        = string
   description = "OCID of an existing OCI Vault secret holding a base64 tar.gz of k3s CA files (server-ca.crt/.key, client-ca.crt/.key, paths relative to /var/lib/rancher/k3s/server/tls). When set, the first server seeds them before --cluster-init, so the cluster CA (and every kubeconfig signed by it) survives rebuilds. The secret is created outside this module."

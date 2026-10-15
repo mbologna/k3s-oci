@@ -389,6 +389,12 @@ install_k3s_server() {
   install_params+=("--kube-scheduler-arg=leader-elect=false")
   install_params+=("--kube-cloud-controller-arg=leader-elect=false")
 
+  # Encrypt Secrets at rest: without it etcd, and every snapshot uploaded to
+  # Object Storage, holds them in plaintext.
+  if [[ "${K3S_SECRETS_ENCRYPTION:-true}" == "true" ]]; then
+    install_params+=("--secrets-encryption")
+  fi
+
   if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
     install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
   fi

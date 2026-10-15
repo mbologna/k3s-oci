@@ -678,6 +678,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - When a single server bootstraps a fresh cluster (`--cluster-init`) and snapshots already exist in the bucket, `_warn_if_previous_snapshots_exist()` logs a loud WARNING with the `k3s server --cluster-reset --cluster-reset-restore-path` restore steps — a replaced server otherwise silently starts an empty cluster.
 - IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
 - Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
+- Servers start with `--secrets-encryption` (`k3s_secrets_encryption`, default `true`), so the snapshots hold Secrets AES-CBC encrypted. The key lives in the k3s bootstrap data, which is encrypted with the cluster token, so a restore needs the same token and a server started with the flag. The flag applies at install time only; a running cluster is switched over with `k3s secrets-encrypt enable`, a restart with the flag, `rotate-keys` and a second restart.
 - These snapshots are the primary recovery path for split-brain and etcd quorum loss. The server logs the restore steps when it finds old snapshots (see README "After a rebuild that kept the buckets").
 
 ### Atomic leader lock (`--cluster-init` safety)

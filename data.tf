@@ -147,7 +147,8 @@ locals {
 
   # Extra k3s server args (e.g. etcd tuning)
   _server_extra_args_vars = {
-    k3s_extra_server_args = join(" ", var.k3s_extra_server_args)
+    k3s_extra_server_args  = join(" ", var.k3s_extra_server_args)
+    k3s_secrets_encryption = var.k3s_secrets_encryption # gitleaks:allow (a bool flag, not a secret)
     # Custom cluster CA (user-created Vault secret), seeded before --cluster-init
     k3s_ca_vault_secret_id = coalesce(var.k3s_ca_vault_secret_id, "")
   }
