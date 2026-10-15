@@ -6,12 +6,12 @@
   "internalChecksAsSuccess": false,
   "packageRules": [
     {
-      "description": "Group all Terraform provider updates into one PR; require manual review",
+      "description": "Group all Terraform provider updates into one PR; require manual review. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged.",
       "matchManagers": [
         "terraform"
       ],
       "matchDepTypes": [
-        "provider"
+        "required_provider"
       ],
       "groupName": "terraform providers",
       "automerge": false
