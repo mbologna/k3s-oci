@@ -3,7 +3,7 @@
 
 provider "registry.opentofu.org/hashicorp/cloudinit" {
   version     = "2.4.1"
-  constraints = "~> 2.3"
+  constraints = "~> 2.4"
   hashes = [
     "h1:+W0yP9aNwhxG6GkkvAvXAzR3c6oHFrsn0qKzCcd+Pt4=",
     "h1:5//sVDkThzeCAUR3avaWF5QkFGoGNHQVohk/03XlwDY=",
@@ -40,7 +40,7 @@ provider "registry.opentofu.org/hashicorp/cloudinit" {
 
 provider "registry.opentofu.org/hashicorp/http" {
   version     = "3.6.2"
-  constraints = "~> 3.4"
+  constraints = "~> 3.6"
   hashes = [
     "h1:7+Ewr07oLewLfoe5K7Fhy4T5JUU4y7I7iRGTG2hrzy4=",
     "h1:8AvJ6H30J1tgxwEoVKxe0B0Ac9XFn1gwOzidrIc+F5o=",
@@ -77,7 +77,7 @@ provider "registry.opentofu.org/hashicorp/http" {
 
 provider "registry.opentofu.org/hashicorp/random" {
   version     = "3.9.1"
-  constraints = "~> 3.5"
+  constraints = "~> 3.9"
   hashes = [
     "h1:38E2VQmQDhws/3AL3D/EzBGuCseepyZRIswAOx8CqoQ=",
     "h1:7+qv9kpOpBC9EUPCubnPxh603tu3l9EIMMBkpbt1H1Y=",
@@ -114,7 +114,7 @@ provider "registry.opentofu.org/hashicorp/random" {
 
 provider "registry.opentofu.org/hashicorp/tls" {
   version     = "4.4.1"
-  constraints = "~> 4.0"
+  constraints = "~> 4.4"
   hashes = [
     "h1:2O/yQw456tbotLB9hQANgbHXbIrEtDLSEfgA0WmJkJY=",
     "h1:57BA7JoEeTaNsrQsUXJ/dBBxldjiemEMucc9JuSye0w=",
@@ -151,7 +151,7 @@ provider "registry.opentofu.org/hashicorp/tls" {
 
 provider "registry.opentofu.org/oracle/oci" {
   version     = "9.9.0"
-  constraints = ">= 8.0.0, ~> 9.7, < 10.0.0"
+  constraints = "~> 9.7, >= 9.7.1, < 10.0.0"
   hashes = [
     "h1:/JwdO81SNoI5uay1l3ydvF+wKmltreiXjohx5DiBjzg=",
     "h1:/Tn3czVtM7ucqj4oGJDIAWG8v0juFdRu4zKF58+LbtY=",
@@ -172,6 +172,7 @@ provider "registry.opentofu.org/oracle/oci" {
     "zh:3d1377cbbb500c6c89afd8a0238410f9ca018bbd7e2b5c81fca4ef91318cdc66",
     "zh:635d424d2e9fe2594eb5491f5acb2ec73e5c5de16dbb443dbf9ee214de41bfb6",
     "zh:80691911b40ef088c0c6aede8da7535473336c6090c8904f1cad92022cf33019",
+    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
     "zh:ab62d904e891fe0b605969a0b5d8ce88fce3c284d40268b935a437073700ece9",
     "zh:b284462d72ab352bc6c319336edcd85ede731fcb9c87e5f46de7989f6efad6aa",
     "zh:c1186a474b6cb19695d04f074a14ee2d69cd3dfca064e316744f6dc7f7cea0ee",
