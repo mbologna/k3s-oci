@@ -33,13 +33,15 @@ pre_create_secrets() {
   # Longhorn BasicAuth -- htpasswd hash generated here because Envoy Gateway SecurityPolicy
   # requires {SHA}BASE64(SHA1(password)) format. openssl's -apr1 (MD5) is rejected.
   # Secret is referenced by gitops/longhorn/ingress.yaml (HTTPRoute + SecurityPolicy).
-  [[ -z "${LONGHORN_UI_USERNAME}" ]] && { echo "ERROR: LONGHORN_UI_USERNAME is empty — cannot create Longhorn auth secret."; exit 1; }
-  [[ -z "${LONGHORN_UI_PASSWORD}" ]] && { echo "ERROR: LONGHORN_UI_PASSWORD is empty — cannot create Longhorn auth secret."; exit 1; }
-  local longhorn_sha_hash
-  # {SHA} format: {SHA}BASE64(SHA1(password)) — required by Envoy Gateway BasicAuth
-  longhorn_sha_hash=$(printf '%s' "${LONGHORN_UI_PASSWORD}" | openssl dgst -sha1 -binary | base64) || { echo "ERROR: openssl sha1 failed."; exit 1; }
-  kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
-  kubectl apply -n longhorn-system -f - <<EOF
+  # Skipped without longhorn_hostname: no route, so nothing uses it.
+  if [[ -n "${LONGHORN_HOSTNAME}" ]]; then
+    [[ -z "${LONGHORN_UI_USERNAME}" ]] && { echo "ERROR: LONGHORN_UI_USERNAME is empty — cannot create Longhorn auth secret."; exit 1; }
+    [[ -z "${LONGHORN_UI_PASSWORD}" ]] && { echo "ERROR: LONGHORN_UI_PASSWORD is empty — cannot create Longhorn auth secret."; exit 1; }
+    local longhorn_sha_hash
+    # {SHA} format: {SHA}BASE64(SHA1(password)) — required by Envoy Gateway BasicAuth
+    longhorn_sha_hash=$(printf '%s' "${LONGHORN_UI_PASSWORD}" | openssl dgst -sha1 -binary | base64) || { echo "ERROR: openssl sha1 failed."; exit 1; }
+    kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -n longhorn-system -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -49,7 +51,8 @@ type: Opaque
 stringData:
   .htpasswd: "${LONGHORN_UI_USERNAME}:{SHA}${longhorn_sha_hash}"
 EOF
-  echo "Longhorn BasicAuth secret created."
+    echo "Longhorn BasicAuth secret created."
+  fi
 
 
   # MySQL credentials -- pre-created so apps can mount this secret on first deploy.

@@ -418,7 +418,7 @@ variable "longhorn_ui_username" {
 
 variable "argocd_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP."
+  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP. Set to \"\" to create no public ArgoCD route."
   default     = null
 }
 

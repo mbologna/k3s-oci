@@ -760,4 +760,4 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
   random admin password (output only to Terraform state), ArgoCD RBAC.
 - To restrict access: add an Envoy `SecurityPolicy` (Gateway API ExtAuth or IP-based allow-list)
   on the ArgoCD HTTPRoute, or set `var.my_public_ip_cidr` and add an NSG rule that
-  limits NLB HTTP/HTTPS to your IP. Set `var.argocd_hostname = null` to skip the ArgoCD ingress.
+  limits NLB HTTP/HTTPS to your IP. Set `var.argocd_hostname = ""` to skip the ArgoCD ingress (`null` derives the sslip.io hostname) and reach the UI another way, e.g. a Tailscale LoadBalancer Service.
