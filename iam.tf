@@ -3,7 +3,7 @@
 # issuance service, so using instance.freeform_tag in the matching_rule causes
 # instance_principal auth to fail with "no groups" for all pool members. Using
 # compartment.id alone is the reliable approach — the policy verbs (read
-# instance-family, read secret-family, …) are already narrowly scoped.
+# instance-family, read secret-bundles of the boot secrets, …) are already narrowly scoped.
 #
 # ⚠️  SECURITY: This dynamic group matches ALL instances in the compartment,
 # not just k3s cluster members. Every instance in the compartment receives the
@@ -26,6 +26,21 @@ resource "oci_identity_dynamic_group" "k3s" {
   freeform_tags = local.common_tags
 }
 
+locals {
+  vault_read_all_secrets = var.enable_external_secrets && var.external_secrets_instance_principal
+
+  # Every secret cloud-init passes to fetch_from_vault (files/lib/common.sh).
+  boot_vault_secret_ids = compact(concat(
+    [for s in oci_vault_secret.cluster : s.id],
+    oci_vault_secret.gitops_ssh_key[*].id,
+    oci_vault_secret.gitops_https_token[*].id,
+    oci_vault_secret.dockerhub_password[*].id,
+    oci_vault_secret.cloudflare_api_token[*].id,
+    oci_vault_secret.longhorn_backup_secret_key[*].id,
+    [coalesce(var.k3s_ca_vault_secret_id, "")],
+  ))
+}
+
 resource "oci_identity_policy" "k3s" {
   compartment_id = var.compartment_ocid
   description    = "Allow k3s cluster '${var.cluster_name}' instances to read OCI instance metadata"
@@ -37,8 +52,12 @@ resource "oci_identity_policy" "k3s" {
       "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to read compute-management-family in compartment id ${var.compartment_ocid}",
       "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to use log-content in compartment id ${var.compartment_ocid}",
     ],
+    # Nodes read only the secrets cloud-init fetches at boot (fetch_from_vault),
+    # unless the External Secrets store authenticates as the nodes and needs them all.
     var.enable_vault ? [
-      "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to read secret-family in compartment id ${var.compartment_ocid}",
+      local.vault_read_all_secrets
+      ? "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to read secret-family in compartment id ${var.compartment_ocid}"
+      : "allow dynamic-group ${oci_identity_dynamic_group.k3s.name} to read secret-bundles in compartment id ${var.compartment_ocid} where any {${join(", ", [for id in local.boot_vault_secret_ids : "target.secret.id = '${id}'"])}}",
     ] : [],
     # etcd snapshot uploads and leader-lock sentinel: the first server needs to
     # PUT/GET/DELETE objects in the state bucket (using OCI CLI instance_principal,

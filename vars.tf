@@ -604,6 +604,12 @@ variable "enable_external_secrets" {
   default     = false
 }
 
+variable "external_secrets_instance_principal" {
+  type        = bool
+  description = "Whether the External Secrets ClusterSecretStore authenticates as the nodes (instance_principal, the bootstrap default). While true (and enable_external_secrets = true) the dynamic group may read every secret in the compartment, because the store syncs arbitrary secrets. Set false once you replace the store with a user-principal (API key) one: the nodes may then read only the secrets cloud-init fetches at boot."
+  default     = true
+}
+
 # region is defined in the # ── OCI Identity ── section above.
 
 # ── DNS-01 ACME challenge via Cloudflare ──────────────────────────────────────

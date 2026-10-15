@@ -13,7 +13,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
 - **Configurable OS** (`os_family`): Ubuntu 26.04 LTS (default, OCI-native image auto-resolved) or openSUSE Leap 16.0 (custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`)
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
-- **Compartment-scoped IAM**: the dynamic group matches instances in the cluster's compartment (tag matching breaks instance_principal for pool members), and the policy grants only narrow verbs (read instances, read secrets, push logs, write objects in the cluster bucket)
+- **Compartment-scoped IAM**: the dynamic group matches instances in the cluster's compartment (tag matching breaks instance_principal for pool members), and the policy grants only narrow verbs (read instances, read only the Vault secrets cloud-init needs, push logs, write objects in the cluster bucket)
 - **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
 - **Direct SSH via NLB** (`expose_ssh = true`): expose port 22 on the public NLB restricted to `my_public_ip_cidr`; eliminates the need for OCI Bastion sessions for day-to-day access
 - **OCI Vault** (`enable_vault = true`): cluster secrets in a free software-protected OCI Vault; fetched at boot via instance_principal, not embedded in user-data
@@ -23,7 +23,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Rebuild without data loss** (`just teardown-keep-data`): destroys the cluster but keeps the Vault and both buckets, then re-imports them so the next apply reuses them
 - **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
 - **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from HTTPRoute hostnames
-- **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate
+- **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate. This lets the nodes read every secret in the compartment; swap in an API-key store and set `external_secrets_instance_principal = false` to scope them to their boot secrets
 
 ## Architecture
 
@@ -511,6 +511,8 @@ Delete them in the Longhorn UI.
 
 With `enable_vault = true` every cluster secret below lives in the Vault and nodes fetch it
 at boot (instance_principal); with `enable_vault = false` it is passed in user-data instead.
+The nodes' IAM policy covers only these boot secrets (plus `k3s_ca_vault_secret_id`), unless an
+instance_principal External Secrets store needs the whole compartment (see `external_secrets_instance_principal`).
 
 | Secret name | Created when |
 |---|---|

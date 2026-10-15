@@ -55,7 +55,7 @@ moved.tf         — moved{} blocks for in-flight resource renames; cleared afte
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, secret-family, state-bucket objects); Longhorn backup service user/group/policy (create_longhorn_backup_user)
+iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, read secret-bundles of the boot secrets — or secret-family for an instance_principal ESO store — state-bucket objects); Longhorn backup service user/group/policy (create_longhorn_backup_user)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
@@ -468,7 +468,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   | `longhorn-backup-secret-key` | Terraform owns the key (`create_longhorn_backup_user` or `user_ocid`) |
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
-- The IAM policy uses `concat()` to add `read secret-family` only when `enable_vault = true`.
+- With `enable_vault = true` the IAM policy grants `read secret-bundles` only on the secrets cloud-init fetches (`local.boot_vault_secret_ids` in `iam.tf`: the module's boot secrets plus `k3s_ca_vault_secret_id`, matched by `target.secret.id`). A new secret that cloud-init fetches **must be added to that list**, or nodes get `NotAuthorizedOrNotFound` at boot. The broad `read secret-family` is granted only when `enable_external_secrets && external_secrets_instance_principal`.
 - `k3s_ca_vault_secret_id` points at a **user-created** secret (not module-managed, not counted
   above): a base64 tar.gz of `server-ca.{crt,key}` + `client-ca.{crt,key}`. `seed_custom_ca()` in
   `k3s-server.sh` extracts it into `/var/lib/rancher/k3s/server/tls` before `--cluster-init` (k3s
@@ -538,7 +538,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 - Controlled by `enable_external_secrets` variable (default: `false`). Requires `enable_vault = true`.
 - Installs External Secrets Operator and creates a `ClusterSecretStore` backed by OCI Vault using
   instance_principal auth — no credentials to rotate.
-- The existing IAM `read secret-family` policy (added when `enable_vault = true`) already covers it.
+- The store authenticates as the nodes, so with `external_secrets_instance_principal = true` (default) the policy grants `read secret-family` on the whole compartment. Callers that replace the store with a user-principal (API key) one set it to `false`, and nodes fall back to reading only their boot secrets.
 - See `gitops/external-secrets/` for the ClusterSecretStore template and example ExternalSecret CRs.
 - Users create `ExternalSecret` resources referencing Vault secret OCIDs; the operator syncs them
   into Kubernetes Secrets automatically and rotates on the configured refresh interval.
