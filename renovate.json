@@ -15,7 +15,7 @@
       ],
       "groupName": "terraform providers",
       "automerge": false,
-      "commitMessageSuffix": ""
+      "commitMessageSuffix": "[manual review]"
     },
     {
       "description": "k3s patch updates: bypass the 7-day age gate \u2014 k3s patches are stable fast-follows. 1 minute (not 0 days) ensures Renovate posts a stability check; 0 days normalises to null internally and blocks automerge on repos without CI.",
@@ -33,7 +33,7 @@
         "kubernetes-sigs/gateway-api"
       ],
       "automerge": false,
-      "commitMessageSuffix": "",
+      "commitMessageSuffix": "[manual review]",
       "prBodyNotes": [
         "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API version before merging."
       ]
