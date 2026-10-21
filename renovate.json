@@ -6,7 +6,7 @@
   "internalChecksAsSuccess": false,
   "packageRules": [
     {
-      "description": "Group all Terraform provider updates into one PR; require manual review. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged.",
+      "description": "Group all Terraform provider updates into one PR; require manual review. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged. The empty commitMessageSuffix drops the preset's [automerge] tag from the PR title.",
       "matchManagers": [
         "terraform"
       ],
@@ -14,7 +14,8 @@
         "required_provider"
       ],
       "groupName": "terraform providers",
-      "automerge": false
+      "automerge": false,
+      "commitMessageSuffix": ""
     },
     {
       "description": "k3s patch updates: bypass the 7-day age gate \u2014 k3s patches are stable fast-follows. 1 minute (not 0 days) ensures Renovate posts a stability check; 0 days normalises to null internally and blocks automerge on repos without CI.",
@@ -27,11 +28,12 @@
       "minimumReleaseAge": "1 minute"
     },
     {
-      "description": "Gateway API CRDs must match the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod) - no automerge",
+      "description": "Gateway API CRDs must match the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod) - no automerge; the empty commitMessageSuffix drops the preset's [automerge] tag from the PR title.",
       "matchPackageNames": [
         "kubernetes-sigs/gateway-api"
       ],
       "automerge": false,
+      "commitMessageSuffix": "",
       "prBodyNotes": [
         "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API version before merging."
       ]
