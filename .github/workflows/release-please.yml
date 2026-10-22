@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Opens/updates the release PR from conventional commits; merging it tags vX.Y.Z
       # and publishes the GitHub release. The PR is created with GITHUB_TOKEN, so CI
