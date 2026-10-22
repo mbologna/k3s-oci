@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0](https://github.com/mbologna/k3s-oci/compare/v1.1.0...v1.2.0) (2026-10-22)
+
+
+### Features
+
+* encrypt k3s secrets at rest by default ([894604e](https://github.com/mbologna/k3s-oci/commit/894604e593eb00fc3462dc66f6bbbe7d0258a28e))
+* reserve node resources for k3s itself ([a3784ef](https://github.com/mbologna/k3s-oci/commit/a3784efbd17524274442cc680c8006f4c7490c4e))
+* scope the nodes' vault read to their boot secrets ([f434d12](https://github.com/mbologna/k3s-oci/commit/f434d127efcfba0647010e0046790ba282e40a5b))
+
+
+### Bug Fixes
+
+* **ci:** repin reusable workflows to current .github HEAD ([ed60246](https://github.com/mbologna/k3s-oci/commit/ed6024684195618b4797eb1a2d13a8bdb30bec4f))
+* **kured:** wait for k3s upgrades and schedule reboots in UTC ([d71c33f](https://github.com/mbologna/k3s-oci/commit/d71c33f9d17283044e6ad17e292bd432e448d84f))
+* **renovate:** match required_provider so provider updates group ([5ab2369](https://github.com/mbologna/k3s-oci/commit/5ab2369b943db0f9b067db1e963ab0c8b4a057fa))
+* skip the longhorn basic-auth secret without a longhorn route ([f128aa7](https://github.com/mbologna/k3s-oci/commit/f128aa7272dca39582968b1d1e51ffd6571d0cb6))
+
 ## [1.1.0](https://github.com/mbologna/k3s-oci/compare/v1.0.1...v1.1.0) (2026-10-07)
 
 
