@@ -26,6 +26,10 @@ install_k3s_agent() {
   # Kubelet image GC at 70% instead of 85% — same reasoning as the server.
   install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
 
+  # Reserve what the k3s agent process uses (~100m CPU, ~700 MiB), like the
+  # server does for its own (see k3s-server.sh).
+  install_params+=("--kubelet-arg=system-reserved=cpu=100m,memory=768Mi")
+
   local max_api_attempts=180 max_attempts=10 attempt=0
   local api_port="${KUBE_API_PORT:-6443}"
 

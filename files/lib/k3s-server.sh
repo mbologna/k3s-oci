@@ -374,6 +374,14 @@ install_k3s_server() {
   # costs both capacity and IOPS that etcd needs.
   install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
 
+  # Tell the scheduler what k3s server itself uses. apiserver, etcd and the
+  # controllers run in this one host process (~150m CPU and ~2.2 GiB on a
+  # 1 OCPU / 6 GB A1.Flex), invisible to pod requests, so without a reservation
+  # the scheduler fills the node as if all of it were free. The kubelet also
+  # caps all pods together at what is left (the kubepods cgroup), so they can't
+  # push k3s server out of memory.
+  install_params+=("--kubelet-arg=system-reserved=cpu=150m,memory=2Gi")
+
   # k3s's built-in etcd snapshot schedule defaults to "0 */12 * * *", the same
   # minute as the 6-hourly upload cron (setup_etcd_snapshot_upload), so one of
   # the two failed with "snapshot save already in progress". Offset it.
