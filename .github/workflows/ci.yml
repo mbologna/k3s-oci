@@ -39,7 +39,7 @@ jobs:
     uses: mbologna/.github/.github/workflows/terraform-ci.yml@6c207d5ba5eabca643dac178f268fc378b18243f # main
     with:
       terraform_version: "~> 1.9"
-      opentofu_version: "1.9.1"
+      opentofu_version: "1.13.1"
       enable_shellcheck: true
       shellcheck_files: >-
         files/lib/bootstrap-ubuntu.sh
