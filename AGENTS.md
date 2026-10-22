@@ -250,8 +250,9 @@ terraform-docs .
   requests* (Settings → Actions → General); without it the workflow fails with
   "GitHub Actions is not permitted to create or approve pull requests".
 - `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
-  (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`). Renovate does not automerge
-  gateway-api; merge a bump only when the pinned Envoy Gateway release ships that version.
+  (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`), so the variable only matters at
+  bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
+  merges it once the pinned Envoy Gateway release bundles that minor.
 - Do not edit the release sections of `CHANGELOG.md` by hand; add context to the commit body
   instead (or edit the release PR before merging).
 

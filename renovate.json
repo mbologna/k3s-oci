@@ -6,7 +6,7 @@
   "internalChecksAsSuccess": false,
   "packageRules": [
     {
-      "description": "Group all Terraform provider updates into one PR; require manual review. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged. The empty commitMessageSuffix drops the preset's [automerge] tag from the PR title.",
+      "description": "Group all Terraform provider updates into one PR; require manual review: a provider bump can change how the OCI resources plan, and only a tofu plan against the live tenancy shows whether it replaces an Always Free instance. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged.",
       "matchManagers": [
         "terraform"
       ],
@@ -18,14 +18,18 @@
       "labels": ["dependencies", "manual-review"]
     },
     {
-      "description": "Gateway API CRDs must match the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod) - no automerge; the empty commitMessageSuffix drops the preset's [automerge] tag from the PR title.",
+      "description": "Gateway API CRDs: gateway_api_version is installed at bootstrap only; Envoy Gateway's chart then re-applies the CRDs it bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod). A patch stays in the same API channel and automerges under the preset's gates. A minor or major can carry CRD versions the pinned Envoy Gateway does not know, so a person checks first.",
       "matchPackageNames": [
         "kubernetes-sigs/gateway-api"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "major"
       ],
       "automerge": false,
       "labels": ["dependencies", "manual-review"],
       "prBodyNotes": [
-        "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API version before merging."
+        "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API minor (sigs.k8s.io/gateway-api in its go.mod) before merging."
       ]
     }
   ],
