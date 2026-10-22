@@ -5,14 +5,14 @@ name: release-please
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
+  # Opens/updates the release PR from conventional commits; merging it tags vX.Y.Z
+  # and publishes the GitHub release. The PR is created with GITHUB_TOKEN, so CI
+  # does not run on it — merge it with the admin ruleset bypass (see AGENTS.md).
   release-please:
-    runs-on: ubuntu-24.04
-    steps:
-      # Opens/updates the release PR from conventional commits; merging it tags vX.Y.Z
-      # and publishes the GitHub release. The PR is created with GITHUB_TOKEN, so CI
-      # does not run on it — merge it with the admin ruleset bypass (see AGENTS.md).
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+    uses: mbologna/.github/.github/workflows/release-please.yml@34c6d98db62827e2f7d2255e8f14f68ae640f578 # main
+    permissions:
+      contents: write
+      pull-requests: write
