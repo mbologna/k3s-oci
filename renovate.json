@@ -18,16 +18,6 @@
       "labels": ["dependencies", "manual-review"]
     },
     {
-      "description": "k3s patch updates: bypass the 7-day age gate \u2014 k3s patches are stable fast-follows. 1 minute (not 0 days) ensures Renovate posts a stability check; 0 days normalises to null internally and blocks automerge on repos without CI.",
-      "matchPackageNames": [
-        "k3s-io/k3s"
-      ],
-      "matchUpdateTypes": [
-        "patch"
-      ],
-      "minimumReleaseAge": "1 minute"
-    },
-    {
       "description": "Gateway API CRDs must match the version Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod) - no automerge; the empty commitMessageSuffix drops the preset's [automerge] tag from the PR title.",
       "matchPackageNames": [
         "kubernetes-sigs/gateway-api"
