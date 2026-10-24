@@ -12,7 +12,7 @@ jobs:
   # and publishes the GitHub release. The PR is created with GITHUB_TOKEN, so CI
   # does not run on it — merge it with the admin ruleset bypass (see AGENTS.md).
   release-please:
-    uses: mbologna/.github/.github/workflows/release-please.yml@34c6d98db62827e2f7d2255e8f14f68ae640f578 # main
+    uses: mbologna/.github/.github/workflows/release-please.yml@83a94cc1bdc464afe31abb9cb99a575e5a8a38ef # main
     permissions:
       contents: write
       pull-requests: write

@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   terraform:
-    uses: mbologna/.github/.github/workflows/terraform-ci.yml@6c207d5ba5eabca643dac178f268fc378b18243f # main
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@83a94cc1bdc464afe31abb9cb99a575e5a8a38ef # main
     with:
       terraform_version: "~> 1.9"
       opentofu_version: "1.9.1"
@@ -64,7 +64,7 @@ jobs:
 
   cache-cleanup:
     if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/cache-cleanup.yml@6c207d5ba5eabca643dac178f268fc378b18243f # main
+    uses: mbologna/.github/.github/workflows/cache-cleanup.yml@83a94cc1bdc464afe31abb9cb99a575e5a8a38ef # main
     with:
       max_age_days: 7
     permissions:
