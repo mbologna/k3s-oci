@@ -1,5 +1,8 @@
 # Changelog
 
+Releases after v1.1.0 have their notes on the
+[Releases page](https://github.com/mbologna/k3s-oci/releases).
+
 All notable changes to this project will be documented in this file.
 
 ## [1.1.0](https://github.com/mbologna/k3s-oci/compare/v1.0.1...v1.1.0) (2026-10-07)

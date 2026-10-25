@@ -99,7 +99,7 @@ scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
 scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
-CHANGELOG.md     — release notes; maintained by release-please from conventional commits
+CHANGELOG.md     — release notes up to v1.1.0; later ones are on the GitHub Releases page
 SECURITY.md      — supported versions + vulnerability reporting
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .tflint.hcl / .trivyignore       — tflint rules; accepted Trivy findings (each with a justification)
@@ -238,23 +238,20 @@ terraform-docs .
 - Renovate waits for CI because `renovate.json` sets `internalChecksAsSuccess: false`. The shared
   preset sets it to `true`, which let Renovate count its own stability-days check as green and
   automerge before the CI run had even started. Do not remove the override.
-- Releases are cut by release-please (`.github/workflows/release-please.yml`,
-  `release-please-config.json`, `.release-please-manifest.json`). Conventional commits drive the
-  version: `fix:` → patch, `feat:` → minor, `!` / `BREAKING CHANGE:` → major; `docs:`, `chore:`,
-  `ci:` do not release. Write commit subjects as changelog entries.
-- release-please keeps a `chore(main): release X.Y.Z` PR open that updates `CHANGELOG.md`,
-  the manifest and `version.txt`. Merging it creates the `vX.Y.Z` tag and GitHub release.
-  The PR is opened with `GITHUB_TOKEN`, so no CI runs on it: an admin merges it with the
-  ruleset bypass (it only touches release metadata).
-- release-please needs the repo setting *Allow GitHub Actions to create and approve pull
-  requests* (Settings → Actions → General); without it the workflow fails with
-  "GitHub Actions is not permitted to create or approve pull requests".
+- Releases are cut by [auto-release](https://github.com/mbologna/auto-release)
+  (`.github/workflows/release.yml`, `strategy: conventional`). Every push to `main` that brings a
+  release-worthy commit tags the next version and publishes the GitHub release:
+  `fix:` / `perf:` / `revert:` → patch, `feat:` → minor, `!` / `BREAKING CHANGE:` → major;
+  `docs:`, `chore:` and `ci:` alone do not release. Write commit subjects as changelog entries.
+- There is no release PR and nothing is committed back to `main`. Running the Release workflow
+  by hand (*Actions → Release → Run workflow*, `dry_run` on) shows the next version and its notes
+  in the job summary without tagging.
 - `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
   (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`), so the variable only matters at
   bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
   merges it once the pinned Envoy Gateway release bundles that minor.
-- Do not edit the release sections of `CHANGELOG.md` by hand; add context to the commit body
-  instead (or edit the release PR before merging).
+- Release notes come from commit subjects: add context in the commit body, or edit the release
+  on GitHub after it is published. `CHANGELOG.md` is history only; do not add new releases to it.
 
 ## Troubleshooting scripts
 

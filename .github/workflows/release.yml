@@ -1,0 +1,33 @@
+name: Release
+
+# Tags the next version when a feat, fix, perf, revert or breaking commit lands
+# on main, and publishes the GitHub release with notes grouped by commit type
+# (https://github.com/mbologna/auto-release). Nothing builds on tags here, so
+# no tag build is dispatched. Run it by hand to preview the next release.
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show the next version and its notes in the job summary
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  auto-release:
+    permissions:
+      contents: write
+    uses: mbologna/.github/.github/workflows/auto-release.yml@63deea7f993150cc855466e01c72747becb8211d # main
+    with:
+      strategy: conventional
+      dispatch_tag_build: false
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

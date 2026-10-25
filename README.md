@@ -92,12 +92,13 @@ $EDITOR example/terraform.tfvars
 cd example && tofu init && tofu apply
 ```
 
-To consume the module from your own configuration, pin a release tag
-(see [Releases](https://github.com/mbologna/k3s-oci/releases) and `CHANGELOG.md`):
+To consume the module from your own configuration, pin a release tag; the
+[Releases](https://github.com/mbologna/k3s-oci/releases) page lists them with their notes.
+[![Latest release](https://img.shields.io/github/v/release/mbologna/k3s-oci)](https://github.com/mbologna/k3s-oci/releases/latest)
 
 ```hcl
 module "k3s" {
-  source = "github.com/mbologna/k3s-oci?ref=v1.1.0" # x-release-please-version
+  source = "github.com/mbologna/k3s-oci?ref=vX.Y.Z" # the latest release tag
   # ... see example/main.tf for the full variable list
 }
 ```

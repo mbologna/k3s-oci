@@ -10,8 +10,6 @@ name: CI
       - "scripts/**"
       - "example/**"
       - ".github/**"
-      - "release-please-config.json"
-      - ".release-please-manifest.json"
       - ".tflint.hcl"
       - ".terraform-docs.yml"
       - "README.md"
