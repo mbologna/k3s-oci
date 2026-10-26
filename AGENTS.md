@@ -99,7 +99,6 @@ scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
 scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
-CHANGELOG.md     — release notes up to v1.1.0; later ones are on the GitHub Releases page
 SECURITY.md      — supported versions + vulnerability reporting
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
 .tflint.hcl / .trivyignore       — tflint rules; accepted Trivy findings (each with a justification)
@@ -239,10 +238,12 @@ terraform-docs .
   preset sets it to `true`, which let Renovate count its own stability-days check as green and
   automerge before the CI run had even started. Do not remove the override.
 - Releases are cut by [auto-release](https://github.com/mbologna/auto-release)
-  (`.github/workflows/release.yml`, `strategy: commits`) every Monday at 06:00 UTC, like every
-  other repository: if anything landed on `main` since the last tag, it tags the next version and
-  publishes the GitHub release. `feat:` → minor, `!` / `BREAKING CHANGE:` → major, anything else →
-  patch. Write commit subjects as changelog entries.
+  (`.github/workflows/release.yml`, `strategy: conventional`) every Monday at 06:00 UTC, like every
+  other repository: if a `feat:`, `fix:`, `perf:`, `revert:` or breaking commit landed on `main`
+  since the last tag, it tags the next version and publishes the GitHub release; chores (Renovate's
+  `chore(deps)` updates among them) ship with the next such release. A push that brings a Renovate
+  `fix(security):` update releases at once. `feat:` → minor, `!` / `BREAKING CHANGE:` → major,
+  anything else → patch. Write commit subjects as changelog entries.
 - There is no release PR and nothing is committed back to `main`. Running the Release workflow by
   hand on `main` (*Actions → Release → Run workflow*) releases at once; with `dry_run` on it only
   shows the next version and its notes in the job summary.
@@ -251,7 +252,8 @@ terraform-docs .
   bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
   merges it once the pinned Envoy Gateway release bundles that minor.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
-  on GitHub after it is published. `CHANGELOG.md` is history only; do not add new releases to it.
+  on GitHub after it is published. The Releases page is the whole history; there is no
+  `CHANGELOG.md`.
 
 ## Troubleshooting scripts
 
