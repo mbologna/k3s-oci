@@ -230,10 +230,11 @@ terraform-docs .
 
 ## Releases and branch protection
 
-- `main` is protected by the `main` ruleset: no force-push, no deletion; repository admins bypass
-  it. It deliberately does not require status checks: it could not exempt `GITHUB_TOKEN` (personal
-  repos cannot add the GitHub Actions app as a bypass actor), which would reject the terraform-docs
-  job's README auto-commit to `main`.
+- `main` is always releasable and protected by the `main` ruleset, with no bypass, admins
+  included: changes arrive only through a pull request, squash-merged, once the `terraform / …`
+  checks and `pr-title / Conventional PR title` pass; no force-push, no deletion. The squash
+  commit's subject is the PR title, which auto-release reads, so PR titles are Conventional
+  Commits. No workflow commits to `main` (the terraform-docs README auto-commit is off).
 - Renovate waits for CI because `renovate.json` sets `internalChecksAsSuccess: false`. The shared
   preset sets it to `true`, which let Renovate count its own stability-days check as green and
   automerge before the CI run had even started. Do not remove the override.
