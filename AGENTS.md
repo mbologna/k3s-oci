@@ -239,13 +239,13 @@ terraform-docs .
   preset sets it to `true`, which let Renovate count its own stability-days check as green and
   automerge before the CI run had even started. Do not remove the override.
 - Releases are cut by [auto-release](https://github.com/mbologna/auto-release)
-  (`.github/workflows/release.yml`, `strategy: conventional`). Every push to `main` that brings a
-  release-worthy commit tags the next version and publishes the GitHub release:
-  `fix:` / `perf:` / `revert:` → patch, `feat:` → minor, `!` / `BREAKING CHANGE:` → major;
-  `docs:`, `chore:` and `ci:` alone do not release. Write commit subjects as changelog entries.
-- There is no release PR and nothing is committed back to `main`. Running the Release workflow
-  by hand (*Actions → Release → Run workflow*, `dry_run` on) shows the next version and its notes
-  in the job summary without tagging.
+  (`.github/workflows/release.yml`, `strategy: commits`) every Monday at 06:00 UTC, like every
+  other repository: if anything landed on `main` since the last tag, it tags the next version and
+  publishes the GitHub release. `feat:` → minor, `!` / `BREAKING CHANGE:` → major, anything else →
+  patch. Write commit subjects as changelog entries.
+- There is no release PR and nothing is committed back to `main`. Running the Release workflow by
+  hand on `main` (*Actions → Release → Run workflow*) releases at once; with `dry_run` on it only
+  shows the next version and its notes in the job summary.
 - `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
   (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`), so the variable only matters at
   bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
