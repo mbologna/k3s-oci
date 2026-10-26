@@ -1,12 +1,16 @@
 name: Release
 
-# Monday 06:00 UTC, like every other repository: tags the next version when
-# anything landed on main since the last tag, and publishes the GitHub release
-# with notes grouped by commit type (https://github.com/mbologna/auto-release).
-# Run it by hand on main to release at once, or with dry_run to preview.
-# Nothing builds on tags here, so no tag build is dispatched.
+# Monday 06:00 UTC, like every other repository: tags the next version when a
+# feat, fix, perf, revert or breaking commit landed on main since the last tag,
+# and publishes the GitHub release with notes grouped by commit type
+# (https://github.com/mbologna/auto-release). A push releases at once only a
+# fix(security) update. Run it by hand on main to release at once, or with
+# dry_run to preview. Nothing builds on tags here, so no tag build is dispatched.
 
 "on":
+  # A push releases only a CVE fix (security strategy); the rest waits for Monday.
+  push:
+    branches: [main]
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -25,14 +29,18 @@ concurrency:
 
 jobs:
   auto-release:
+    # Monday's schedule and a manual run release with the strategy below; a push
+    # to the default branch releases only a CVE fix (the wrapper switches to the
+    # security strategy). The tag build auto-release dispatches runs on the tag
+    # ref, so it does not release again.
     if: >-
       github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' &&
+      ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     permissions:
       contents: write
-    uses: mbologna/.github/.github/workflows/auto-release.yml@38f7ca7d59dad7be2dfd5607f8758cd51bb41dd2 # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@31ef9e1806fb2404b1e83e71cdb3838a2c56b5c1 # main
     with:
-      strategy: commits
+      strategy: conventional
       dispatch_tag_build: false
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}

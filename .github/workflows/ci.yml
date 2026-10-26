@@ -13,7 +13,6 @@ name: CI
       - ".tflint.hcl"
       - ".terraform-docs.yml"
       - "README.md"
-      - "CHANGELOG.md"
       - "AGENTS.md"
       - "Justfile"
       - "renovate.json"
@@ -34,7 +33,7 @@ permissions:
 
 jobs:
   terraform:
-    uses: mbologna/.github/.github/workflows/terraform-ci.yml@6c207d5ba5eabca643dac178f268fc378b18243f # main
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@31ef9e1806fb2404b1e83e71cdb3838a2c56b5c1 # main
     with:
       terraform_version: "~> 1.9"
       opentofu_version: "1.9.1"
@@ -62,7 +61,7 @@ jobs:
 
   cache-cleanup:
     if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/cache-cleanup.yml@6c207d5ba5eabca643dac178f268fc378b18243f # main
+    uses: mbologna/.github/.github/workflows/cache-cleanup.yml@31ef9e1806fb2404b1e83e71cdb3838a2c56b5c1 # main
     with:
       max_age_days: 7
     permissions:
