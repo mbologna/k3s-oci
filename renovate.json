@@ -6,14 +6,13 @@
   "internalChecksAsSuccess": false,
   "packageRules": [
     {
-      "description": "Group all Terraform provider updates into one PR; require manual review: a provider bump can change how the OCI resources plan, and only a tofu plan against the live tenancy shows whether it replaces an Always Free instance. Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider left every provider PR ungrouped and automerged.",
+      "description": "Terraform providers: manual review. A provider bump can change how the OCI resources plan, and only a tofu plan against the live tenancy shows whether it replaces an Always Free instance. The shared preset groups patch and minor provider updates into one weekly PR (Terraform providers). Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider would leave them automerging.",
       "matchManagers": [
         "terraform"
       ],
       "matchDepTypes": [
         "required_provider"
       ],
-      "groupName": "terraform providers",
       "automerge": false,
       "labels": ["dependencies", "manual-review"]
     },
@@ -30,6 +29,20 @@
       "labels": ["dependencies", "manual-review"],
       "prBodyNotes": [
         "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API minor (sigs.k8s.io/gateway-api in its go.mod) before merging."
+      ]
+    },
+    {
+      "description": "Helm charts the gitops apps pin (argo-cd, cert-manager, envoy gateway, external-secrets, external-dns, longhorn, tailscale, ...): one PR a week, opened before 09:00 UTC on Monday, like the preset's other weekly groups. They were 29 separate PRs in two months, argo-cd alone 18. A merge changes only what a new cluster bootstraps with. Patch and minor only: a major keeps its own PR and manual review.",
+      "matchDatasources": [
+        "helm"
+      ],
+      "matchUpdateTypes": [
+        "patch",
+        "minor"
+      ],
+      "groupName": "helm charts",
+      "schedule": [
+        "before 9am on monday"
       ]
     }
   ],
