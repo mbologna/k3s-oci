@@ -119,6 +119,10 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true  # required for CRD resources with large annotations
+      # Without it ignoreDifferences only hides the diff: every sync still writes
+      # the chart's empty caBundle back over the one cainjector set, and the
+      # webhook rejects calls until cainjector refills it.
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
