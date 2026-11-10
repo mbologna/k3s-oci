@@ -129,6 +129,128 @@ spec:
               memory: 32Mi
             limits:
               memory: 64Mi
+          # Alerts, off until you add a notifier and a subscription: the templates
+          # and triggers below do nothing without one. To turn them on, add under
+          # `notifications:` and keep the webhook URL (it usually embeds a token)
+          # in a Secret you manage; the chart's own argocd-notifications-secret
+          # is empty, and Argo CD's self-heal would wipe a URL patched into it:
+          #
+          #   secret:
+          #     create: false
+          #   notifiers:
+          #     service.webhook.alerts: |
+          #       url: $alerts-url
+          #       headers:
+          #         - name: Content-Type
+          #           value: application/json
+          #   subscriptions:
+          #     - recipients:
+          #         - alerts
+          #       triggers:
+          #         - on-health-degraded
+          #         - on-health-recovered
+          #         - on-sync-failed
+          #
+          #   kubectl -n argocd create secret generic argocd-notifications-secret \
+          #     --from-literal=alerts-url='https://your-receiver.example/...'
+          #
+          # Each message carries the text as title/body (Apprise API), text
+          # (Slack, Mattermost), content (Discord) and message (Gotify).
+          templates:
+            # Names the unhealthy child resources, not just the app. A parent rolls
+            # up to Degraded even when the culprit child is Missing or
+            # Progressing, so anything not Healthy is listed; Argo CD omits
+            # .health from Healthy resources. Conditions and a failed operation
+            # carry the rest (ComparisonError, SyncError, a stuck sync).
+            template.app-degraded: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $degraded := list -}}
+                    {{- range .app.status.resources -}}
+                      {{- if and .health (ne .health.status "Healthy") -}}
+                        {{- $degraded = append $degraded (printf "• %s %s/%s [%s] %s" .kind (default "-" .namespace) .name .health.status (default "" .health.message)) -}}
+                      {{- end -}}
+                    {{- end -}}
+                    {{- $conds := list -}}
+                    {{- range .app.status.conditions -}}
+                      {{- $conds = append $conds (printf "• %s: %s" .type (default "" .message)) -}}
+                    {{- end -}}
+                    {{- $detail := "No child resource reported unhealthy; see the conditions." -}}
+                    {{- if $degraded -}}
+                      {{- $detail = printf "Unhealthy resources:\n%s" (join "\n" $degraded) -}}
+                    {{- end -}}
+                    {{- if $conds -}}
+                      {{- $detail = printf "%s\n\nConditions:\n%s" $detail (join "\n" $conds) -}}
+                    {{- end -}}
+                    {{- if and .app.status.operationState (ne (default "" .app.status.operationState.phase) "Succeeded") -}}
+                      {{- $detail = printf "%s\n\nOperation: %s %s" $detail .app.status.operationState.phase (default "" .app.status.operationState.message) -}}
+                    {{- end -}}
+                    {{- $title := printf "ArgoCD: %s is Degraded" .app.metadata.name -}}
+                    {{- $body := printf "%s (health=%s, sync=%s)\n\n%s" .app.metadata.name .app.status.health.status .app.status.sync.status $detail -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "failure",
+                     "text": {{ printf "%s\n%s" $title $body | toJson }},
+                     "content": {{ printf "%s\n%s" $title $body | toJson }},
+                     "message": {{ toJson $body }}}
+            template.app-recovered: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $title := printf "ArgoCD: %s recovered" .app.metadata.name -}}
+                    {{- $body := printf "%s is Healthy again after a Degraded alert (sync=%s)." .app.metadata.name .app.status.sync.status -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "success", "text": {{ toJson $body }}, "content": {{ toJson $body }}, "message": {{ toJson $body }}}
+            template.app-sync-failed: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $title := printf "ArgoCD: %s sync %s" .app.metadata.name .app.status.operationState.phase -}}
+                    {{- $body := printf "%s at %s\n\n%s" .app.metadata.name (default "?" .app.status.sync.revision) (default "(no message)" .app.status.operationState.message) -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "failure",
+                     "text": {{ printf "%s\n%s" $title $body | toJson }},
+                     "content": {{ printf "%s\n%s" $title $body | toJson }},
+                     "message": {{ toJson $body }}}
+          triggers:
+            # The controller records each delivery in the app's
+            # notified.notifications.argoproj.io annotation, keyed
+            # "<trigger>:[0].<sha1 of when>:...", and drops a record once its
+            # `when` is false. on-health-degraded holds its record until
+            # on-health-recovered has been delivered: through Progressing (a fix
+            # that rolls out still reaches the recovery) and through Healthy (a
+            # recovery whose send fails is retried on the next pass). app-of-apps
+            # is excluded: it only rolls up a child that alerts on its own.
+            #
+            # Editing either `when` orphans the records under the old hash; a
+            # leftover "on-health-degraded:" key sends one false Degraded alert
+            # and then mutes that app's recoveries, so strip it:
+            #   kubectl -n argocd annotate app <app> notified.notifications.argoproj.io-
+            trigger.on-health-degraded: |
+              - description: Application health is Degraded, until it is Healthy again (leaf apps only)
+                send:
+                  - app-degraded
+                when: >-
+                  app.metadata.name not in ['app-of-apps'] and
+                  (app.status.health.status == 'Degraded' or
+                  (((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-degraded:' and
+                  not (((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-recovered:')))
+            # The all-clear for a Degraded alert, and only for one: a plain Healthy
+            # trigger would fire after every rollout and CronJob run.
+            trigger.on-health-recovered: |
+              - description: Application is Healthy again after a Degraded alert
+                send:
+                  - app-recovered
+                when: app.status.health.status == 'Healthy' and ((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-degraded:'
+            # A failed sync can leave health Healthy (the old resources keep
+            # running), so on-health-degraded alone misses it. oncePer: the
+            # retry policy re-runs a failing sync; alert once per git revision.
+            trigger.on-sync-failed: |
+              - description: Application sync failed
+                oncePer: app.status.sync.revision
+                send:
+                  - app-sync-failed
+                when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
         dex:
           affinity:
             nodeAffinity:

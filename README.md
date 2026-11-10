@@ -420,7 +420,7 @@ lock does not cover those drains, so kured is configured to wait while an upgrad
 a node that dies mid-reboot cannot block every later reboot, and a drain stuck on a
 PodDisruptionBudget gives up after 15 minutes and is retried at the next check.
 
-This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
+This keeps the cluster patched with no manual intervention, one node at a time. It is not zero-downtime: a drain restarts every single-replica pod on that node somewhere else, and while the control-plane node reboots the Kubernetes API is down. Run two replicas spread across the nodes ([Resilience](#resilience-spread-replicas-across-nodes)) for anything that must stay up through the nightly window.
 
 ## Dependency updates (Renovate)
 
@@ -539,12 +539,13 @@ instance_principal External Secrets store needs the whole compartment (see `exte
 
 | Component | Tolerance | What happens on failure |
 |---|---|---|
-| **Worker node failure** | ✅ Full | Workloads reschedule to control-plane (taints removed); Longhorn (2 replicas) keeps storage up |
+| **Worker node failure** | ⚠️ Partial | Workloads reschedule to the control plane *if their CPU/memory requests fit* in what it has left after k3s itself and etcd; the rest wait Pending until the worker returns. Longhorn (2 replicas) keeps storage up. Keep the control plane's requests well under its allocatable if you need the worker's workloads to fit there |
 | **Control-plane failure** | ❌ None | Single etcd node, cluster becomes unavailable; restore from etcd snapshot |
 | **HTTP/HTTPS ingress** | ✅ Worker loss | Envoy Gateway DaemonSet on control-plane keeps ingress up |
 | **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
 | **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
 | **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
+| **Planned reboots / k3s upgrades** | ⚠️ Brief | One node at a time, but every single-replica pod on the drained node restarts elsewhere (a short outage each), and while the control plane reboots the API is down: nothing reschedules and Argo CD can't sync. A node left cordoned after a failed upgrade is not reported unless you enable `gitops/node-cordon-alert/` |
 | **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
 | **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
 

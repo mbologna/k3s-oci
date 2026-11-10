@@ -64,6 +64,7 @@ gitops/
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
 ├── priority-classes/                 # PriorityClasses: platform-critical, worker-pinned
+├── node-cordon-alert/                # Opt-in: webhook alert when a node stays cordoned (copy application-template.yaml to apps/)
 ├── system-upgrade/                   # system-upgrade-controller (remote manifests via kustomize) + k3s upgrade Plans
 │   ├── kustomization.yaml
 │   └── plans.yaml

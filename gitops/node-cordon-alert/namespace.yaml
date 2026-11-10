@@ -1,0 +1,7 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: node-cordon-alert
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
