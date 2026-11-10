@@ -563,6 +563,7 @@ detect_first_server
 resolve_k3s_token
 
 install_k3s_server
+setup_flannel_fdb_fix
 
 # Install etcd snapshot upload cron on ALL server nodes (not just the first).
 # The cron runs every 6h: 'k3s etcd-snapshot save' + upload to OCI Object Storage.
