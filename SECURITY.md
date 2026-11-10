@@ -44,5 +44,13 @@ Out of scope:
   Always Free) and have nodes fetch them at boot via instance_principal — secrets are never
   embedded in user-data. With `enable_vault = false` (the default is `true`), the trade-off is accepted
   given the private-subnet placement and OCI NSG boundary.
+- **Pods and the instance metadata service**: every node's instance-principal identity is one
+  HTTP request away at 169.254.169.254:80. With it a pod could read the boot secrets in OCI Vault
+  and write to the state bucket. The NetworkPolicies (`gitops/network-policies/`) keep
+  169.254.0.0/16 out of every egress rule that would otherwise allow port 80 (Envoy Gateway's
+  backends, cert-manager's HTTP-01 self-check, CoreDNS), and CoreDNS keeps only the OCI resolver
+  (169.254.169.254:53). The `external-secrets` namespace is the deliberate exception: its
+  ClusterSecretStore authenticates with instance principal. Namespaces you add start from
+  default-deny; open 169.254.0.0/16 only to workloads that need the node's identity.
 - **Self-signed bootstrap CA**: k3s generates its own cluster CA at bootstrap time.
   Rotate it if the cluster is long-lived and you require compliance with your CA policy.
