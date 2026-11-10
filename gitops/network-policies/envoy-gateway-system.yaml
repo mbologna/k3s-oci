@@ -87,7 +87,14 @@ spec:
   policyTypes:
     - Egress
   egress:
-    - ports:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            # Not the OCI instance metadata service (169.254.169.254:80): a pod
+            # that reaches it gets the node's instance-principal identity.
+            except:
+              - 169.254.0.0/16
+      ports:
         - protocol: TCP
           port: 80
         - protocol: TCP

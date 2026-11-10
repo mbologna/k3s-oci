@@ -34,7 +34,24 @@ spec:
         - port: 53
           protocol: TCP
   egress:
-    - {}  # CoreDNS needs to forward to upstream resolvers
+    # CoreDNS forwards to the node's upstream resolvers and watches the kube API.
+    # Everything except 169.254.0.0/16: the OCI instance metadata service lives
+    # there (169.254.169.254:80), and a pod that reaches it gets the node's
+    # instance-principal identity, enough to read the boot secrets in OCI Vault.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+    # ...except the OCI VCN resolver, which is the nodes' upstream DNS.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
 ---
 # metrics-server: k3s bundles metrics-server with label k8s-app:metrics-server
 # (not app.kubernetes.io/name). It serves on --secure-port=10250 (the k3s default).
