@@ -18,6 +18,17 @@
 # Example:
 #   version: v1.31.4+k3s1   # renovate: datasource=github-releases depName=k3s-io/k3s
 #   channel: ""
+#
+# Upgrade window: 23:00-23:59 UTC, every night. Without a window SUC cordons and
+# drains a node whenever a release reaches the channel, at any hour. The window
+# sits before every other nightly job: the etcd snapshot (00:00, files/lib/
+# common.sh), the Longhorn backup (00:30, files/lib/k3s-secrets.sh), the package
+# runs (00:30 and 01:00 plus jitter, files/lib/bootstrap-*.sh) and kured's
+# reboot window (02:15-04:15, gitops/apps/kured.yaml). SUC only starts Jobs
+# inside the window; one that overruns is safe, since kured stands down while an
+# upgrade Job exists (its blockingPodSelector). UTC like the rest of the chain.
+# Narrow 'days' to match kured's rebootDays if you would rather not drain on
+# other nights; k3s patch releases often carry security fixes.
 apiVersion: upgrade.cattle.io/v1
 kind: Plan
 metadata:
@@ -30,6 +41,11 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/control-plane: "true"
+  window:
+    days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+    startTime: "23:00"
+    endTime: "23:59"
+    timeZone: UTC
   serviceAccountName: system-upgrade
   cordon: true
   drain:
@@ -59,6 +75,12 @@ spec:
   nodeSelector:
     matchExpressions:
       - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+  # Same window as k3s-server above.
+  window:
+    days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+    startTime: "23:00"
+    endTime: "23:59"
+    timeZone: UTC
   serviceAccountName: system-upgrade
   cordon: true
   drain:

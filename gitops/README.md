@@ -12,6 +12,7 @@ gitops/
 │   ├── argocd-config.yaml            # ArgoCD supplementary config (BackendTrafficPolicy rate-limit)
 │   ├── argocd-image-updater.yaml     # ArgoCD Image Updater Helm release
 │   ├── cert-manager.yaml             # cert-manager Helm release
+│   ├── coredns.yaml                  # CoreDNS replica count (gitops/coredns/)
 │   ├── envoy-gateway.yaml            # Envoy Gateway Helm release (OCI registry)
 │   ├── gateway-config.yaml           # Envoy Gateway config manifests (gitops/gateway/)
 │   ├── kured.yaml                    # kured Helm release
@@ -21,6 +22,8 @@ gitops/
 │   └── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
 ├── argocd/                           # ArgoCD supplementary config
 │   └── rate-limit.yaml               # Envoy Gateway BackendTrafficPolicy (100 req/s/IP for ArgoCD UI)
+├── coredns/                          # HPA pinning k3s's CoreDNS at 2 replicas, one per node
+│   └── hpa.yaml
 ├── cert-manager/                     # ClusterIssuer templates (see adoption notes)
 │   ├── cluster-issuers.yaml          # Template — update email before using
 │   ├── application-template.yaml    # Copy to apps/cert-manager-issuers.yaml after updating email
@@ -108,6 +111,7 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 | All `gitops/gateway/` resources | ArgoCD (`apps/gateway-config.yaml`) | Pure Kubernetes manifests, no runtime values |
 | All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
 | All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |
+| `gitops/coredns/` HPA | ArgoCD (`apps/coredns.yaml`) | Pure Kubernetes manifests |
 
 **Key rule**: if a resource needs a value that only exists after `tofu apply` (IP addresses, OCIDs, passwords), it goes in cloud-init. Everything else goes in `gitops/`.
 

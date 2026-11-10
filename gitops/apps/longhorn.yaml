@@ -40,6 +40,15 @@ spec:
             # after each chart bump. Otherwise volumes stay on the old engine image
             # (live-upgradable with 2 healthy replicas) and old images pile up.
             concurrentAutomaticEngineUpgradePerNodeLimit: 1
+            # One replica rebuild per node at a time (default 5). On a 1-OCPU A1.Flex
+            # node with network-attached block storage, parallel rebuilds after a
+            # node returns saturate the disk (80% iowait seen): etcd loses leader
+            # election and k3s crash-loops. Rebuilds still finish, one by one.
+            concurrentReplicaRebuildPerNodeLimit: 1
+            # Let recurring jobs attach a detached volume, back it up and detach it.
+            # The default skips detached volumes, so a PVC mounted only by a CronJob
+            # never gets a backup, and nothing reports it.
+            allowRecurringJobWhileVolumeDetached: true
           persistence:
             # Make longhorn the default StorageClass so PVCs without explicit
             # storageClassName are satisfied automatically.

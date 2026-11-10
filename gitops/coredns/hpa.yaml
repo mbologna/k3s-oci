@@ -1,0 +1,32 @@
+---
+# Two CoreDNS replicas, one per node. k3s's CoreDNS manifest sets no replica
+# count, so the cluster runs one, and it can land on the busy 1-OCPU worker.
+# There its health endpoint can take over a second under load: it fails its 1 s
+# liveness probe and restarts, and every lookup in the cluster fails meanwhile.
+# k3s's own topologySpreadConstraints (maxSkew 1 per hostname) put the second
+# replica on the other node, so a node reboot or a busy node no longer takes
+# DNS down.
+#
+# An HPA rather than a patch: k3s owns the Deployment (it re-applies its
+# manifest) but not spec.replicas, and an HPA is a complete object Argo CD can
+# own. min = max: the target is a fixed count; the CPU metric (k3s's built-in
+# metrics-server) only satisfies the API.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: coredns
+  namespace: kube-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: coredns
+  minReplicas: 2
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80

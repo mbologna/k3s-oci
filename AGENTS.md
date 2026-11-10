@@ -86,6 +86,7 @@ gitops/apps/                 — ArgoCD Application manifests (App of Apps patte
 gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only)
 gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
 gitops/pdbs/                 — PodDisruptionBudgets for ArgoCD / cert-manager (pdbs.yaml App)
+gitops/coredns/              — HPA pinning k3s's CoreDNS at 2 replicas, one per node (coredns.yaml App)
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
 gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
 gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)
