@@ -46,19 +46,39 @@ spec:
             - tue
             - wed
             - thu
+          # Check every 10 min, not the chart's 1 h: with two nodes taking turns in
+          # a 2 h window, an hourly check can push the second node to the next
+          # reboot day.
+          period: 10m
+          # A node that dies mid-drain or mid-reboot otherwise holds the lock
+          # forever and blocks every later reboot (no TTL by default).
+          lockTtl: 2h
+          # Give up on a drain stuck on a PodDisruptionBudget instead of hanging
+          # the whole window; the node is uncordoned and retried at the next check.
+          drainTimeout: 15m
+        # A preempted kured can't release its lock or finish a drain. Built in,
+        # so it needs no PriorityClass of its own.
+        priorityClassName: system-cluster-critical
         resources:
           requests:
             cpu: 10m
             memory: 32Mi
           limits:
             memory: 64Mi
+        # The chart's default probe timeouts flap on a 1-OCPU node at full CPU
+        # requests: scheduling latency alone can exceed them, and the restarts
+        # snowballed into days of CrashLoopBackOff on a cluster built from this
+        # module.
+        livenessProbe:
+          timeoutSeconds: 15
+          failureThreshold: 8
+        readinessProbe:
+          timeoutSeconds: 15
+          failureThreshold: 8
+        # Every taint: kured has to run on every node it may need to reboot,
+        # including a worker tainted NoSchedule (gitops/longhorn/taint-toleration.yaml).
         tolerations:
-          - key: node-role.kubernetes.io/control-plane
-            operator: Exists
-            effect: NoSchedule
-          - key: node-role.kubernetes.io/etcd
-            operator: Exists
-            effect: NoSchedule
+          - operator: Exists
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system

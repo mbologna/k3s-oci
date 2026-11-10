@@ -413,9 +413,12 @@ kured only reboots on Tuesday, Wednesday and Thursday between 02:15 and 04:15 UT
 timers have finished (`gitops/apps/kured.yaml`). Every schedule the module creates is in UTC, so that
 order cannot change at a daylight-saving switch.
 
-k3s itself is upgraded by system-upgrade-controller, which drains nodes as soon as a new release
-reaches the channel. kured's lock does not cover those drains, so kured is configured to wait while
-an upgrade Job is running (`blockingPodSelector: [upgrade.cattle.io/plan]`).
+k3s itself is upgraded by system-upgrade-controller, one node at a time, in a nightly window
+(23:00-23:59 UTC, `gitops/system-upgrade/plans.yaml`) that ends before every other nightly job. kured's
+lock does not cover those drains, so kured is configured to wait while an upgrade Job is running
+(`blockingPodSelector: [upgrade.cattle.io/plan]`). kured's lock expires after 2 hours (`lockTtl`), so
+a node that dies mid-reboot cannot block every later reboot, and a drain stuck on a
+PodDisruptionBudget gives up after 15 minutes and is retried at the next check.
 
 This keeps the cluster fully patched with zero manual intervention and no concurrent downtime.
 
