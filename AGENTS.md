@@ -70,7 +70,7 @@ files/server-vars.sh.tpl          — cloud-init header for servers: ONLY file w
 files/agent-vars.sh.tpl           — cloud-init header for agents: ONLY file with Terraform ${var} syntax
 files/kubeconfig-hint-bastion.tpl     — kubeconfig retrieval instructions when bastion is enabled
 files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when bastion is disabled
-files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs(), install_oci_cli(), install_helm(), resolve_flannel_params()
+files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs() (iscsid timeout, multipathd blacklist), setup_flannel_fdb_fix(), install_oci_cli(), install_helm(), resolve_flannel_params()
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
 files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point

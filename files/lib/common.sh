@@ -31,8 +31,126 @@ setup_shared_ssh_host_key() {
 # -- Longhorn prerequisites ----------------------------------------------------
 
 configure_longhorn_prereqs() {
-  systemctl enable --now iscsid.service
+  # Stale iSCSI sessions: Longhorn opens a session per volume to the pod IP of
+  # the current replica. When that replica moves (an instance-manager restart,
+  # a k3s upgrade), the old session keeps reconnecting to an IP that is gone,
+  # and iscsid refuses to log it out mid-reconnect. With the stock
+  # replacement_timeout of 6000 s (100 min) the volume can't attach on its new
+  # engine for that long; a PVC stayed "attaching" for over an hour. 120 s lets
+  # the dead session go so the new one takes over.
+  if grep -q '^node.session.timeo.replacement_timeout' /etc/iscsi/iscsid.conf 2>/dev/null; then
+    sed -i 's/^node.session.timeo.replacement_timeout.*/node.session.timeo.replacement_timeout = 120/' \
+      /etc/iscsi/iscsid.conf
+  else
+    echo 'node.session.timeo.replacement_timeout = 120' >>/etc/iscsi/iscsid.conf
+  fi
+
+  # Keep multipathd off Longhorn volumes: every Longhorn iSCSI disk reports the
+  # same vendor/product (IET VIRTUAL-DISK) and WWID. With find_multipaths "on"
+  # (Ubuntu's default) multipathd takes two attached Longhorn volumes for two
+  # paths to one LUN and from then on wraps each new one in an mpath device;
+  # the CSI mount of the raw device then fails ("already mounted or mount
+  # point busy") and the pod hangs in ContainerCreating. The OCI boot volume is
+  # not multipathed, so blacklisting only Longhorn's disks changes nothing
+  # else. A conf.d drop-in leaves the distribution's multipath.conf alone.
+  mkdir -p /etc/multipath/conf.d
+  cat >/etc/multipath/conf.d/longhorn.conf <<'EOF'
+# Written by k3s-oci cloud-init: keep multipathd off Longhorn's iSCSI disks.
+blacklist {
+    device {
+        vendor "IET"
+        product "VIRTUAL-DISK"
+    }
+}
+EOF
+  if systemctl is-active --quiet multipathd.service; then
+    systemctl reload multipathd.service || systemctl restart multipathd.service || true
+  fi
+
+  systemctl enable iscsid.service
+  systemctl restart iscsid.service
   modprobe nfs || true
+}
+
+# -- flannel VXLAN FDB self-heal -----------------------------------------------
+# A missing flannel.1 forwarding-database entry silently drops outbound VXLAN
+# traffic: routing and DNAT succeed locally, the packet never leaves the node.
+# It broke DNS for every pod on a cluster built from this module, and the kernel
+# doesn't reliably rebuild the entry. A timer re-applies each peer's entry
+# every 5 minutes, idempotently. Peers come from the flannel node annotations
+# (VtepMAC in backend-data, underlay IP in public-ip), read with k3s's embedded
+# flannel kubeconfig, which exists on servers and agents and may list nodes.
+
+setup_flannel_fdb_fix() {
+  cat >/usr/local/bin/flannel-fdb-fix.sh <<'EOF'
+#!/bin/sh
+# Written by k3s-oci cloud-init: re-apply missing flannel.1 FDB entries.
+set -eu
+KC=/var/lib/rancher/k3s/agent/k3scontroller.kubeconfig
+ip link show flannel.1 >/dev/null 2>&1 || { echo "flannel-fdb-fix: flannel.1 not found, skipping" >&2; exit 0; }
+[ -r "$KC" ] || { echo "flannel-fdb-fix: $KC not found, skipping" >&2; exit 0; }
+SELF_MAC=$(cat /sys/class/net/flannel.1/address)
+# Captured first: in a pipeline a kubectl failure would go unnoticed (no pipefail in sh).
+PEERS=$(k3s kubectl --kubeconfig "$KC" get nodes -o jsonpath='{range .items[*]}{.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip} {.metadata.annotations.flannel\.alpha\.coreos\.com/backend-data}{"\n"}{end}')
+printf '%s\n' "$PEERS" | while read -r ip data; do
+    mac=$(printf '%s' "$data" | sed -n 's/.*"VtepMAC":"\([^"]*\)".*/\1/p')
+    [ -n "$ip" ] && [ -n "$mac" ] && [ "$mac" != "$SELF_MAC" ] || continue
+    if bridge fdb show dev flannel.1 | grep -qi "^$mac dst $ip "; then
+        echo "flannel-fdb-fix: $mac dst $ip already present"
+    else
+        bridge fdb replace "$mac" dst "$ip" dev flannel.1
+        echo "flannel-fdb-fix: added missing entry $mac dst $ip"
+    fi
+done
+EOF
+  chmod 0755 /usr/local/bin/flannel-fdb-fix.sh
+
+  cat >/etc/systemd/system/flannel-fdb-fix.service <<'EOF'
+[Unit]
+Description=Re-apply missing flannel VXLAN FDB entries (idempotent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/flannel-fdb-fix.sh
+# It only reads the node list through the API and rewrites flannel.1's FDB over
+# netlink: CAP_NET_ADMIN and a throwaway kubectl cache are all it needs.
+Environment=KUBECACHEDIR=/tmp/kube-cache
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryDenyWriteExecute=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+EOF
+
+  cat >/etc/systemd/system/flannel-fdb-fix.timer <<'EOF'
+[Unit]
+Description=Periodically re-apply missing flannel VXLAN FDB entries
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now flannel-fdb-fix.timer
 }
 
 # -- OCI CLI -------------------------------------------------------------------

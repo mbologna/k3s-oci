@@ -87,5 +87,6 @@ configure_longhorn_prereqs
 resolve_k3s_token needs_oci_cli
 
 install_k3s_agent
+setup_flannel_fdb_fix
 
 echo "==> k3s agent cloud-init complete at $(date -u)"
