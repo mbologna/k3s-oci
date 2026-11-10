@@ -18,41 +18,135 @@ spec:
         configs:
           params:
             server.insecure: true
+        # Placement. The disk-light parts that mostly talk to the API server
+        # (application controller, redis, notifications, dex, applicationset)
+        # prefer the control-plane node, leaving the worker to user workloads
+        # and batch jobs. Preferences, not requirements: with the control plane
+        # drained they run on the worker, and the descheduler
+        # (gitops/apps/descheduler.yaml) moves them back afterwards.
+        # argocd-server runs one replica per node instead, and repo-server, which
+        # writes to disk on every git fetch and render, prefers the worker:
+        # the control plane's boot volume is etcd's.
+        #
+        # Two argocd-server replicas, one per node (required anti-affinity), so a
+        # node reboot or drain leaves the UI, API and webhooks up. A drained
+        # replica waits Pending while the other serves, and the PDB in
+        # gitops/pdbs/ evicts one at a time. With one replica per node there is no
+        # node for a surge pod, so updates replace one replica at a time.
         server:
+          replicas: 2
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: argocd-server
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 64Mi
             limits:
               memory: 256Mi
         repoServer:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          # A manifest render or git fetch on a busy 1-OCPU node can take longer
+          # than the chart's 1 s probe timeouts; the kubelet then restarted
+          # repo-server in a loop. Startup also takes a while there.
+          livenessProbe:
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            timeoutSeconds: 10
+            failureThreshold: 5
           resources:
             requests:
               cpu: 100m
               memory: 128Mi
             limits:
               memory: 512Mi
-        applicationController:
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              memory: 1Gi
-        redis:
+        # The chart's key is `controller`; until this change these values sat
+        # under `applicationController`, which the chart ignores, so the
+        # controller ran with no requests or limits at all. 50m: it idles at a
+        # few millicores; the CPU limit keeps a sync storm from starving the
+        # API server on the control-plane node.
+        controller:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
           resources:
             requests:
               cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+        redis:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+          resources:
+            requests:
+              cpu: 10m
               memory: 32Mi
             limits:
               memory: 128Mi
         notifications:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
             limits:
               memory: 64Mi
+        dex:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+        applicationSet:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
