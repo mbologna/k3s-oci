@@ -32,12 +32,28 @@ spec:
                   priorityClassName: system-cluster-critical
                   containers:
                     - name: envoy
+                      # 40m (Envoy idles at a few millicores): one runs on each
+                      # node, and every request counts against what a drain can
+                      # move to the other node. The shutdown-manager adds 10m.
                       resources:
                         requests:
-                          cpu: 100m
+                          cpu: 40m
                           memory: 128Mi
                         limits:
                           memory: 256Mi
+                      # The default 1 s probe timeouts flap under scheduling latency
+                      # on a 1-OCPU node at full CPU requests, and readiness's
+                      # failureThreshold of 1 turns one slow answer into NotReady
+                      # (seen as days of CrashLoopBackOff on the control-plane
+                      # replica).
+                      startupProbe:
+                        timeoutSeconds: 5
+                      livenessProbe:
+                        timeoutSeconds: 5
+                        failureThreshold: 5
+                      readinessProbe:
+                        timeoutSeconds: 5
+                        failureThreshold: 3
       envoyService:
         type: NodePort
         patch:

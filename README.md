@@ -558,12 +558,14 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
 | **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **cert-manager** | ✅ | ✅ | Deployment: schedules on any node |
-| **ArgoCD** | ✅ | ✅ | Deployment: schedules on any node |
+| **cert-manager** | ✅ | ✅ | Deployment: prefers the control plane, runs on the worker while it is drained |
+| **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, dex, applicationset: prefer the control plane. repo-server: prefers the worker |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions, schedules on both nodes |
 
-> **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume.
+> **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume. Give them `priorityClassName: worker-pinned` (`gitops/priority-classes/`) too: after a drain of the control plane its pods sit on the worker and fill its CPU requests, and the class lets a worker-pinned pod preempt them instead of waiting Pending.
+>
+> **Pods go back where they prefer:** nothing moves a pod once it is running, so after kured or a k3s upgrade drains the control plane, the pods that prefer it stay on the worker. A nightly descheduler run (04:30 UTC, `gitops/apps/descheduler.yaml`) evicts a pod that sits off its preferred node when it fits there, and does nothing else.
 >
 > **Recommendation:** use `replicas ≥ 2` with [topologySpreadConstraints](#resilience-spread-replicas-across-nodes) to spread pods across nodes.
 

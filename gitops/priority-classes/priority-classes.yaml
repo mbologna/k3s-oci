@@ -1,0 +1,36 @@
+---
+# Pod priority classes. Pods without a class run at priority 0.
+#
+# worker-pinned: workloads with a *required* affinity to the worker, the ones
+# README "Node roles and workload placement" says to keep off the control plane
+# (CI runners, Renovate, image builds). Nothing rebalances pods right after a
+# drain: when kured or system-upgrade-controller drains the control plane, its
+# movable pods land on the worker and stay there until the nightly descheduler
+# run, filling the worker's CPU requests until a worker-pinned pod no longer
+# fits and waits Pending (every scheduled run missed its deadline on a cluster
+# built from this module). With this class such a pod preempts a priority-0
+# pod, which reschedules on the control plane. Give every worker-pinned
+# workload the same class, so none of them can preempt another (a Renovate
+# run evicting a CI runner mid-job would fail the job it waits on).
+#
+# platform-critical: cluster plumbing that is not system-* but that a failure
+# elsewhere hangs on, above worker-pinned on purpose: cert-manager (without it
+# no certificate renews). kured, Longhorn and Envoy Gateway use the built-in
+# system-cluster-critical.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: worker-pinned
+value: 1000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Pods required on the worker node (CI, Renovate); may preempt priority-0 pods there"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+value: 10000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Cluster plumbing that is not system-*: cert-manager"

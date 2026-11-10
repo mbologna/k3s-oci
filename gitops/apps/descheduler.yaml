@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: descheduler
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/descheduler/
+    chart: descheduler
+    # renovate: datasource=helm depName=descheduler registryUrl=https://kubernetes-sigs.github.io/descheduler/
+    targetRevision: "0.37.0"
+    helm:
+      valuesObject:
+        # Puts pods back on the node they prefer after a reboot. Nothing else
+        # rebalances: when kured or system-upgrade-controller drains the control
+        # plane, the pods that only *prefer* it (Argo CD's controller and redis,
+        # cert-manager) land on the worker and stay there. The next worker reboot
+        # then takes them down too, and a worker-pinned job has to preempt them to
+        # get its room back.
+        kind: CronJob
+        # Once a night, after kured's window (02:15-04:15 UTC) and the k3s upgrade
+        # window (23:00-23:59 UTC). An eviction restarts a single-replica pod, so
+        # not during the day.
+        schedule: "30 4 * * *"
+        timeZone: UTC
+        startingDeadlineSeconds: 600
+        successfulJobsHistoryLimit: 1
+        failedJobsHistoryLimit: 1
+        activeDeadlineSeconds: 600
+        # The chart default is system-cluster-critical, which could preempt
+        # workloads just to rebalance others. A run that can't be scheduled
+        # simply waits for the next night.
+        priorityClassName: ""
+        # The chart default is 500m, more than half of a node; one pass over the
+        # cluster's pods needs a fraction of that.
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: null  # drops the chart's 500m limit
+            memory: 128Mi
+        deschedulerPolicy:
+          profiles:
+            # Only this rule, not the chart's defaults (LowNodeUtilization,
+            # RemoveDuplicates, ...), which would shuffle pods on a cluster whose
+            # nodes both run near their CPU requests by design.
+            - name: return-to-preferred-node
+              pluginConfig:
+                - name: DefaultEvictor
+                  args:
+                    # Evict only a pod that fits on the node it prefers.
+                    nodeFit: true
+                    podProtections:
+                      # Argo CD's pods use emptyDir scratch volumes; nothing in
+                      # them outlives the pod anyway.
+                      defaultDisabled:
+                        - PodsWithLocalStorage
+                      # A Longhorn volume's detach/attach is what makes a move
+                      # slow, so leave pods with a PVC where they are.
+                      extraEnabled:
+                        - PodsWithPVC
+                - name: RemovePodsViolatingNodeAffinity
+                  args:
+                    nodeAffinityType:
+                      - preferredDuringSchedulingIgnoredDuringExecution
+              plugins:
+                deschedule:
+                  enabled:
+                    - RemovePodsViolatingNodeAffinity
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

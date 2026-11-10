@@ -13,12 +13,14 @@ gitops/
 │   ├── argocd-image-updater.yaml     # ArgoCD Image Updater Helm release
 │   ├── cert-manager.yaml             # cert-manager Helm release
 │   ├── coredns.yaml                  # CoreDNS replica count (gitops/coredns/)
+│   ├── descheduler.yaml              # Nightly descheduler: pods back to their preferred node
 │   ├── envoy-gateway.yaml            # Envoy Gateway Helm release (OCI registry)
 │   ├── gateway-config.yaml           # Envoy Gateway config manifests (gitops/gateway/)
 │   ├── kured.yaml                    # kured Helm release
 │   ├── longhorn.yaml                 # Longhorn Helm release
 │   ├── network-policies.yaml         # NetworkPolicies for all namespaces
 │   ├── pdbs.yaml                     # PodDisruptionBudgets for core components
+│   ├── priority-classes.yaml         # PriorityClasses (gitops/priority-classes/)
 │   └── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
 ├── argocd/                           # ArgoCD supplementary config
 │   └── rate-limit.yaml               # Envoy Gateway BackendTrafficPolicy (100 req/s/IP for ArgoCD UI)
@@ -61,6 +63,7 @@ gitops/
 │   └── system-upgrade.yaml           # system-upgrade namespace
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
+├── priority-classes/                 # PriorityClasses: platform-critical, worker-pinned
 ├── system-upgrade/                   # system-upgrade-controller (remote manifests via kustomize) + k3s upgrade Plans
 │   ├── kustomization.yaml
 │   └── plans.yaml
@@ -112,6 +115,8 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 | All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
 | All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |
 | `gitops/coredns/` HPA | ArgoCD (`apps/coredns.yaml`) | Pure Kubernetes manifests |
+| `gitops/priority-classes/` | ArgoCD (`apps/priority-classes.yaml`) | Pure Kubernetes manifests |
+| descheduler Helm | ArgoCD (`apps/descheduler.yaml`) | Helm chart, no runtime variables |
 
 **Key rule**: if a resource needs a value that only exists after `tofu apply` (IP addresses, OCIDs, passwords), it goes in cloud-init. Everything else goes in `gitops/`.
 

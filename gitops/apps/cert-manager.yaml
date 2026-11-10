@@ -20,6 +20,21 @@ spec:
             apiVersion: controller.config.cert-manager.io/v1alpha1
             kind: ControllerConfiguration
             enableGatewayAPI: true
+          # Above worker-pinned (gitops/priority-classes/): a batch job required on
+          # the worker must not preempt cert-manager, or certificates stop renewing.
+          global:
+            priorityClassName: platform-critical
+          # All three parts are light and talk to the API server: they prefer the
+          # control-plane node, run on the worker while it is drained, and the
+          # descheduler (gitops/apps/descheduler.yaml) moves them back.
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
           # Controller — issues certificates, manages ACME challenges
           resources:
             requests:
@@ -29,6 +44,14 @@ spec:
               memory: 64Mi
           # Webhook — validates and mutates cert-manager CRs; must be available for API calls
           webhook:
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    preference:
+                      matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
             resources:
               requests:
                 cpu: 10m
@@ -37,6 +60,14 @@ spec:
                 memory: 64Mi
           # cainjector — injects CA bundles into webhook configurations
           cainjector:
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    preference:
+                      matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
             resources:
               requests:
                 cpu: 10m
