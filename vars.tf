@@ -669,7 +669,7 @@ variable "argocd_chart_version" {
   type        = string
   description = "ArgoCD Helm chart version used for the bootstrap install. Must match gitops/apps/argocd.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "10.10.5"
+  default = "10.11.6"
 
   validation {
     condition     = length(var.argocd_chart_version) > 0 && can(regex("^[v0-9]", var.argocd_chart_version))
@@ -681,7 +681,7 @@ variable "external_secrets_chart_version" {
   type        = string
   description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
-  default = "2.13.0"
+  default = "2.14.0"
 
   validation {
     condition     = length(var.external_secrets_chart_version) > 0 && can(regex("^[v0-9]", var.external_secrets_chart_version))
