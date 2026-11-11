@@ -26,9 +26,12 @@ install_k3s_agent() {
   # Kubelet image GC at 70% instead of 85% — same reasoning as the server.
   install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
 
-  # Reserve what the k3s agent process uses (~100m CPU, ~700 MiB), like the
-  # server does for its own (see k3s-server.sh).
-  install_params+=("--kubelet-arg=system-reserved=cpu=100m,memory=768Mi")
+  # Reserve what the host uses outside pods, like the server (see k3s-server.sh):
+  # k3s-agent.service ~0.6 GiB (fewer shims than the server) plus ~0.45 GiB of
+  # other host services, measured on a 1 OCPU / 6 GB A1.Flex worker.
+  install_params+=("--kubelet-arg=system-reserved=cpu=100m,memory=1280Mi")
+  install_params+=("--kubelet-arg=eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%")
+  install_params+=("--kubelet-arg=eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%")
 
   local max_api_attempts=180 max_attempts=10 attempt=0
   local api_port="${KUBE_API_PORT:-6443}"
@@ -79,6 +82,7 @@ install_k3s_agent() {
 bootstrap
 configure_unattended_upgrades
 configure_longhorn_prereqs
+setup_k3s_memory_protection k3s-agent
 
 # Resolve K3S_TOKEN from OCI Vault or plaintext fallback.
 # "needs_oci_cli" installs OCI CLI unconditionally on agents (servers install it earlier
