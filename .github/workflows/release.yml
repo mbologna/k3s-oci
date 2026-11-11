@@ -39,7 +39,7 @@ jobs:
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     permissions:
       contents: write
-    uses: mbologna/.github/.github/workflows/auto-release.yml@8f27b292381a0288ffea3cbfda2f325819bf7262 # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@717c3959205c8ddcab484d5f92ffccc05352f434 # main
     with:
       strategy: conventional
       dispatch_tag_build: false
