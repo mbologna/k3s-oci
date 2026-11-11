@@ -87,11 +87,27 @@ setup_flannel_fdb_fix() {
 # Written by k3s-oci cloud-init: re-apply missing flannel.1 FDB entries.
 set -eu
 KC=/var/lib/rancher/k3s/agent/k3scontroller.kubeconfig
+# The kubectl k3s already unpacked: `k3s kubectl` from a freshly upgraded binary
+# first unpacks its own data dir, which this sandbox can't write. current/ moves
+# only once the new k3s has started.
+KUBECTL=/var/lib/rancher/k3s/data/current/bin/kubectl
+[ -x "$KUBECTL" ] || KUBECTL="k3s kubectl"
+# Consecutive failed lookups, kept across runs: a k3s restart (an upgrade, a
+# crash) takes the API away for minutes and shouldn't fail the unit; a lookup
+# still failing after 6 runs (30 min) should.
+FAILS=/run/flannel-fdb-fix/failures
 ip link show flannel.1 >/dev/null 2>&1 || { echo "flannel-fdb-fix: flannel.1 not found, skipping" >&2; exit 0; }
 [ -r "$KC" ] || { echo "flannel-fdb-fix: $KC not found, skipping" >&2; exit 0; }
 SELF_MAC=$(cat /sys/class/net/flannel.1/address)
 # Captured first: in a pipeline a kubectl failure would go unnoticed (no pipefail in sh).
-PEERS=$(k3s kubectl --kubeconfig "$KC" get nodes -o jsonpath='{range .items[*]}{.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip} {.metadata.annotations.flannel\.alpha\.coreos\.com/backend-data}{"\n"}{end}')
+if ! PEERS=$($KUBECTL --kubeconfig "$KC" get nodes -o jsonpath='{range .items[*]}{.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip} {.metadata.annotations.flannel\.alpha\.coreos\.com/backend-data}{"\n"}{end}'); then
+    n=$(( $(cat "$FAILS" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" >"$FAILS"
+    [ "$n" -ge 6 ] && { echo "flannel-fdb-fix: cannot list nodes, $n runs in a row" >&2; exit 1; }
+    echo "flannel-fdb-fix: cannot list nodes (run $n of 6 before failing), skipping" >&2
+    exit 0
+fi
+rm -f "$FAILS"
 printf '%s\n' "$PEERS" | while read -r ip data; do
     mac=$(printf '%s' "$data" | sed -n 's/.*"VtepMAC":"\([^"]*\)".*/\1/p')
     [ -n "$ip" ] && [ -n "$mac" ] && [ "$mac" != "$SELF_MAC" ] || continue
@@ -117,6 +133,9 @@ ExecStart=/usr/local/bin/flannel-fdb-fix.sh
 # It only reads the node list through the API and rewrites flannel.1's FDB over
 # netlink: CAP_NET_ADMIN and a throwaway kubectl cache are all it needs.
 Environment=KUBECACHEDIR=/tmp/kube-cache
+# The script's failure counter; kept between runs.
+RuntimeDirectory=flannel-fdb-fix
+RuntimeDirectoryPreserve=yes
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
