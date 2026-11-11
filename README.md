@@ -414,13 +414,15 @@ timers have finished (`gitops/apps/kured.yaml`). Every schedule the module creat
 order cannot change at a daylight-saving switch.
 
 k3s itself is upgraded by system-upgrade-controller, one node at a time, in a nightly window
-(23:00-23:59 UTC, `gitops/system-upgrade/plans.yaml`) that ends before every other nightly job. kured's
-lock does not cover those drains, so kured is configured to wait while an upgrade Job is running
+(23:00-23:59 UTC, `gitops/system-upgrade/plans.yaml`) that ends before every other nightly job. An
+upgrade cordons the node and restarts k3s without draining it: running containers stay up across a k3s
+restart, and draining only shuffled every pod onto the other node. kured's lock does not cover these
+upgrades, so kured is configured to wait while an upgrade Job is running
 (`blockingPodSelector: [upgrade.cattle.io/plan]`). kured's lock expires after 2 hours (`lockTtl`), so
 a node that dies mid-reboot cannot block every later reboot, and a drain stuck on a
 PodDisruptionBudget gives up after 15 minutes and is retried at the next check.
 
-This keeps the cluster patched with no manual intervention, one node at a time. It is not zero-downtime: a drain restarts every single-replica pod on that node somewhere else, and while the control-plane node reboots the Kubernetes API is down. Run two replicas spread across the nodes ([Resilience](#resilience-spread-replicas-across-nodes)) for anything that must stay up through the nightly window.
+This keeps the cluster patched with no manual intervention, one node at a time. It is not zero-downtime: a reboot's drain restarts every single-replica pod on that node somewhere else, and while the control-plane node reboots the Kubernetes API is down. Run two replicas spread across the nodes ([Resilience](#resilience-spread-replicas-across-nodes)) for anything that must stay up through the nightly window.
 
 ## Dependency updates (Renovate)
 

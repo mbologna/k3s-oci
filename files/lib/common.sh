@@ -72,6 +72,31 @@ EOF
   modprobe nfs || true
 }
 
+# -- k3s memory protection -----------------------------------------------------
+# A drop-in for the k3s unit, written before the installer creates and starts
+# it, so the first start already has it. MemoryLow protects the unit's memory
+# (k3s, its shims and the page cache it uses, etcd's database above all) from
+# reclaim while other cgroups still have reclaimable memory: under pressure the
+# kernel takes pods' cache before stalling etcd. GOMEMLIMIT (servers) is a soft
+# cap that makes Go collect harder before its heap grows past it; k3s server's
+# startup peaks are what tip a 6 GB node over. It never kills k3s: past the
+# limit Go keeps collecting, capped at half the CPU.
+# Usage: setup_k3s_memory_protection <k3s|k3s-agent>
+
+setup_k3s_memory_protection() {
+  local unit=$1
+  mkdir -p "/etc/systemd/system/${unit}.service.d"
+  if [[ "${unit}" == "k3s" ]]; then
+    printf '[Service]\nMemoryLow=2560M\nEnvironment=GOMEMLIMIT=1700MiB\n' \
+      >"/etc/systemd/system/${unit}.service.d/10-memory.conf"
+  else
+    printf '[Service]\nMemoryLow=512M\n' >"/etc/systemd/system/${unit}.service.d/10-memory.conf"
+  fi
+  # fwupd updates firmware on physical machines; an OCI VM has none, and the
+  # daemon holds 70-90 MiB.
+  systemctl mask --now fwupd.service fwupd-refresh.timer 2>/dev/null || true
+}
+
 # -- flannel VXLAN FDB self-heal -----------------------------------------------
 # A missing flannel.1 forwarding-database entry silently drops outbound VXLAN
 # traffic: routing and DNAT succeed locally, the packet never leaves the node.

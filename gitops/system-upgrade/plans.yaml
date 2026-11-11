@@ -19,16 +19,24 @@
 #   version: v1.31.4+k3s1   # renovate: datasource=github-releases depName=k3s-io/k3s
 #   channel: ""
 #
-# Upgrade window: 23:00-23:59 UTC, every night. Without a window SUC cordons and
-# drains a node whenever a release reaches the channel, at any hour. The window
+# Upgrade window: 23:00-23:59 UTC, every night. Without a window SUC cordons a
+# node and restarts its k3s whenever a release reaches the channel, at any hour. The window
 # sits before every other nightly job: the etcd snapshot (00:00, files/lib/
 # common.sh), the Longhorn backup (00:30, files/lib/k3s-secrets.sh), the package
 # runs (00:30 and 01:00 plus jitter, files/lib/bootstrap-*.sh) and kured's
 # reboot window (02:15-04:15, gitops/apps/kured.yaml). SUC only starts Jobs
 # inside the window; one that overruns is safe, since kured stands down while an
 # upgrade Job exists (its blockingPodSelector). UTC like the rest of the chain.
-# Narrow 'days' to match kured's rebootDays if you would rather not drain on
-# other nights; k3s patch releases often carry security fixes.
+# Narrow 'days' to match kured's rebootDays if you would rather not restart k3s
+# on other nights; k3s patch releases often carry security fixes.
+#
+# cordon, no drain: restarting k3s leaves running containers up (k3s keeps the
+# containerd shims, and the installer's unit uses KillMode=process), so an
+# upgrade needs nothing moved. Draining made it worse: on a cluster built from
+# this module the server drain moved every pod to the worker, and the worker
+# drain two minutes later sent ~40 pods onto the control plane just as its
+# freshly upgraded k3s was rebuilding its caches; the node ran out of memory and
+# k3s crash-looped for 20 minutes. Reboots still drain, through kured.
 apiVersion: upgrade.cattle.io/v1
 kind: Plan
 metadata:
@@ -48,18 +56,6 @@ spec:
     timeZone: UTC
   serviceAccountName: system-upgrade
   cordon: true
-  drain:
-    # disableEviction was removed to respect PodDisruptionBudgets during upgrades.
-    # longhorn-manager is a DaemonSet — drain with --ignore-daemonsets never evicts
-    # it, so it has no PDB. One-at-a-time guarantees come from:
-    #   1. concurrency: 1 in this Plan (SUC only drains one node at a time)
-    #   2. Longhorn's nodeDrainPolicy block-if-contains-last-replica
-    #      (gitops/apps/longhorn.yaml): a drain waits while this node holds the
-    #      last healthy replica of any volume
-    # kured's distributed lock does NOT serialise against SUC: it only covers
-    # kured's own reboots. kured instead stands down while an upgrade Job from
-    # this Plan exists (blockingPodSelector in gitops/apps/kured.yaml).
-    skipWaitForDeleteTimeout: 60
   upgrade:
     image: rancher/k3s-upgrade
 ---
@@ -83,12 +79,6 @@ spec:
     timeZone: UTC
   serviceAccountName: system-upgrade
   cordon: true
-  drain:
-    # disableEviction removed: same reasoning as server plan, respect PDBs.
-    # Serialization for worker upgrades comes from concurrency: 1 and Longhorn's
-    # last-replica drain policy; kured waits on these Jobs via its
-    # blockingPodSelector rather than its own lock.
-    skipWaitForDeleteTimeout: 60
   prepare:
     image: rancher/k3s-upgrade
     args: ["prepare", "k3s-server"]

@@ -374,13 +374,20 @@ install_k3s_server() {
   # costs both capacity and IOPS that etcd needs.
   install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
 
-  # Tell the scheduler what k3s server itself uses. apiserver, etcd and the
-  # controllers run in this one host process (~150m CPU and ~2.2 GiB on a
-  # 1 OCPU / 6 GB A1.Flex), invisible to pod requests, so without a reservation
-  # the scheduler fills the node as if all of it were free. The kubelet also
-  # caps all pods together at what is left (the kubepods cgroup), so they can't
-  # push k3s server out of memory.
-  install_params+=("--kubelet-arg=system-reserved=cpu=150m,memory=2Gi")
+  # Tell the scheduler what the host itself uses. Measured on a 1 OCPU / 6 GB
+  # A1.Flex server: k3s.service holds ~2.4 GiB and peaks near 2.9 GiB (k3s server
+  # ~1.6 GiB, containerd, and every pod's containerd-shim, ~14 MiB each, which
+  # stay in k3s's cgroup because k3s keeps them across restarts), plus ~0.6 GiB
+  # of other host services. With the old 2 GiB the kubelet let pods grow into
+  # memory the host was using; after a k3s upgrade the kernel dropped etcd's
+  # page cache, fsyncs took 8 s and k3s lost its lease in a loop. The kubelet
+  # caps all pods together at what is left (the kubepods cgroup).
+  install_params+=("--kubelet-arg=system-reserved=cpu=150m,memory=3Gi")
+  # k3s sets only disk eviction signals, so without memory.available the kubelet
+  # never evicts for memory and leaves it all to the kernel. The disk values are
+  # k3s's own, repeated because the flag replaces the whole list.
+  install_params+=("--kubelet-arg=eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%")
+  install_params+=("--kubelet-arg=eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%")
 
   # k3s's built-in etcd snapshot schedule defaults to "0 */12 * * *", the same
   # minute as the 6-hourly upload cron (setup_etcd_snapshot_upload), so one of
@@ -557,6 +564,7 @@ configure_longhorn_prereqs
 install_oci_cli
 
 detect_first_server
+setup_k3s_memory_protection k3s
 
 # Resolve K3S_TOKEN from OCI Vault or plaintext fallback.
 # OCI CLI is already installed above; OCI_CLI_AUTH is already set by detect_first_server().
