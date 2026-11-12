@@ -31,7 +31,7 @@ jobs:
   auto-release:
     permissions:
       contents: write
-    uses: mbologna/.github/.github/workflows/auto-release.yml@5797c3f0e987ee045b00d0a1640dfcdce3c45ce0 # main
+    uses: mbologna/.github/.github/workflows/auto-release.yml@ee5bcf8cd73154eaccd48e386919f73d2dd832e2 # main
     with:
       strategy: conventional
       dispatch_tag_build: false
