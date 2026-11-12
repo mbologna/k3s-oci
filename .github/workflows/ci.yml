@@ -28,14 +28,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
-  contents: write
+  contents: read
   security-events: write
 
 jobs:
   terraform:
-    uses: mbologna/.github/.github/workflows/terraform-ci.yml@717c3959205c8ddcab484d5f92ffccc05352f434 # main
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@5797c3f0e987ee045b00d0a1640dfcdce3c45ce0 # main
     with:
-      terraform_version: "~> 1.9"
       opentofu_version: "1.13.8"
       enable_shellcheck: true
       shellcheck_files: >-
@@ -58,11 +57,3 @@ jobs:
         example/ssh-node.sh
       example_dir: example
     secrets: inherit
-
-  cache-cleanup:
-    if: github.event_name == 'schedule'
-    uses: mbologna/.github/.github/workflows/cache-cleanup.yml@717c3959205c8ddcab484d5f92ffccc05352f434 # main
-    with:
-      max_age_days: 7
-    permissions:
-      actions: write
