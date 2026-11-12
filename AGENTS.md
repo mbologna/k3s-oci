@@ -238,9 +238,11 @@ terraform-docs .
   checks and `pr-title / Conventional PR title` pass; no force-push, no deletion. The squash
   commit's subject is the PR title, which auto-release reads, so PR titles are Conventional
   Commits. No workflow commits to `main` (the terraform-docs README auto-commit is off).
-- Renovate waits for CI because `renovate.json` sets `internalChecksAsSuccess: false`. The shared
-  preset sets it to `true`, which let Renovate count its own stability-days check as green and
-  automerge before the CI run had even started. Do not remove the override.
+- Renovate PRs merge only after CI: the shared preset turns on GitHub auto-merge
+  (`platformAutomerge`), so GitHub merges an automerge PR once the ruleset's required checks
+  (`terraform / …`, `pr-title / …`) pass, and it sets `internalChecksAsSuccess: false`, so
+  Renovate's own stability-days check never counts as CI. A new CI job that must gate merges has to
+  be added to the ruleset's required checks too.
 - Releases are cut by [auto-release](https://github.com/mbologna/auto-release)
   (`.github/workflows/release.yml`, `strategy: conventional`) every Monday at 06:00 UTC, like every
   other repository: if a `feat:`, `fix:`, `perf:`, `revert:` or breaking commit landed on `main`
