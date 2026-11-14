@@ -28,8 +28,7 @@ gitops/
 │   └── hpa.yaml
 ├── cert-manager/                     # ClusterIssuer templates (see adoption notes)
 │   ├── cluster-issuers.yaml          # Template — update email before using
-│   ├── application-template.yaml    # Copy to apps/cert-manager-issuers.yaml after updating email
-│   └── webhook-postsync/             # PostSync hook (same pattern as longhorn/webhook-postsync)
+│   └── application-template.yaml    # Copy to apps/cert-manager-issuers.yaml after updating email
 ├── optional/                         # Opt-in Applications, outside the App of Apps scope
 │   ├── external-dns.yaml             # Reference only: cloud-init creates the real app (runtime filters)
 │   └── external-secrets.yaml         # ESO Helm release; wrapped by cloud-init when enable_external_secrets = true
@@ -45,11 +44,7 @@ gitops/
 ├── longhorn/                         # Longhorn supplementary config
 │   ├── ingress.yaml                  # HTTPRoute + SecurityPolicy (BasicAuth) template
 │   ├── backup-target.yaml            # BackupTarget CR setup steps + weekly RecurringJob template
-│   ├── taint-toleration.yaml         # Worker node NoSchedule taint Setting template (uncomment + set taint key)
-│   └── webhook-postsync/             # ArgoCD PostSync hook — patches webhook failurePolicy to Ignore
-│       ├── kustomization.yaml        #   after each Helm sync (workaround: webhook 502s via the k3s egress tunnel)
-│       ├── rbac.yaml                 #   ServiceAccount + ClusterRole + ClusterRoleBinding
-│       └── webhook-patch-job.yaml    #   Job with hardened securityContext; backoffLimit:0
+│   └── taint-toleration.yaml         # Worker node NoSchedule taint Setting template (uncomment + set taint key)
 ├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
 │   ├── namespaces.yaml               # external-dns / external-secrets namespaces (so their policies apply)
 │   ├── default-deny.yaml             # default namespace

@@ -92,7 +92,7 @@ gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
 gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
 gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule), webhook-postsync/ (PostSync hook patches failurePolicy:Ignore after each Helm sync — workaround for webhook 502s via the k3s egress tunnel)
+gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
