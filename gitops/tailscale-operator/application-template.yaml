@@ -51,12 +51,10 @@ spec:
             hostname: my-k3s-k8s-operator
             defaultTags:
               - "tag:k8s-operator"
-          # OAuth credentials are synced from OCI Vault via the ExternalSecret in
-          # gitops/tailscale-operator/oauth-secret.yaml. Leave empty here.
-          oauth:
-            clientId: ""
-            clientSecret: ""
-          operatorDeployment:
+            # The chart reads resources and affinity under operatorConfig (an
+            # operatorDeployment key is not a chart value: the operator ran
+            # with no requests or limits). It prefers the worker, like the
+            # other controllers (see gitops/apps/argocd.yaml).
             resources:
               requests:
                 cpu: 25m
@@ -64,6 +62,19 @@ spec:
               limits:
                 cpu: 200m
                 memory: 128Mi
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    preference:
+                      matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: DoesNotExist
+          # OAuth credentials are synced from OCI Vault via the ExternalSecret in
+          # gitops/tailscale-operator/oauth-secret.yaml. Leave empty here.
+          oauth:
+            clientId: ""
+            clientSecret: ""
     - repoURL: https://github.com/mbologna/k3s-oci.git
       targetRevision: HEAD
       path: gitops/tailscale-operator

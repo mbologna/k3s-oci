@@ -24,9 +24,12 @@ spec:
           # the worker must not preempt cert-manager, or certificates stop renewing.
           global:
             priorityClassName: platform-critical
-          # All three parts are light and talk to the API server: they prefer the
-          # control-plane node, run on the worker while it is drained, and the
-          # descheduler (gitops/apps/descheduler.yaml) moves them back.
+          # All three parts are light: they prefer the worker, which leaves the
+          # control plane's memory to k3s server (see gitops/apps/argocd.yaml),
+          # run on the control plane while the worker is drained, and the
+          # descheduler (gitops/apps/descheduler.yaml) moves them back. The API
+          # server reaches the webhook on the worker directly (k3s's default
+          # egress-selector-mode, agent, tunnels only kubelet traffic).
           affinity:
             nodeAffinity:
               preferredDuringSchedulingIgnoredDuringExecution:
@@ -34,7 +37,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
           # Controller — issues certificates, manages ACME challenges
           resources:
             requests:
@@ -51,7 +54,7 @@ spec:
                     preference:
                       matchExpressions:
                         - key: node-role.kubernetes.io/control-plane
-                          operator: Exists
+                          operator: DoesNotExist
             resources:
               requests:
                 cpu: 10m
@@ -67,7 +70,7 @@ spec:
                     preference:
                       matchExpressions:
                         - key: node-role.kubernetes.io/control-plane
-                          operator: Exists
+                          operator: DoesNotExist
             resources:
               requests:
                 cpu: 10m

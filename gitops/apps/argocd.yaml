@@ -18,15 +18,17 @@ spec:
         configs:
           params:
             server.insecure: true
-        # Placement. The disk-light parts that mostly talk to the API server
-        # (application controller, redis, notifications, dex, applicationset)
-        # prefer the control-plane node, leaving the worker to user workloads
-        # and batch jobs. Preferences, not requirements: with the control plane
-        # drained they run on the worker, and the descheduler
-        # (gitops/apps/descheduler.yaml) moves them back afterwards.
-        # argocd-server runs one replica per node instead, and repo-server, which
-        # writes to disk on every git fetch and render, prefers the worker:
-        # the control plane's boot volume is etcd's.
+        # Placement. The control plane is short of memory, not CPU: k3s server
+        # holds 2.2-2.9 GiB of the node's 6 GB (every pod's containerd-shim
+        # sits in its cgroup), and a cluster built from this module crash-looped
+        # k3s for 20 minutes when it ran out after an upgrade. So every Argo CD
+        # part except argocd-server prefers the worker: application controller
+        # (the biggest, ~400 MiB on a 40-app cluster), redis, notifications, dex,
+        # applicationset and repo-server, which also writes to disk on every git
+        # fetch and render (the control plane's boot volume is etcd's).
+        # Preferences, not requirements: with the worker drained they run on the
+        # control plane, and the descheduler (gitops/apps/descheduler.yaml) moves
+        # them back afterwards. argocd-server runs one replica per node.
         #
         # Two argocd-server replicas, one per node (required anti-affinity), so a
         # node reboot or drain leaves the UI, API and webhooks up. A drained
@@ -81,8 +83,8 @@ spec:
         # The chart's key is `controller`; until this change these values sat
         # under `applicationController`, which the chart ignores, so the
         # controller ran with no requests or limits at all. 50m: it idles at a
-        # few millicores; the CPU limit keeps a sync storm from starving the
-        # API server on the control-plane node.
+        # few millicores; the CPU limit keeps a sync storm from starving
+        # whatever shares its node.
         controller:
           affinity:
             nodeAffinity:
@@ -91,7 +93,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
           resources:
             requests:
               cpu: 50m
@@ -107,7 +109,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
           resources:
             requests:
               cpu: 10m
@@ -122,7 +124,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
           resources:
             requests:
               cpu: 10m
@@ -259,7 +261,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
         applicationSet:
           affinity:
             nodeAffinity:
@@ -268,7 +270,7 @@ spec:
                   preference:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
+                        operator: DoesNotExist
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
