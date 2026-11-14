@@ -1,0 +1,5 @@
+# actionlint's bundled runner list predates ubuntu-26.04, which the shared
+# workflows (mbologna/.github) already run on.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
