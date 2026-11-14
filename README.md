@@ -428,6 +428,22 @@ This keeps the cluster patched with no manual intervention, one node at a time. 
 
 [Renovate](https://docs.renovatebot.com) tracks Terraform providers, k3s, all stack component versions (via `# renovate:` inline comments in `vars.tf` and `gitops/apps/*.yaml`), and GitHub Actions. Enable it on your fork with the [Renovate GitHub App](https://github.com/apps/renovate); `renovate.json` extends a shared preset you may want to replace with your own.
 
+**k3s** follows the `stable` channel by default, so there is nothing to bump. To pin it instead, put a `version` with a renovate comment directly above it in both Plans (`gitops/system-upgrade/plans.yaml` shows how) and the same release in a committed `example/k3s-version.auto.tfvars` (`git add -f`: `.gitignore` excludes `*.tfvars`, since `terraform.tfvars` holds secrets):
+
+```hcl
+# renovate: datasource=github-releases depName=k3s-io/k3s
+k3s_version = "v1.36.6+k3s1"
+```
+
+Renovate then updates both in one `k3s` PR:
+
+| Update | What happens |
+|---|---|
+| Patch (`v1.36.6` → `v1.36.7`) | Automerges after the preset's 7-day gate, in its own PR, so a waiting minor never absorbs a patch for the running minor |
+| Minor, new version `x.y.0`–`x.y.2` | No PR: a new minor is taken only from its third patch, once the first regressions are fixed |
+| Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
+| Major | Waits for a person (`manual-review`) |
+
 ## Remote Terraform state (OCI Object Storage)
 
 `enable_object_storage_state = true` (the default) creates the versioned `<cluster_name>-terraform-state`

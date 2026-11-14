@@ -5,6 +5,61 @@
   ],
   "packageRules": [
     {
+      "description": "k3s tags are vX.Y.Z+k3sN, and the +k3sN build is a real release (v1.33.13+k3s2). Applies to every k3s-io/k3s pin (the SUC Plans and a committed k3s_version tfvars, see the customManagers). No matchUpdateTypes: versioning is decided before the update type is known. separateMinorPatch: k3s ships a patch for every supported minor on the same day, and with one branch a waiting minor PR would absorb the patch for the running minor. separateMultipleMinor: a new minor (v1.38.0, skipped below) must not hide an eligible older one (v1.37.3). The k3s group keeps the Plans and the tfvars in one PR, outside the preset's weekly maintenance group.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$",
+      "separateMinorPatch": true,
+      "separateMultipleMinor": true,
+      "groupName": "k3s"
+    },
+    {
+      "description": "k3s minors are taken only from their third patch (x.y.3), once the first rounds of regressions are fixed. A minor update whose new version is x.y.0-x.y.2 opens no PR; the next eligible patch does. Patches are untouched: they follow the preset (7-day gate, automerge).",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchNewValue": "/^v\\d+\\.\\d+\\.[0-2]\\+k3s\\d+$/",
+      "enabled": false
+    },
+    {
+      "description": "k3s minors from x.y.3 automerge after the preset's 14-day minor gate. system-upgrade-controller applies the new Plans in its next window (gitops/system-upgrade/plans.yaml), one node at a time.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "automerge"
+      ],
+      "prBodyNotes": [
+        "k3s minor from its x.y.3 release: it automerges once CI passes and system-upgrade-controller applies it in the next upgrade window. Check the release notes for removed APIs while it waits."
+      ]
+    },
+    {
+      "description": "k3s majors upgrade the cluster through system-upgrade-controller as soon as they merge: a person reviews them.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "manual-review"
+      ],
+      "prBodyNotes": [
+        "**Why this waits for you:** a k3s major upgrades the cluster through system-upgrade-controller in its next window, one node at a time. Read the release notes for removed APIs first."
+      ]
+    },
+    {
       "description": "Terraform providers: manual review. A provider bump can change how the OCI resources plan, and only a tofu plan against the live tenancy shows whether it replaces an Always Free instance. The shared preset groups patch and minor provider updates into one weekly PR (Terraform providers). Renovate types required_providers entries as required_provider (provider is the legacy version argument in a provider block), so matching provider would leave them automerging.",
       "matchManagers": [
         "terraform"
@@ -13,7 +68,10 @@
         "required_provider"
       ],
       "automerge": false,
-      "labels": ["dependencies", "manual-review"]
+      "labels": [
+        "dependencies",
+        "manual-review"
+      ]
     },
     {
       "description": "Gateway API CRDs: gateway_api_version is installed at bootstrap only; Envoy Gateway's chart then re-applies the CRDs it bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway go.mod). A patch stays in the same API channel and automerges under the preset's gates. A minor or major can carry CRD versions the pinned Envoy Gateway does not know, so a person checks first.",
@@ -25,13 +83,36 @@
         "major"
       ],
       "automerge": false,
-      "labels": ["dependencies", "manual-review"],
+      "labels": [
+        "dependencies",
+        "manual-review"
+      ],
       "prBodyNotes": [
         "Check that the Envoy Gateway release in gitops/apps/envoy-gateway.yaml bundles this Gateway API minor (sigs.k8s.io/gateway-api in its go.mod) before merging."
       ]
     }
   ],
   "customManagers": [
+    {
+      "description": "k3s pinned in the system-upgrade-controller Plans: the inline renovate comment sits directly above the version: line (gitops/system-upgrade/plans.yaml shows how). Commented-out lines don't match, so the default channel-based Plans have no pin.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/system-upgrade/plans\\.yaml$/"
+      ],
+      "matchStrings": [
+        "\\n\\s+# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+version:\\s+(?<currentValue>v\\S+)"
+      ]
+    },
+    {
+      "description": "k3s_version pinned in a committed *.auto.tfvars (e.g. example/k3s-version.auto.tfvars; terraform.tfvars itself holds secrets and is gitignored), with the renovate comment on the line above. Same depName as the Plans, so a bump updates both in one PR.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.auto\\.tfvars$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*k3s_version\\s*=\\s*\"(?<currentValue>v[^\"]+)\""
+      ]
+    },
     {
       "description": "Update versions declared with inline renovate comments in vars.tf",
       "customType": "regex",

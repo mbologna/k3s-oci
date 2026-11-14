@@ -257,6 +257,11 @@ terraform-docs .
   (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`), so the variable only matters at
   bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
   merges it once the pinned Envoy Gateway release bundles that minor.
+- k3s: the module follows the `stable` channel; forks that pin it (Plans `version:` plus a
+  committed `*.auto.tfvars` `k3s_version`, each with the renovate comment on the line above) get
+  one `k3s` PR per update: patches automerge, a minor only from its x.y.3 release and then
+  automerges after the 14-day gate (`matchNewValue` disables x.y.0-x.y.2), majors wait for a
+  person. Keep the `k3s-io/k3s` versioning rule (`+k3sN` builds) and `separateMultipleMinor`.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
   on GitHub after it is published. The Releases page is the whole history; there is no
   `CHANGELOG.md`.
