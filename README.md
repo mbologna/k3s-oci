@@ -443,6 +443,7 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.0`–`x.y.2` | No PR: a new minor is taken only from its third patch, once the first regressions are fixed |
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
+
 ### CI plan against a live deployment
 
 `.github/workflows/plan.yml` runs `tofu plan` of `example/` against a live deployment on every same-repository pull request, read-only: an empty plan shows that a provider or chart bump changes nothing in the tenancy. It needs the deployment's state in a remote backend ([Remote Terraform state](#remote-terraform-state-oci-object-storage)) and its own OCI user that may only read. Only the addresses of changed resources reach the log, since the full plan holds OCIDs, IP addresses and tfvars values. Until the secrets below exist, the job reports a notice and succeeds, so fork pull requests (which get no secrets) are not blocked.
