@@ -63,7 +63,7 @@
       ]
     },
     {
-      "description": "Update container image tags referenced with inline renovate comments in gitops YAML files (e.g. rancher/kubectl in webhook postsync jobs).",
+      "description": "Update container image tags referenced with inline renovate comments in gitops YAML files (e.g. curlimages/curl in gitops/node-cordon-alert).",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)gitops/.*\\.yaml$/"
