@@ -443,6 +443,36 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.0`–`x.y.2` | No PR: a new minor is taken only from its third patch, once the first regressions are fixed |
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
+### CI plan against a live deployment
+
+`.github/workflows/plan.yml` runs `tofu plan` of `example/` against a live deployment on every same-repository pull request, read-only: an empty plan shows that a provider or chart bump changes nothing in the tenancy. It needs the deployment's state in a remote backend ([Remote Terraform state](#remote-terraform-state-oci-object-storage)) and its own OCI user that may only read. Only the addresses of changed resources reach the log, since the full plan holds OCIDs, IP addresses and tfvars values. Until the secrets below exist, the job reports a notice and succeeds, so fork pull requests (which get no secrets) are not blocked.
+
+To set it up:
+
+1. **Group and policy** (Identity → Domains → Default → Groups, then Policies, in the root compartment):
+
+   ```text
+   Group:  k3s-oci-plan
+   Policy: k3s-oci-plan
+     Allow group k3s-oci-plan to read all-resources in tenancy where all {request.permission != 'SECRET_BUNDLE_READ', request.permission != 'OBJECT_READ'}
+     Allow group k3s-oci-plan to read objects in tenancy where target.bucket.name = '<state bucket>'
+   ```
+
+   The first statement lets the plan refresh every resource without reading secret contents or the etcd snapshots and Longhorn backups in the module's buckets; the second reads the state object only. The state holds every cluster secret, so treat these credentials like the state itself.
+2. **User** `k3s-oci-plan` (no console password), member of `k3s-oci-plan`, with an API key (Users → API keys → Add) and a customer secret key (Users → Customer secret keys) for the S3-compatible state backend.
+3. **GitHub secrets** (Settings → Secrets and variables → Actions):
+
+   | Secret | Value |
+   |---|---|
+   | `OCI_PLAN_USER_OCID`, `OCI_PLAN_FINGERPRINT`, `OCI_PLAN_TENANCY_OCID`, `OCI_PLAN_REGION` | the API key's config snippet |
+   | `OCI_PLAN_PRIVATE_KEY` | the API key's private key (PEM) |
+   | `PLAN_STATE_ACCESS_KEY_ID`, `PLAN_STATE_SECRET_ACCESS_KEY` | the customer secret key |
+   | `PLAN_BACKEND_OVERRIDE` | your `example/backend_override.tf`; the job overrides its `profile` with its own |
+   | `PLAN_TFVARS` | your `example/terraform.tfvars` followed by any `*.auto.tfvars`, the inputs the deployment was applied with; set it again after changing them (`cat terraform.tfvars *.auto.tfvars \| gh secret set PLAN_TFVARS`) |
+
+4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
+
+The Terraform providers rule in `renovate.json` stays `manual-review` until the job has run against a real deployment; after that it can automerge on an empty plan.
 
 ## Remote Terraform state (OCI Object Storage)
 

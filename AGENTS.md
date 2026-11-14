@@ -262,6 +262,13 @@ terraform-docs .
   one `k3s` PR per update: patches automerge, a minor only from its x.y.3 release and then
   automerges after the 14-day gate (`matchNewValue` disables x.y.0-x.y.2), majors wait for a
   person. Keep the `k3s-io/k3s` versioning rule (`+k3sN` builds) and `separateMultipleMinor`.
+- `.github/workflows/plan.yml` (`Plan / tofu plan (example)`) runs a read-only `tofu plan` of
+  `example/` against a live deployment on same-repository PRs: a dedicated OCI user in a
+  read-only group, state read from the remote backend with `-lock=false`, and only changed
+  resource addresses in the log (the repo's logs are public; never print the plan itself).
+  Without its secrets it reports a notice and succeeds. Setup and secret names: README, "CI
+  plan against a live deployment". The providers and gateway-api minor rules stay
+  `manual-review` until it runs for real.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
   on GitHub after it is published. The Releases page is the whole history; there is no
   `CHANGELOG.md`.
