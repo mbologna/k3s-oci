@@ -1,0 +1,133 @@
+name: Plan
+
+# `tofu plan` of example/ against a live deployment, read-only, on every
+# same-repository pull request: a provider or chart bump whose plan is empty
+# changes nothing in the tenancy. It authenticates as an OCI user whose group
+# may only read (README, "CI plan against a live deployment"), reads the state
+# from the deployment's remote backend without locking it, and prints only the
+# addresses of changed resources: the full plan holds OCIDs, IPs and tfvars
+# values, and this repository's logs are public.
+#
+# Without the secrets (forks, or a repository that hasn't set them up) the job
+# reports a notice and succeeds, so it can be a required check either way.
+
+"on":
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: tofu plan (example)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env:
+      # The OCI Go SDK's HTTP/2 client stalls on some OCI endpoints.
+      GODEBUG: http2client=0
+      TF_IN_AUTOMATION: "1"
+      OCI_PLAN_USER_OCID: ${{ secrets.OCI_PLAN_USER_OCID }}
+      OCI_PLAN_FINGERPRINT: ${{ secrets.OCI_PLAN_FINGERPRINT }}
+      OCI_PLAN_PRIVATE_KEY: ${{ secrets.OCI_PLAN_PRIVATE_KEY }}
+      OCI_PLAN_TENANCY_OCID: ${{ secrets.OCI_PLAN_TENANCY_OCID }}
+      OCI_PLAN_REGION: ${{ secrets.OCI_PLAN_REGION }}
+      PLAN_TFVARS: ${{ secrets.PLAN_TFVARS }}
+      PLAN_BACKEND_OVERRIDE: ${{ secrets.PLAN_BACKEND_OVERRIDE }}
+      PLAN_STATE_ACCESS_KEY_ID: ${{ secrets.PLAN_STATE_ACCESS_KEY_ID }}
+      PLAN_STATE_SECRET_ACCESS_KEY: ${{ secrets.PLAN_STATE_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Check the plan secrets
+        id: secrets
+        run: |
+          missing=()
+          for name in OCI_PLAN_USER_OCID OCI_PLAN_FINGERPRINT OCI_PLAN_PRIVATE_KEY \
+            OCI_PLAN_TENANCY_OCID OCI_PLAN_REGION PLAN_TFVARS PLAN_BACKEND_OVERRIDE \
+            PLAN_STATE_ACCESS_KEY_ID PLAN_STATE_SECRET_ACCESS_KEY; do
+            [[ -n ${!name} ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::notice title=tofu plan skipped::missing secrets: ${missing[*]} (README, CI plan against a live deployment)"
+            echo "run=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "run=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.secrets.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - if: steps.secrets.outputs.run == 'true'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version: "1.13.9"
+          tofu_wrapper: false
+
+      - name: Write the read-only credentials
+        if: steps.secrets.outputs.run == 'true'
+        working-directory: example
+        run: |
+          umask 077
+          mkdir -p ~/.oci ~/.aws
+          printf '%s\n' "$OCI_PLAN_PRIVATE_KEY" >~/.oci/plan.pem
+          cat >~/.oci/config <<CFG
+          [DEFAULT]
+          user=$OCI_PLAN_USER_OCID
+          fingerprint=$OCI_PLAN_FINGERPRINT
+          tenancy=$OCI_PLAN_TENANCY_OCID
+          region=$OCI_PLAN_REGION
+          key_file=$HOME/.oci/plan.pem
+          CFG
+          cat >~/.aws/credentials <<CFG
+          [k3s-oci-plan]
+          aws_access_key_id=$PLAN_STATE_ACCESS_KEY_ID
+          aws_secret_access_key=$PLAN_STATE_SECRET_ACCESS_KEY
+          CFG
+          printf '%s\n' "$PLAN_TFVARS" >terraform.tfvars
+          printf '%s\n' "$PLAN_BACKEND_OVERRIDE" >backend_override.tf
+
+      - name: tofu plan
+        if: steps.secrets.outputs.run == 'true'
+        working-directory: example
+        run: |
+          # Only addresses and counts reach the log; on an error, the tail
+          # with OCIDs and IP addresses masked.
+          mask() { sed -E 's/ocid1\.[a-z0-9._-]+/ocid1.<masked>/g; s/([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]{1,2})?/<ip>/g' | tail -n 40; }
+          if ! tofu init -input=false -lockfile=readonly -backend-config=profile=k3s-oci-plan >init.log 2>&1; then
+            mask <init.log
+            echo "::error title=tofu init failed::see the masked log above"
+            exit 1
+          fi
+          rc=0
+          tofu plan -input=false -lock=false -detailed-exitcode -out=plan.bin >plan.log 2>&1 || rc=$?
+          case $rc in
+            0)
+              echo "No changes: the plan is empty." | tee -a "$GITHUB_STEP_SUMMARY"
+              ;;
+            2)
+              {
+                echo "### tofu plan has changes"
+                echo
+                tofu show -json plan.bin | jq -r '.resource_changes[]
+                  | select(.change.actions != ["no-op"])
+                  | "- `\(.change.actions | join(","))` \(.address)"'
+              } | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "::error title=tofu plan has changes::a person must review this update (step summary)"
+              exit 1
+              ;;
+            *)
+              mask <plan.log
+              echo "::error title=tofu plan failed::see the masked log above"
+              exit 1
+              ;;
+          esac
+
+      - name: Remove the credentials
+        if: always() && steps.secrets.outputs.run == 'true'
+        run: rm -rf ~/.oci ~/.aws example/terraform.tfvars example/backend_override.tf example/plan.bin example/*.log
