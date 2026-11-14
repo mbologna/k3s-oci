@@ -728,6 +728,14 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - Do not switch to the SQLite datastore to "fix" this: SQLite's WAL fsync suffers the same latency,
   and you lose `k3s etcd-snapshot` and the snapshot upload path.
 
+### Server memory (placement)
+- The control plane is short of memory, not CPU: k3s server holds ~2.2 GiB (peak 2.4-2.9) because
+  every pod's containerd-shim is charged to its unit (`system-reserved` 3 GiB there). The small
+  controllers (Argo CD's parts except argocd-server, cert-manager, External Secrets, the Tailscale
+  operator) therefore *prefer* the worker; the nightly descheduler returns them after a drain.
+  Measured numbers: README "Memory budget (measured)". Don't move a controller back to the
+  control plane without re-measuring.
+
 ### Internal LB health check
 - `lb.tf` uses a **TCP** health check on the kubeapi port. The OCI flexible LB rejects `HTTPS` as a health-check protocol ("No enum constant for HTTPS"), and a plaintext `HTTP` probe can never pass against the TLS-only apiserver. **Do not change it to HTTP.** TCP cannot detect a server whose etcd is dead but whose port is open — irrelevant with a single server, but worth knowing if the pool ever grows.
 

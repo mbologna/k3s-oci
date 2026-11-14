@@ -577,16 +577,32 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
 | **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
-| **cert-manager** | ✅ | ✅ | Deployment: prefers the control plane, runs on the worker while it is drained |
-| **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, dex, applicationset: prefer the control plane. repo-server: prefers the worker |
+| **cert-manager**, **External Secrets**, **Tailscale operator** | ✅ | ✅ | Deployments: prefer the worker, run on the control plane while it is drained |
+| **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, dex, applicationset, repo-server: prefer the worker |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions, schedules on both nodes |
 
 > **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume. Give them `priorityClassName: worker-pinned` (`gitops/priority-classes/`) too: after a drain of the control plane its pods sit on the worker and fill its CPU requests, and the class lets a worker-pinned pod preempt them instead of waiting Pending.
 >
-> **Pods go back where they prefer:** nothing moves a pod once it is running, so after kured or a k3s upgrade drains the control plane, the pods that prefer it stay on the worker. A nightly descheduler run (04:30 UTC, `gitops/apps/descheduler.yaml`) evicts a pod that sits off its preferred node when it fits there, and does nothing else.
+> **Pods go back where they prefer:** nothing moves a pod once it is running, so after kured drains the worker, the pods that prefer it stay on the control plane. A nightly descheduler run (04:30 UTC, `gitops/apps/descheduler.yaml`) evicts a pod that sits off its preferred node when it fits there, and does nothing else.
 >
 > **Recommendation:** use `replicas ≥ 2` with [topologySpreadConstraints](#resilience-spread-replicas-across-nodes) to spread pods across nodes.
+
+### Memory budget (measured)
+
+The control plane runs out of memory long before CPU, so the module's small controllers prefer the worker (table above). Measured on a cluster built from this module (2 nodes, ~60 pods, about 40 Argo CD Applications), November 2026:
+
+| | Control plane | Worker |
+|---|---|---|
+| k3s process (`k3s.service` / `k3s-agent.service` memory, peak since boot) | 2.2 GiB (2.4; up to 2.9 right after a k3s upgrade) | 0.5–0.65 GiB (0.86) |
+| `system-reserved` (kubelet) | 3 GiB, 150m CPU | 1280 MiB, 100m CPU |
+| Allocatable | 2.5 GiB, 850m | 4.2 GiB, 900m |
+| Pods' working set, controllers on the control plane | 1.4 GiB | 1.1 GiB |
+| Pods' working set, controllers on the worker | 1.05 GiB | 2.1 GiB |
+| Memory requests, controllers on the worker | 38% | 43% |
+| CPU use (`kubectl top`) | ~20% | ~12% |
+
+`system-reserved` covers the k3s process because every pod's containerd-shim is charged to its unit, which is why it is larger on the server. With the controllers on the control plane its node had ~2.1 GiB available; after the move, ~2.4 GiB. Keep pods' memory requests at what they really use (the scheduler sees only requests), and measure before adding anything big to the control plane: `systemctl show k3s -p MemoryCurrent -p MemoryPeak`, `kubectl top nodes`, and `kubectl describe node` for allocated requests.
 
 ## Why this topology
 

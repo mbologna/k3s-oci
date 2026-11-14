@@ -15,11 +15,10 @@ spec:
     helm:
       valuesObject:
         # Puts pods back on the node they prefer after a reboot. Nothing else
-        # rebalances: when kured or system-upgrade-controller drains the control
-        # plane, the pods that only *prefer* it (Argo CD's controller and redis,
-        # cert-manager) land on the worker and stay there. The next worker reboot
-        # then takes them down too, and a worker-pinned job has to preempt them to
-        # get its room back.
+        # rebalances: when kured drains the worker, the pods that only *prefer*
+        # it (Argo CD, cert-manager, External Secrets, the Tailscale operator)
+        # land on the control plane and stay there, eating the memory k3s
+        # server needs.
         kind: CronJob
         # Once a night, after kured's window (02:15-04:15 UTC) and the k3s upgrade
         # window (23:00-23:59 UTC). An eviction restarts a single-replica pod, so
