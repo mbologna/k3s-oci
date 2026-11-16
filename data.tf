@@ -76,7 +76,6 @@ locals {
 
   # Bootstrap chart versions (cloud-init installs; ArgoCD adopts ongoing management)
   _server_bootstrap_vars = {
-    gateway_api_version            = var.gateway_api_version
     certmanager_email_address      = var.certmanager_email_address
     certmanager_chart_version      = var.certmanager_chart_version
     argocd_chart_version           = var.argocd_chart_version
@@ -143,6 +142,9 @@ locals {
   _server_hostname_vars = {
     argocd_hostname   = local.argocd_hostname
     longhorn_hostname = local.longhorn_hostname
+    # external-dns target for the Ingresses cloud-init creates (Traefik
+    # publishes no Ingress status behind the NLB).
+    public_nlb_ip = try(local.public_lb_ip[0], "")
   }
 
   # Extra k3s server args (e.g. etcd tuning)

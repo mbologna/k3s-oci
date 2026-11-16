@@ -30,7 +30,7 @@ Issues in scope:
 - Supply-chain issues in pinned versions or Renovate configuration
 
 Out of scope:
-- Vulnerabilities in upstream projects (k3s, Longhorn, ArgoCD, Envoy Gateway, cert-manager) —
+- Vulnerabilities in upstream projects (k3s, Longhorn, ArgoCD, Traefik, cert-manager) —
   please report those to the respective upstream projects
 - Issues requiring physical access to OCI infrastructure
 - Best-practice suggestions (open a regular issue instead)
@@ -47,7 +47,7 @@ Out of scope:
 - **Pods and the instance metadata service**: every node's instance-principal identity is one
   HTTP request away at 169.254.169.254:80. With it a pod could read the boot secrets in OCI Vault
   and write to the state bucket. The NetworkPolicies (`gitops/network-policies/`) keep
-  169.254.0.0/16 out of every egress rule that would otherwise allow port 80 (Envoy Gateway's
+  169.254.0.0/16 out of every egress rule that would otherwise allow port 80 (Traefik's
   backends, cert-manager's HTTP-01 self-check, CoreDNS), and CoreDNS keeps only the OCI resolver
   (169.254.169.254:53). The `external-secrets` namespace is the deliberate exception: its
   ClusterSecretStore authenticates with instance principal. Namespaces you add start from

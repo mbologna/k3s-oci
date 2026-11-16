@@ -45,18 +45,19 @@ export GITOPS_HTTPS_USERNAME="${gitops_https_username}"
 export VAULT_SECRET_ID_GITOPS_HTTPS_TOKEN="${vault_secret_id_gitops_https_token}"
 
 # -- Chart versions (bootstrap only; ArgoCD adopts and manages ongoing) --------
-export GATEWAY_API_VERSION="${gateway_api_version}"
 export CERTMANAGER_CHART_VERSION="${certmanager_chart_version}"
 export CERTMANAGER_EMAIL="${certmanager_email_address}"
 export ARGOCD_CHART_VERSION="${argocd_chart_version}"
 export EXTERNAL_SECRETS_CHART_VERSION="${external_secrets_chart_version}"
 
 # -- Cluster services -----------------------------------------------------------
-# ArgoCD ingress: cloud-init creates the Gateway listener/TLS/HTTPRoute so gitops/
+# ArgoCD ingress: cloud-init creates the Ingress and its Certificate so gitops/
 # files stay IP-independent. Auto-derived as argocd.<nlb-ip>.sslip.io if null.
 export ARGOCD_HOSTNAME="${argocd_hostname}"
 # Longhorn ingress: set longhorn_hostname in tfvars to enable. No sslip.io fallback.
 export LONGHORN_HOSTNAME="${longhorn_hostname}"
+# Public NLB IP: external-dns target annotation on the Ingresses cloud-init creates.
+export PUBLIC_NLB_IP="${public_nlb_ip}"
 
 # -- Optional integrations -----------------------------------------------------
 export LONGHORN_UI_USERNAME="${longhorn_ui_username}"

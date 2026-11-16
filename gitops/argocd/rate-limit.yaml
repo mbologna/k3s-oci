@@ -1,27 +1,18 @@
----
-# BackendTrafficPolicy: rate limit ArgoCD UI — 100 req/s per source IP.
-# Local mode: each Envoy proxy pod maintains its own counter independently;
-# no external rate-limit service required.
-# "Distinct" remoteAddress means each client IP gets its own bucket, preventing
-# brute-force and credential-stuffing attacks on the ArgoCD login page.
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: BackendTrafficPolicy
+# Middleware: rate limit the Argo CD UI and API, 100 requests/s per client IP
+# (burst 200), against brute-force and credential stuffing on the login page.
+# Each Traefik pod keeps its own counters (one per node); the client IP is the
+# real one because Traefik's Service uses externalTrafficPolicy: Local.
+# The Ingress cloud-init creates for argocd_hostname references it as
+# argocd-argocd-rate-limit@kubernetescrd (files/lib/k3s-argocd.sh).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
 metadata:
   name: argocd-rate-limit
   namespace: argocd
+  annotations:
+    # The Middleware CRD comes with the traefik app (wave 1).
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: argocd-server
   rateLimit:
-    type: Local
-    local:
-      rules:
-        - clientSelectors:
-            - sourceCIDR:
-                type: Distinct
-                value: "0.0.0.0/0"
-          limit:
-            requests: 100
-            unit: Second
+    average: 100
+    burst: 200

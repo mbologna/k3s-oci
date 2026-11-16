@@ -30,15 +30,16 @@ pre_create_secrets() {
   fi
   # When vault is not used, CLOUDFLARE_API_TOKEN is already exported from server-vars.sh.tpl
 
-  # Longhorn BasicAuth -- htpasswd hash generated here because Envoy Gateway SecurityPolicy
-  # requires {SHA}BASE64(SHA1(password)) format. openssl's -apr1 (MD5) is rejected.
-  # Secret is referenced by gitops/longhorn/ingress.yaml (HTTPRoute + SecurityPolicy).
-  # Skipped without longhorn_hostname: no route, so nothing uses it.
+  # Longhorn BasicAuth -- an htpasswd line under the key Traefik's basicAuth
+  # Middleware reads (`users`); {SHA}BASE64(SHA1(password)) works with Traefik
+  # and needs nothing beyond openssl. Referenced by the longhorn-basic-auth
+  # Middleware (files/lib/k3s-argocd.sh, template in gitops/longhorn/ingress.yaml).
+  # Skipped without longhorn_hostname: no Ingress, so nothing uses it.
   if [[ -n "${LONGHORN_HOSTNAME}" ]]; then
     [[ -z "${LONGHORN_UI_USERNAME}" ]] && { echo "ERROR: LONGHORN_UI_USERNAME is empty — cannot create Longhorn auth secret."; exit 1; }
     [[ -z "${LONGHORN_UI_PASSWORD}" ]] && { echo "ERROR: LONGHORN_UI_PASSWORD is empty — cannot create Longhorn auth secret."; exit 1; }
     local longhorn_sha_hash
-    # {SHA} format: {SHA}BASE64(SHA1(password)) — required by Envoy Gateway BasicAuth
+    # {SHA} format: {SHA}BASE64(SHA1(password))
     longhorn_sha_hash=$(printf '%s' "${LONGHORN_UI_PASSWORD}" | openssl dgst -sha1 -binary | base64) || { echo "ERROR: openssl sha1 failed."; exit 1; }
     kubectl create namespace longhorn-system --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -n longhorn-system -f - <<EOF
@@ -49,7 +50,7 @@ metadata:
   namespace: longhorn-system
 type: Opaque
 stringData:
-  .htpasswd: "${LONGHORN_UI_USERNAME}:{SHA}${longhorn_sha_hash}"
+  users: "${LONGHORN_UI_USERNAME}:{SHA}${longhorn_sha_hash}"
 EOF
     echo "Longhorn BasicAuth secret created."
   fi

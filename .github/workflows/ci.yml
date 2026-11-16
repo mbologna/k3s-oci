@@ -49,7 +49,6 @@ jobs:
         files/lib/k3s-argocd.sh
         files/lib/k3s-agent.sh
         scripts/clean-oci-resources.sh
-        scripts/check-gateway-api.sh
         scripts/teardown-keep-data.sh
         scripts/import-opensuse-aarch64.sh
         scripts/setup-longhorn-backup.sh
@@ -58,12 +57,3 @@ jobs:
         example/ssh-node.sh
       example_dir: example
     secrets: inherit
-
-  gateway-api:
-    name: Gateway API matches Envoy Gateway
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - run: scripts/check-gateway-api.sh

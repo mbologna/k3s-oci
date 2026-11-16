@@ -85,7 +85,7 @@ enable_mysql         = true           # Always Free MySQL HeatWave DB system (My
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 # mysql_shape          = "MySQL.Free"   # Do not change — MySQL.Free is the Always Free shape
 
-# ── Hostnames (set to create Gateway API HTTPRoutes + cert-manager TLS certs) ──
+# ── Hostnames (set to create Traefik Ingresses + cert-manager TLS certs) ───────
 # If not set, sslip.io hostnames are auto-derived from the NLB IP (e.g. argocd.<nlb-ip>.sslip.io).
 # longhorn_hostname    = "longhorn.example.com"
 # longhorn_ui_username = "admin"          # BasicAuth username for the Longhorn UI

@@ -9,21 +9,20 @@ gitops/
 ├── apps/                             # ArgoCD Application manifests (App of Apps root)
 │   ├── app-of-apps.yaml              # Root Application — bootstrapped by cloud-init
 │   ├── argocd.yaml                   # ArgoCD Helm release
-│   ├── argocd-config.yaml            # ArgoCD supplementary config (BackendTrafficPolicy rate-limit)
+│   ├── argocd-config.yaml            # ArgoCD supplementary config (rate-limit Middleware)
 │   ├── argocd-image-updater.yaml     # ArgoCD Image Updater Helm release
 │   ├── cert-manager.yaml             # cert-manager Helm release
 │   ├── coredns.yaml                  # CoreDNS replica count (gitops/coredns/)
 │   ├── descheduler.yaml              # Nightly descheduler: pods back to their preferred node
-│   ├── envoy-gateway.yaml            # Envoy Gateway Helm release (OCI registry)
-│   ├── gateway-config.yaml           # Envoy Gateway config manifests (gitops/gateway/)
 │   ├── kured.yaml                    # kured Helm release
 │   ├── longhorn.yaml                 # Longhorn Helm release
 │   ├── network-policies.yaml         # NetworkPolicies for all namespaces
 │   ├── pdbs.yaml                     # PodDisruptionBudgets for core components
 │   ├── priority-classes.yaml         # PriorityClasses (gitops/priority-classes/)
-│   └── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
+│   ├── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
+│   └── traefik.yaml                  # Traefik Helm release: ingress, HTTP→HTTPS redirect, TLS options
 ├── argocd/                           # ArgoCD supplementary config
-│   └── rate-limit.yaml               # Envoy Gateway BackendTrafficPolicy (100 req/s/IP for ArgoCD UI)
+│   └── rate-limit.yaml               # Traefik rateLimit Middleware (100 req/s/IP for ArgoCD UI)
 ├── coredns/                          # HPA pinning k3s's CoreDNS at 2 replicas, one per node
 │   └── hpa.yaml
 ├── cert-manager/                     # ClusterIssuer templates (see adoption notes)
@@ -35,27 +34,21 @@ gitops/
 ├── external-secrets/                 # External Secrets templates
 │   ├── cluster-secret-store-template.yaml  # ClusterSecretStore backed by OCI Vault
 │   └── example-external-secrets.yaml       # Example ExternalSecret CRs
-├── gateway/                          # Envoy Gateway configuration
-│   ├── envoy-proxy.yaml              # EnvoyProxy: DaemonSet, NodePorts 30080/30443
-│   ├── gateway-class.yaml            # GatewayClass pointing to proxy-config
-│   ├── gateway.yaml                  # Gateway with HTTP listener + commented HTTPS listeners
-│   ├── redirect.yaml                 # HTTP→HTTPS RequestRedirect HTTPRoute
-│   └── tls-policy.yaml               # ClientTrafficPolicy: TLS 1.2+, strong ciphers
 ├── longhorn/                         # Longhorn supplementary config
-│   ├── ingress.yaml                  # HTTPRoute + SecurityPolicy (BasicAuth) template
+│   ├── ingress.yaml                  # Ingress + basicAuth Middleware template
 │   ├── backup-target.yaml            # BackupTarget CR setup steps + weekly RecurringJob template
 │   └── taint-toleration.yaml         # Worker node NoSchedule taint Setting template (uncomment + set taint key)
 ├── network-policies/                 # NetworkPolicies (default-deny + allow rules per namespace)
-│   ├── namespaces.yaml               # external-dns / external-secrets namespaces (so their policies apply)
+│   ├── namespaces.yaml               # external-dns / external-secrets / traefik namespaces (so their policies apply)
 │   ├── default-deny.yaml             # default namespace
 │   ├── argocd.yaml                   # argocd namespace (includes port 22 SSH egress for git clone)
 │   ├── cert-manager.yaml             # cert-manager namespace (includes port 80 egress for HTTP-01)
-│   ├── envoy-gateway-system.yaml     # envoy-gateway-system namespace (NodePort ingress + backend egress)
 │   ├── external-dns.yaml             # external-dns namespace (optional feature)
 │   ├── external-secrets.yaml         # external-secrets namespace (optional feature)
 │   ├── kube-system.yaml              # kube-system namespace
 │   ├── longhorn-system.yaml          # longhorn-system namespace
-│   └── system-upgrade.yaml           # system-upgrade namespace
+│   ├── system-upgrade.yaml           # system-upgrade namespace
+│   └── traefik.yaml                  # traefik namespace (NodePort ingress + backend egress)
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
 ├── priority-classes/                 # PriorityClasses: platform-critical, worker-pinned
@@ -94,20 +87,18 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 
 | Component | Who manages it | Why |
 |---|---|---|
-| Gateway API CRDs | cloud-init | Must exist before ArgoCD syncs `envoy-gateway` and `gateway-config` |
 | cert-manager Helm | cloud-init | ClusterIssuers need the real email from `var.certmanager_email_address` |
 | ClusterIssuers (staging/prod) | cloud-init | Email is a runtime Terraform variable, not static git content |
 | ArgoCD Helm + App of Apps | cloud-init | Chicken-and-egg: ArgoCD must be installed before it can manage itself |
 | ESO Helm + ClusterSecretStore | cloud-init | `vault_ocid` is runtime; conditional on `enable_external_secrets` |
 | Kubernetes Secrets with runtime values | cloud-init | Passwords, endpoints, OCI OCIDs resolved at `tofu apply` time |
-| `https-argocd` / `https-longhorn` Gateway listeners | cloud-init | NLB IP changes on every deploy; cannot be hardcoded in git |
-| Envoy Gateway Helm | ArgoCD (`apps/envoy-gateway.yaml`) | Helm chart, no runtime variables |
+| ArgoCD / Longhorn Ingresses + Certificates | cloud-init | NLB IP (sslip.io hostname, external-dns target) changes on every deploy; cannot be hardcoded in git |
+| Traefik Helm | ArgoCD (`apps/traefik.yaml`) | Helm chart, no runtime variables |
 | Longhorn Helm | ArgoCD (`apps/longhorn.yaml`) | Helm chart, no runtime variables |
 | kured Helm | ArgoCD (`apps/kured.yaml`) | Helm chart, no runtime variables |
 | system-upgrade-controller + Plans | ArgoCD (`apps/system-upgrade-controller.yaml`) | Remote release manifests via kustomize, no runtime variables |
 | external-dns Helm | ArgoCD, Application created by cloud-init (`create_external_dns_app()`) | Needs runtime domain/zone filters; `optional/external-dns.yaml` is a reference |
 | ESO Helm (adoption) | ArgoCD (`optional/external-secrets.yaml` via the `optional-external-secrets` wrapper) | Only when `enable_external_secrets = true` |
-| All `gitops/gateway/` resources | ArgoCD (`apps/gateway-config.yaml`) | Pure Kubernetes manifests, no runtime values |
 | All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
 | All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |
 | `gitops/coredns/` HPA | ArgoCD (`apps/coredns.yaml`) | Pure Kubernetes manifests |
@@ -161,64 +152,61 @@ Supported update strategies: `semver` (recommended), `latest`, `digest`, `name`.
 
 See [Image Updater docs](https://argocd-image-updater.readthedocs.io/) for full reference.
 
-## TLS (Gateway API)
+## TLS and ingress (Traefik)
 
-TLS is managed via Envoy Gateway's `ClientTrafficPolicy` in `gitops/gateway/tls-policy.yaml`,
-which enforces TLS 1.2+ and strong cipher suites cluster-wide.
+Traefik (`apps/traefik.yaml`) terminates TLS with its TLSOption `default`: TLS 1.2+ and AES-GCM
+suites cluster-wide. websecure (:443) is the default entrypoint, and :80 redirects to HTTPS
+except for cert-manager's HTTP-01 solver.
 
-To expose a new service over HTTPS:
+To expose a new service over HTTPS, create a `Certificate` and an `Ingress` in the service's
+namespace (an Ingress can only use a TLS Secret of its own namespace):
 
-1. Add an HTTPS listener to `gitops/gateway/gateway.yaml`:
-   ```yaml
-   - name: https-myapp
-     port: 443
-     protocol: HTTPS
-     hostname: "myapp.example.com"
-     tls:
-       mode: Terminate
-       certificateRefs:
-         - name: myapp-tls
-     allowedRoutes:
-       namespaces:
-         from: All
-   ```
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: myapp-tls
+  namespace: my-namespace
+spec:
+  secretName: myapp-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - myapp.example.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  namespace: my-namespace
+  annotations:
+    # Optional: Traefik Middlewares, comma-separated <namespace>-<name>@kubernetescrd
+    # traefik.ingress.kubernetes.io/router.middlewares: my-namespace-myapp-auth@kubernetescrd
+    # Optional, with enable_external_dns: the public NLB IP as the record target
+    # external-dns.alpha.kubernetes.io/target: "<public-nlb-ip>"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - myapp.example.com
+      secretName: myapp-tls
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myapp-service
+                port:
+                  number: 8080
+```
 
-2. Create a `Certificate` resource in the `envoy-gateway-system` namespace
-   (same namespace as the Gateway — no `ReferenceGrant` needed):
-   ```yaml
-   apiVersion: cert-manager.io/v1
-   kind: Certificate
-   metadata:
-     name: myapp-tls
-     namespace: envoy-gateway-system
-   spec:
-     secretName: myapp-tls
-     issuerRef:
-       name: letsencrypt-prod
-       kind: ClusterIssuer
-     dnsNames:
-       - myapp.example.com
-   ```
-
-3. Create an `HTTPRoute` in your application's namespace:
-   ```yaml
-   apiVersion: gateway.networking.k8s.io/v1
-   kind: HTTPRoute
-   metadata:
-     name: myapp
-     namespace: my-namespace
-   spec:
-     parentRefs:
-       - name: eg
-         namespace: envoy-gateway-system
-         sectionName: https-myapp
-     hostnames:
-       - "myapp.example.com"
-     rules:
-       - backendRefs:
-           - name: myapp-service
-             port: 8080
-   ```
+If the namespace has a default-deny ingress policy, allow the `traefik` namespace to reach the
+service's pods, and to cert-manager's HTTP-01 solver pods on 8089
+(`network-policies/argocd.yaml` shows both).
 
 ## Resilience: spread replicas across nodes
 

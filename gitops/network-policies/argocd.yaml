@@ -1,6 +1,6 @@
 ---
 # Default-deny ingress for the argocd namespace.
-# Allows: same-namespace pods, envoy-gateway (for HTTPRoute), kube-system (health probes).
+# Allows: same-namespace pods, Traefik (for the Ingress), kube-system (health probes).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,11 +29,11 @@ spec:
     - to:
         - podSelector: {}
 ---
-# Allow Envoy Gateway to reach argocd-server (HTTPRoute on port 80)
+# Allow Traefik to reach argocd-server (the Ingress, port 80)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-envoy-gateway-ingress
+  name: allow-traefik-ingress
   namespace: argocd
 spec:
   podSelector:
@@ -45,7 +45,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: envoy-gateway-system
+              kubernetes.io/metadata.name: traefik
 ---
 # Allow DNS egress from argocd pods
 apiVersion: networking.k8s.io/v1
@@ -95,3 +95,26 @@ spec:
     - ports:
         - port: 22
           protocol: TCP
+---
+# cert-manager's HTTP-01 solver pods for this namespace's Certificates (the
+# Ingress TLS secret lives next to its Ingress): Traefik forwards the ACME
+# challenge to them on 8089.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver-ingress
+  namespace: argocd
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8089
