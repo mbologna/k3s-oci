@@ -265,8 +265,8 @@ terraform-docs .
   read-only group, state read from the remote backend with `-lock=false`, and only changed
   resource addresses in the log (the repo's logs are public; never print the plan itself).
   Without its secrets it reports a notice and succeeds. Setup and secret names: README, "CI
-  plan against a live deployment". The providers rule stays `manual-review` until it runs for
-  real. PLAN_TFVARS needs `public_key = "..."` when the tfvars use `public_key_path`.
+  plan against a live deployment". It is a required check since 2026-11-16, so provider updates
+  automerge on an empty plan (no providers rule in renovate.json any more). PLAN_TFVARS needs `public_key = "..."` when the tfvars use `public_key_path`.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
   on GitHub after it is published. The Releases page is the whole history; there is no
   `CHANGELOG.md`.
