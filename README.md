@@ -432,12 +432,12 @@ To set it up:
 
    ```text
    Group:  k3s-oci-plan
-   Policy: k3s-oci-plan
+   Policy: tofu-plan-readers
      Allow group k3s-oci-plan to read all-resources in tenancy where all {request.permission != 'SECRET_BUNDLE_READ', request.permission != 'OBJECT_READ'}
      Allow group k3s-oci-plan to read objects in tenancy where target.bucket.name = '<state bucket>'
    ```
 
-   The first statement lets the plan refresh every resource without reading secret contents or the etcd snapshots and Longhorn backups in the module's buckets; the second reads the state object only. The state holds every cluster secret, so treat these credentials like the state itself.
+   The first statement lets the plan refresh every resource without reading secret contents or the etcd snapshots and Longhorn backups in the module's buckets; the second reads the state object only. The state holds every cluster secret, so treat these credentials like the state itself. Keep `k3s` and the cluster name out of the policy's name: `scripts/clean-oci-resources.sh` (run by the teardown scripts) deletes every policy and dynamic group whose name contains either, and a deleted policy shows up as `tofu init` failing with "S3 bucket does not exist".
 2. **User** `k3s-oci-plan` (no console password), member of `k3s-oci-plan`, with an API key (Users → API keys → Add) and a customer secret key (Users → Customer secret keys) for the S3-compatible state backend.
 3. **GitHub secrets** (Settings → Secrets and variables → Actions):
 
