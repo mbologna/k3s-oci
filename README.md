@@ -9,7 +9,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Single control plane**: 1 control-plane node with embedded etcd + 1 standalone worker (OCI Always Free 2 OCPU / 12 GB limit)
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
-- **Envoy Gateway ingress (Gateway API)**: one Envoy proxy per node (DaemonSet) with `system-cluster-critical` priority; standard `HTTPRoute`/`Gateway` resources; real client IP preservation via NLB transparent mode
+- **Traefik ingress**: one Traefik pod per node (DaemonSet, upstream chart via ArgoCD) with `system-cluster-critical` priority; standard Kubernetes `Ingress` plus Traefik Middlewares; HTTP→HTTPS redirect and TLS 1.2+ by default; real client IP preservation via NLB transparent mode and `externalTrafficPolicy: Local`. Since v2.0.0 (Envoy Gateway and the Gateway API before; see [Upgrading from 1.x](#upgrading-from-1x-to-20))
 - **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
 - **Configurable OS** (`os_family`): Ubuntu 26.04 LTS (default, OCI-native image auto-resolved) or openSUSE Leap 16.0 (custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`)
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
@@ -22,7 +22,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Longhorn backups to Object Storage** (`enable_longhorn_backup = true`): a second versioned bucket; with `create_longhorn_backup_user = true` the module creates a bucket-scoped service user and cloud-init wires the BackupTarget and a daily backup job
 - **Rebuild without data loss** (`just teardown-keep-data`): destroys the cluster but keeps the Vault and both buckets, then re-imports them so the next apply reuses them
 - **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
-- **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from HTTPRoute hostnames
+- **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from Ingress hosts (with an `external-dns.alpha.kubernetes.io/target` annotation, since Traefik publishes no Ingress status behind the NLB)
 - **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate. This lets the nodes read every secret in the compartment; swap in an API-key store and set `external_secrets_instance_principal = false` to scope them to their boot secrets
 
 ## Architecture
@@ -42,10 +42,10 @@ optional: kubeapi :6443 · SSH :22"]
 kubeapi VIP :6443"]
 
         CP["control-plane-0  ·  A1.Flex (1 OCPU / 6 GB)
-k3s-server · etcd · Envoy Gateway · Longhorn · user workloads"]
+k3s-server · etcd · Traefik · Longhorn · user workloads"]
 
         W["worker-0  ·  A1.Flex (1 OCPU / 6 GB)
-k3s-agent · Envoy Gateway · Longhorn · user workloads"]
+k3s-agent · Traefik · Longhorn · user workloads"]
     end
 
     NAT["🌍 NAT Gateway (Always Free)"]
@@ -53,7 +53,7 @@ k3s-agent · Envoy Gateway · Longhorn · user workloads"]
 optional · Always Free"]
 
     Internet -->|HTTP / HTTPS| NLB
-    NLB -->|"Envoy Gateway NodePorts :30080 / :30443"| CP & W
+    NLB -->|"Traefik NodePorts :30080 / :30443"| CP & W
     NLB -. "kubeapi :6443
 expose_kubeapi=true" .-> CP
     NLB -. "SSH :22
@@ -69,7 +69,7 @@ Both A1.Flex instances live in a **private subnet** with no public IPs. Internet
 
 > **k3s naming note:** k3s calls control-plane nodes "servers" (`k3s server`) and workers "agents" (`k3s agent`). Terraform resources follow k3s conventions (`server`/`worker`); in standard Kubernetes terminology these map to control-plane and worker nodes.
 
-**Public NLB** forwards HTTP/HTTPS directly to Envoy Gateway NodePorts on both nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
+**Public NLB** forwards HTTP/HTTPS directly to Traefik's NodePorts on both nodes. `is_preserve_source = true` preserves real client IPs at the hypervisor level. The NLB optionally exposes the Kubernetes API on port 6443, restricted to your IP.
 
 **Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP; the optional public kubeapi listener on the NLB targets the server directly.
 
@@ -163,7 +163,7 @@ ignore `user_data` changes, so a server the pool relaunches meanwhile still boot
 
 ## Deploying a web application
 
-### Why TLS is terminated at Envoy Gateway, not at the OCI load balancer
+### Why TLS is terminated at Traefik, not at the OCI load balancer
 
 OCI provides two load balancer products with very different capabilities:
 
@@ -178,7 +178,14 @@ The public-facing load balancer is the **NLB**. It forwards raw TCP streams with
 
 The **Flexible LB** *could* terminate TLS, but the one free allocation is already consumed by the internal kubeapi load balancer. Even if it were available, using OCI to manage certificates would break the automatic cert-manager + Let's Encrypt renewal cycle.
 
-The current flow is: Internet → NLB (TCP passthrough, preserves client IPs) → Envoy Gateway NodePort → TLS terminate → route to app pod.
+The current flow is: Internet → NLB (TCP passthrough, preserves client IPs) → Traefik NodePort (one pod per node) → TLS terminate → route to app pod.
+
+How Traefik is set up (`gitops/apps/traefik.yaml`):
+
+- **websecure is the default entrypoint.** An Ingress or IngressRoute without an explicit entrypoint is served on :443 only, with TLS.
+- **:80 redirects to HTTPS** (permanent), at the lowest router priority, so cert-manager's HTTP-01 solver Ingress (pinned to the `web` entrypoint by the ClusterIssuers) still answers the ACME challenge there. To serve plain HTTP on purpose, pin an Ingress to `web` with the annotation `traefik.ingress.kubernetes.io/router.entrypoints: web`.
+- **TLS 1.2+ with AES-GCM ciphers** (TLSOption `default`).
+- **No Ingress status**: the NodePort Service has no load-balancer address, and `gitops/` stays IP-free. Argo CD treats an Ingress as Healthy without it; for external-dns, give your Ingress the `external-dns.alpha.kubernetes.io/target: <NLB_IP>` annotation (cloud-init does this for the ArgoCD and Longhorn Ingresses).
 
 ### Minimal example: HTTP-only
 
@@ -226,21 +233,27 @@ spec:
     - port: 80
       targetPort: 80
 ---
-# HTTPRoute, no hostname filter = matches all requests on the http listener
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+# Ingress without a host = matches every request; pinned to the web entrypoint
+# (plain HTTP), where it outranks the HTTP->HTTPS redirect.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
   name: hello-web
   namespace: hello-web
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  parentRefs:
-    - name: eg
-      namespace: envoy-gateway-system
-      sectionName: http
+  ingressClassName: traefik
   rules:
-    - backendRefs:
-        - name: hello-web
-          port: 80
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-web
+                port:
+                  number: 80
 ```
 
 ```bash
@@ -259,12 +272,13 @@ Replace `<NLB_IP>` with the value of `tofu output -raw nlb_ip`.
 ```yaml
 # hello-web-tls.yaml
 ---
-# 1. Certificate, cert-manager issues this via HTTP-01 challenge through Envoy Gateway
+# 1. Certificate, issued over HTTP-01 through Traefik's web entrypoint. It lives
+#    in the app's namespace: an Ingress can only use a TLS Secret of its own.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: hello-web-tls
-  namespace: envoy-gateway-system   # must be in the same namespace as the Gateway
+  namespace: hello-web
 spec:
   secretName: hello-web-tls
   issuerRef:
@@ -273,86 +287,50 @@ spec:
   dnsNames:
     - hello-web.<NLB_IP>.sslip.io
 ---
-# 2. HTTPS listener on the Gateway (add this to gitops/gateway/gateway.yaml for GitOps management)
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: eg
-  namespace: envoy-gateway-system
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: http
-      port: 80
-      protocol: HTTP
-      allowedRoutes:
-        namespaces:
-          from: All
-    - name: https-hello-web
-      port: 443
-      protocol: HTTPS
-      hostname: hello-web.<NLB_IP>.sslip.io
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: hello-web-tls
-      allowedRoutes:
-        namespaces:
-          from: All
----
-# 3. HTTP→HTTPS redirect (add hostname to gitops/gateway/redirect.yaml)
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: http-to-https-redirect
-  namespace: envoy-gateway-system
-spec:
-  parentRefs:
-    - name: eg
-      sectionName: http
-  hostnames:
-    - hello-web.<NLB_IP>.sslip.io
-  rules:
-    - filters:
-        - type: RequestRedirect
-          requestRedirect:
-            scheme: https
-            statusCode: 301
----
-# 4. HTTPRoute for the app, attaches to both listeners
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+# 2. Ingress on websecure (the default entrypoint); :80 redirects here already.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
   name: hello-web
   namespace: hello-web
 spec:
-  parentRefs:
-    - name: eg
-      namespace: envoy-gateway-system
-      sectionName: https-hello-web
-  hostnames:
-    - hello-web.<NLB_IP>.sslip.io
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - hello-web.<NLB_IP>.sslip.io
+      secretName: hello-web-tls
   rules:
-    - backendRefs:
-        - name: hello-web
-          port: 80
+    - host: hello-web.<NLB_IP>.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-web
+                port:
+                  number: 80
 ```
 
 ```bash
 # Wait for certificate issuance (typically 1-2 minutes)
-kubectl wait --for=condition=Ready certificate/hello-web-tls -n envoy-gateway-system --timeout=5m
+kubectl wait --for=condition=Ready certificate/hello-web-tls -n hello-web --timeout=5m
 curl https://hello-web.<NLB_IP>.sslip.io/
 ```
 
-> **With a real domain**: set `enable_external_dns = true` and annotate the HTTPRoute with
-> `external-dns.alpha.kubernetes.io/hostname: myapp.example.com`. External DNS will create
-> the A record automatically, then cert-manager issues the certificate. Alternatively,
-> set `enable_dns01_challenge = true` to use DNS-01 (supports wildcard certs and does not
+Instead of a separate Certificate, you can annotate the Ingress with `cert-manager.io/cluster-issuer: letsencrypt-prod` and let cert-manager's ingress-shim create it from `spec.tls`.
+
+Middlewares (BasicAuth, rate limits, IP allowlists, headers) are Traefik `Middleware` objects attached with `traefik.ingress.kubernetes.io/router.middlewares: <namespace>-<name>@kubernetescrd`; `gitops/argocd/rate-limit.yaml` and `gitops/longhorn/ingress.yaml` show two.
+
+> **With a real domain**: set `enable_external_dns = true` and annotate the Ingress with
+> `external-dns.alpha.kubernetes.io/target: <NLB_IP>`. External DNS creates the A record for
+> the Ingress's hosts, then cert-manager issues the certificate. Alternatively, set
+> `enable_dns01_challenge = true` to use DNS-01 (supports wildcard certs and does not
 > require inbound port 80).
 
 ### Resilience: spread replicas across nodes
 
-Run `replicas ≥ 2` with `topologySpreadConstraints` on `kubernetes.io/hostname` so losing one node never takes all replicas down. Envoy Gateway already runs on both nodes, so ingress survives a single-node drain or failure. See [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes) for the snippet and a matching PodDisruptionBudget.
+Run `replicas ≥ 2` with `topologySpreadConstraints` on `kubernetes.io/hostname` so losing one node never takes all replicas down. Traefik already runs on both nodes, so ingress survives a single-node drain or failure. See [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes) for the snippet and a matching PodDisruptionBudget.
 
 ## GitOps, App of Apps
 
@@ -444,10 +422,6 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
 
-### Gateway API follows Envoy Gateway
-
-Envoy Gateway's chart re-applies the Gateway API CRDs it bundles (`sigs.k8s.io/gateway-api` in its `go.mod`) at every sync, so `gateway_api_version`, installed only at bootstrap, must be that same minor. Renovate takes no Gateway API minor of its own; an Envoy Gateway bump that brings a new minor fails the `Gateway API matches Envoy Gateway` check (`scripts/check-gateway-api.sh`) until `gateway_api_version` moves to that minor in the same pull request. Patches within the minor still update on their own.
-
 ### CI plan against a live deployment
 
 `.github/workflows/plan.yml` runs `tofu plan` of `example/` against a live deployment on every same-repository pull request, read-only: an empty plan shows that a provider or chart bump changes nothing in the tenancy. It needs the deployment's state in a remote backend ([Remote Terraform state](#remote-terraform-state-oci-object-storage)) and its own OCI user that may only read. Only the addresses of changed resources reach the log, since the full plan holds OCIDs, IP addresses and tfvars values. Until the secrets below exist, the job reports a notice and succeeds, so fork pull requests (which get no secrets) are not blocked.
@@ -473,7 +447,7 @@ To set it up:
    | `OCI_PLAN_PRIVATE_KEY` | the API key's private key (PEM) |
    | `PLAN_STATE_ACCESS_KEY_ID`, `PLAN_STATE_SECRET_ACCESS_KEY` | the customer secret key |
    | `PLAN_BACKEND_OVERRIDE` | your `example/backend_override.tf`; the job overrides its `profile` with its own |
-   | `PLAN_TFVARS` | your `example/terraform.tfvars` followed by any `*.auto.tfvars`, the inputs the deployment was applied with; set it again after changing them (`cat terraform.tfvars *.auto.tfvars \| gh secret set PLAN_TFVARS`) |
+   | `PLAN_TFVARS` | your `example/terraform.tfvars` followed by any `*.auto.tfvars`, the inputs the deployment was applied with; set it again after changing them (`cat terraform.tfvars *.auto.tfvars \| gh secret set PLAN_TFVARS`). If your tfvars point at the SSH key with `public_key_path` (the default, `~/.ssh/id_ed25519.pub`), append `public_key = "<that key>"`: the runner has no such file, and the key must be the one the deployment was built with, or the plan shows the instances changing |
 
 4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
 
@@ -594,7 +568,7 @@ instance_principal External Secrets store needs the whole compartment (see `exte
 |---|---|---|
 | **Worker node failure** | ⚠️ Partial | Workloads reschedule to the control plane *if their CPU/memory requests fit* in what it has left after k3s itself and etcd; the rest wait Pending until the worker returns. Longhorn (2 replicas) keeps storage up. Keep the control plane's requests well under its allocatable if you need the worker's workloads to fit there |
 | **Control-plane failure** | ❌ None | Single etcd node, cluster becomes unavailable; restore from etcd snapshot |
-| **HTTP/HTTPS ingress** | ✅ Worker loss | Envoy Gateway DaemonSet on control-plane keeps ingress up |
+| **HTTP/HTTPS ingress** | ✅ Worker loss | Traefik DaemonSet on control-plane keeps ingress up |
 | **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
 | **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
 | **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
@@ -610,7 +584,7 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 |---|:---:|:---:|---|
 | **etcd** | ✅ | ❌ | k3s built-in; servers only |
 | **Kubernetes API server** | ✅ | ❌ | k3s built-in; servers only |
-| **Envoy Gateway** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
+| **Traefik** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **cert-manager**, **External Secrets**, **Tailscale operator** | ✅ | ✅ | Deployments: prefer the worker, run on the control plane while it is drained |
 | **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, dex, applicationset, repo-server: prefer the worker |
@@ -663,7 +637,7 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 
 | Alternative | Why it was rejected |
 |---|---|
-| nginx stream proxy in front of Envoy Gateway | Extra latency and complexity; NLB already preserves source IPs directly |
+| nginx stream proxy in front of Traefik | Extra latency and complexity; NLB already preserves source IPs directly |
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
 | Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; the default 2 × 100 GB uses the whole 200 GB free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
@@ -733,6 +707,29 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic, fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
 
+## Upgrading from 1.x to 2.0
+
+v2.0.0 replaces Envoy Gateway and the Gateway API with Traefik and plain Kubernetes Ingress. The module's interface is otherwise unchanged; existing tfvars still validate (`gateway_api_version` is accepted and ignored, the Docker Hub variables keep working for your own OCI charts on Docker Hub).
+
+What moves:
+
+| 1.x (Envoy Gateway) | 2.0 (Traefik) |
+|---|---|
+| `HTTPRoute` attached to Gateway `eg` | `Ingress` with `ingressClassName: traefik` |
+| An HTTPS listener per hostname on Gateway `eg` | `spec.tls` on the Ingress; :443 is the default entrypoint |
+| `Certificate` in `envoy-gateway-system` | `Certificate` in the Ingress's namespace (or the `cert-manager.io/cluster-issuer` annotation) |
+| HTTP→HTTPS redirect HTTPRoute | Built in: the `web` entrypoint redirects |
+| `SecurityPolicy` basicAuth (`.htpasswd` key) | `Middleware` basicAuth (Secret key `users`) |
+| `BackendTrafficPolicy` local rate limit | `Middleware` rateLimit |
+| `ClientTrafficPolicy` TLS settings | TLSOption `default` (chart values) |
+| HTTP-01 via `gatewayHTTPRoute` | HTTP-01 via an Ingress solver pinned to the `web` entrypoint |
+| external-dns from HTTPRoute hostnames | external-dns from Ingress hosts plus a `target` annotation (the NLB IP) |
+
+Paths:
+
+- **Rebuild** (simplest): tear down keeping data (`just teardown-keep-data`), check out the v2.0.0 tag, apply. Cloud-init no longer installs the Gateway API CRDs, and the Argo CD and Longhorn Ingresses are created fresh.
+- **In place**: update your GitOps fork to v2.0.0's `gitops/` (Argo CD prunes `envoy-gateway` and `gateway-config` and installs `traefik`), convert your own HTTPRoutes and policies as in the table, re-create the ArgoCD/Longhorn ingresses (re-run `configure_argocd_ingress` / `configure_longhorn_ingress` from `files/lib/k3s-argocd.sh`, or write the Ingresses by hand), then delete the leftovers: the `envoy-gateway-system` namespace and, once nothing uses them, the `gateway.networking.k8s.io` and `gateway.envoyproxy.io` CRDs (deleting a CRD deletes all its objects). Envoy and Traefik both bind NodePorts 30080/30443, so expect a few minutes without ingress between the prune and Traefik's start. Instance configurations ignore `user_data` changes, so the new cloud-init applies at the next rebuild either way.
+
 ## Teardown
 
 To delete the cluster and all associated OCI resources:
@@ -782,7 +779,7 @@ It has `prevent_destroy = false` (so `tofu destroy` works for full rebuilds); if
 - Let's Encrypt certificates are invalid for the new hostnames and must be reissued
 - With a custom domain + `enable_external_dns = true`, ExternalDNS updates DNS automatically and cert-manager auto-renews
 
-**If using sslip.io defaults**, run `tofu apply` again after NLB recreation: `local.argocd_hostname` recomputes automatically from the new IP, cloud-init re-creates the Gateway listeners and certificates, and cert-manager reissues via Let's Encrypt.
+**If using sslip.io defaults**, run `tofu apply` again after NLB recreation: `local.argocd_hostname` recomputes automatically from the new IP, cloud-init re-creates the Ingresses and certificates, and cert-manager reissues via Let's Encrypt.
 
 ## License
 

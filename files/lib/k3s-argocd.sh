@@ -2,7 +2,7 @@
 # lib/k3s-argocd.sh -- ArgoCD install, optional app wrappers, hostname ingress.
 # Installs ArgoCD via Helm, bootstraps the App of Apps, creates optional ArgoCD
 # Application wrappers for feature-gated components, and wires up hostname-specific
-# Gateway listeners + HTTPRoutes (e.g. ArgoCD, Longhorn — kept outside gitops/).
+# Ingresses + Certificates (e.g. ArgoCD, Longhorn — kept outside gitops/).
 # Pure bash -- no Terraform interpolation.
 #
 # shellcheck disable=SC2154
@@ -72,7 +72,7 @@ EOF
   helm repo add argo https://argoproj.github.io/argo-helm
   helm repo update
 
-  # server.insecure=true: Envoy Gateway terminates TLS; ArgoCD backend serves plain HTTP.
+  # server.insecure=true: Traefik terminates TLS; ArgoCD backend serves plain HTTP.
   helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
     --version "${ARGOCD_CHART_VERSION}" \
@@ -137,9 +137,10 @@ EOF
 }
 
 # -- DockerHub OCI Helm registry credentials -----------------------------------
-# Envoy Gateway chart is hosted on registry-1.docker.io. Anonymous Docker Hub
-# pulls are rate-limited; authenticated pulls avoid 401/429 errors in ArgoCD.
-# Only created when DOCKERHUB_USERNAME is non-empty.
+# Argo CD repository credentials for OCI Helm charts on registry-1.docker.io
+# (none in the default stack since v2.0.0, which dropped Envoy Gateway; useful
+# for your own apps). Anonymous Docker Hub pulls are rate-limited; authenticated
+# pulls avoid 401/429 errors. Only created when DOCKERHUB_USERNAME is non-empty.
 
 create_dockerhub_secret() {
   [[ -z "${DOCKERHUB_USERNAME}" ]] && return 0
@@ -292,72 +293,46 @@ EOF
   echo "external-dns ArgoCD Application created (domain=${EXTERNAL_DNS_DOMAIN_FILTER}, zone=${CLOUDFLARE_ZONE_ID}, owner=${CLUSTER_NAME})."
 }
 
-# -- Generic app ingress helper ------------------------------------------------
-# configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [route_name]
-#
-# Creates (or updates) three resources for an HTTPS-terminated app:
-#   1. A Gateway listener named <listener_name> (SSA, field-manager=cloud-init-bootstrap)
-#   2. A cert-manager Certificate in envoy-gateway-system
-#   3. An HTTPRoute named <route_name> (defaults to <service>) in <namespace>
-#      with <hostname> (SSA, field-manager=cloud-init-bootstrap)
-#
-# <route_name> is optional and defaults to <service>. Set it explicitly when the
-# gitops HTTPRoute file uses a different name from the backend service.
-#
-# All resources survive ArgoCD reconciliation because cloud-init-bootstrap owns
-# the specific fields; ArgoCD never claims them.
+
+# -- App ingress (Traefik) ------------------------------------------------------
+# One HTTPS host for a Service: a cert-manager Certificate and an Ingress of
+# class traefik in the Service's namespace (an Ingress can only use a TLS Secret
+# of its own namespace). Traefik's default entrypoint is websecure (TLS), and
+# :80 redirects there (gitops/apps/traefik.yaml). Optional Traefik Middlewares
+# as a comma-separated list of <namespace>-<name>@kubernetescrd references.
+# With a public NLB IP, the Ingress gets an external-dns target annotation:
+# Traefik publishes no Ingress status (NodePort Service, IP-free gitops/).
+
 configure_app_ingress() {
   local hostname="$1"
   local namespace="$2"
   local service="$3"
   local port="$4"
-  local listener_name="$5"
-  local route_name="${6:-${service}}"
+  local name="$5"
+  local middlewares="${6:-}"
 
   [[ -z "${hostname}" ]] && return 0
 
-  echo "Configuring ${service} ingress for ${hostname} (listener=${listener_name}, route=${route_name})..."
+  echo "Configuring ${service} ingress for ${hostname} (${namespace}/${name})..."
 
-  # ArgoCD must complete wave-0 apps, then envoy-gateway (wave 1), then
-  # gateway-config (wave 2) before Gateway eg exists. Allow up to 30 minutes.
+  # ArgoCD syncs waves -1 and 0, then the traefik app (wave 1) creates the
+  # IngressClass. Allow up to 30 minutes on a fresh deploy.
   local attempts=0
-  until kubectl get gateway eg -n envoy-gateway-system &>/dev/null; do
+  until kubectl get ingressclass traefik &>/dev/null; do
     attempts=$((attempts + 1))
-    [[ ${attempts} -ge 180 ]] && echo "Timeout waiting for Gateway eg" && return 1
-    echo "  waiting for Gateway eg... (${attempts}/180)"
+    [[ ${attempts} -ge 180 ]] && echo "Timeout waiting for IngressClass traefik" && return 1
+    echo "  waiting for IngressClass traefik... (${attempts}/180)"
     sleep 10
   done
-
-  kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: eg
-  namespace: envoy-gateway-system
-spec:
-  gatewayClassName: eg
-  listeners:
-    - name: ${listener_name}
-      port: 443
-      protocol: HTTPS
-      hostname: "${hostname}"
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: ${listener_name}-tls
-      allowedRoutes:
-        namespaces:
-          from: All
-EOF
 
   kubectl apply -f - <<EOF
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: ${listener_name}-tls
-  namespace: envoy-gateway-system
+  name: ${name}-tls
+  namespace: ${namespace}
 spec:
-  secretName: ${listener_name}-tls
+  secretName: ${name}-tls
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
@@ -365,64 +340,84 @@ spec:
     - "${hostname}"
 EOF
 
+  local annotations=""
+  [[ -n "${middlewares}" ]] && annotations+="
+    traefik.ingress.kubernetes.io/router.middlewares: \"${middlewares}\""
+  [[ -n "${PUBLIC_NLB_IP:-}" ]] && annotations+="
+    external-dns.alpha.kubernetes.io/target: \"${PUBLIC_NLB_IP}\""
+
   kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: ${route_name}
+  name: ${name}
   namespace: ${namespace}
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls: "true"${annotations}
 spec:
-  parentRefs:
-    - name: eg
-      namespace: envoy-gateway-system
-      sectionName: ${listener_name}
-  hostnames:
-    - "${hostname}"
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - "${hostname}"
+      secretName: ${name}-tls
   rules:
-    - backendRefs:
-        - name: ${service}
-          port: ${port}
+    - host: "${hostname}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${service}
+                port:
+                  number: ${port}
 EOF
 
   echo "${service} ingress configured: https://${hostname}"
 }
 
-
 # -- ArgoCD ingress -------------------------------------------------------------
+# The rate-limit Middleware comes from gitops/argocd/rate-limit.yaml.
 configure_argocd_ingress() {
   configure_app_ingress \
     "${ARGOCD_HOSTNAME}" \
     "argocd" \
     "argocd-server" \
     "80" \
-    "https-argocd"
+    "argocd-server" \
+    "argocd-argocd-rate-limit@kubernetescrd"
 }
 
 # -- Longhorn ingress -----------------------------------------------------------
 configure_longhorn_ingress() {
   [[ -z "${LONGHORN_HOSTNAME}" ]] && return 0
 
+  # BasicAuth for the Longhorn UI: the Secret (key `users`) comes from
+  # pre_create_secrets (files/lib/k3s-secrets.sh); the Middleware CRD arrives
+  # with the traefik app (wave 1).
+  local attempts=0
+  until kubectl get crd middlewares.traefik.io &>/dev/null; do
+    attempts=$((attempts + 1))
+    [[ ${attempts} -ge 180 ]] && echo "Timeout waiting for the Traefik Middleware CRD" && return 1
+    echo "  waiting for the Traefik Middleware CRD... (${attempts}/180)"
+    sleep 10
+  done
+  kubectl apply -f - <<EOF
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: longhorn-basic-auth
+  namespace: longhorn-system
+spec:
+  basicAuth:
+    secret: longhorn-basic-auth-secret
+EOF
+
   configure_app_ingress \
     "${LONGHORN_HOSTNAME}" \
     "longhorn-system" \
     "longhorn-frontend" \
     "80" \
-    "https-longhorn"
-
-  # Apply BasicAuth SecurityPolicy so the Longhorn UI requires credentials.
-  kubectl apply -f - <<EOF
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: SecurityPolicy
-metadata:
-  name: longhorn-basic-auth
-  namespace: longhorn-system
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      name: longhorn-frontend
-  basicAuth:
-    users:
-      name: longhorn-basic-auth-secret
-EOF
+    "longhorn-frontend" \
+    "longhorn-system-longhorn-basic-auth@kubernetescrd"
 }

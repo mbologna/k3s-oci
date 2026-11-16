@@ -18,7 +18,7 @@ do not introduce resources that incur cost.
 | Cloud | Oracle Cloud Infrastructure (OCI) |
 | OS | Ubuntu 26.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
-| Ingress | Envoy Gateway (Gateway API) |
+| Ingress | Traefik (Kubernetes Ingress + Traefik Middlewares; since v2.0.0, Envoy Gateway before) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
 | GitOps | ArgoCD + Image Updater |
@@ -74,7 +74,7 @@ files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shar
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
 files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point
-files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — calls install_gateway_api_crds() then run_bootstrap()
+files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — run_bootstrap()
 files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, MySQL, Cloudflare secrets
 files/lib/k3s-cert-manager.sh     — pure bash: install_certmanager() — cert-manager Helm + ClusterIssuers
 files/lib/k3s-external-secrets.sh — pure bash: install_external_secrets() — ESO Helm + ClusterSecretStore
@@ -92,9 +92,8 @@ gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
 gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
 gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)
-gitops/longhorn/             — Longhorn supplementary config: ingress (BasicAuth HTTPRoute), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
+gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
-gitops/gateway/              — Envoy Gateway config: EnvoyProxy (DaemonSet/NodePort), GatewayClass, Gateway, redirect HTTPRoute, TLS ClientTrafficPolicy
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
 example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/)
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
@@ -153,7 +152,7 @@ ArgoCD apps depend on):
    - `k3s-secrets.sh` — if it only creates Kubernetes Secrets
    - `k3s-cert-manager.sh` — if it is cert-manager or a ClusterIssuer variant
    - `k3s-external-secrets.sh` — if it is an ESO-related component
-   - `k3s-argocd.sh` — if it involves ArgoCD apps or Gateway resources
+   - `k3s-argocd.sh` — if it involves ArgoCD apps or app Ingresses
    - Create a new `k3s-<component>.sh` file for completely new concerns
 4. Call it from `run_bootstrap()` in `files/lib/k3s-bootstrap.sh`.
 5. Add the version variable to the `templatefile()` vars map in `data.tf`.
@@ -253,10 +252,9 @@ terraform-docs .
 - There is no release PR and nothing is committed back to `main`. Running the Release workflow by
   hand on `main` (*Actions → Release → Run workflow*) releases at once; with `dry_run` on it only
   shows the next version and its notes in the job summary.
-- `gateway_api_version` follows Envoy Gateway: its chart re-applies the Gateway API CRDs it bundles
-  (`sigs.k8s.io/gateway-api` in `envoyproxy/gateway` `go.mod`), so the variable only matters at
-  bootstrap. Renovate automerges gateway-api patches; a minor or major waits for a person, who
-  merges it once the pinned Envoy Gateway release bundles that minor.
+- Traefik is the upstream chart in `gitops/apps/traefik.yaml`, tracked by the gitops customManager
+  like the other charts. `gateway_api_version` is deprecated and ignored since v2.0.0 (no Gateway
+  API CRDs are installed); keep the variable until the next major so old tfvars validate.
 - k3s: the module follows the `stable` channel; forks that pin it (Plans `version:` plus a
   committed `*.auto.tfvars` `k3s_version`, each with the renovate comment on the line above) get
   one `k3s` PR per update: patches automerge, a minor only from its x.y.3 release and then
@@ -267,8 +265,8 @@ terraform-docs .
   read-only group, state read from the remote backend with `-lock=false`, and only changed
   resource addresses in the log (the repo's logs are public; never print the plan itself).
   Without its secrets it reports a notice and succeeds. Setup and secret names: README, "CI
-  plan against a live deployment". The providers and gateway-api minor rules stay
-  `manual-review` until it runs for real.
+  plan against a live deployment". The providers rule stays `manual-review` until it runs for
+  real. PLAN_TFVARS needs `public_key = "..."` when the tfvars use `public_key_path`.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
   on GitHub after it is published. The Releases page is the whole history; there is no
   `CHANGELOG.md`.
@@ -339,8 +337,8 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Do not remove the `# renovate:` comments on version variables
 - Do not commit `example/terraform.tfvars` (it is gitignored; `.tfvars.example` is the template)
 - Do not break the `terraform validate` step — `server-vars.sh.tpl` / `agent-vars.sh.tpl` vars must match what `data.tf` passes
-- **Do not suggest terminating TLS at the OCI load balancer** — the public-facing LB is the OCI NLB (`nlb.tf`), which operates at L4 TCP only (`protocol = "TCP"`) and cannot inspect or terminate TLS. The one free OCI Flexible LB allocation (L7, TLS-capable) is consumed by the internal kubeapi LB (`lb.tf`). TLS must be terminated at Envoy Gateway. cert-manager + Let's Encrypt handles certificate issuance and renewal automatically.
-- **Do not add nginx or other ingress controllers** — Envoy Gateway (Gateway API) is the ingress implementation. All HTTP/HTTPS routing uses standard `HTTPRoute`, `Gateway`, and `GatewayClass` resources.
+- **Do not suggest terminating TLS at the OCI load balancer** — the public-facing LB is the OCI NLB (`nlb.tf`), which operates at L4 TCP only (`protocol = "TCP"`) and cannot inspect or terminate TLS. The one free OCI Flexible LB allocation (L7, TLS-capable) is consumed by the internal kubeapi LB (`lb.tf`). TLS must be terminated at Traefik. cert-manager + Let's Encrypt handles certificate issuance and renewal automatically.
+- **Do not add nginx or other ingress controllers** — Traefik is the ingress implementation (since v2.0.0). HTTP/HTTPS routing uses standard Kubernetes `Ingress` resources with Traefik `Middleware`s; `IngressRoute` is fine where an Ingress can't express it (the module itself needs none).
 - **Do not re-add `control-plane:NoSchedule` taints** — cloud-init removes these taints after cluster init so user workloads schedule across both nodes. With only 1 worker, keeping the taints makes the worker a single point of failure for all workloads. All nodes are identically sized; etcd and ordinary user workloads coexist — but see "Server disk latency" below: IO-heavy batch jobs must stay off the server.
 - **Do not add UFW or any iptables-front-end** to nodes. k3s manages iptables directly via flannel;
   adding ufw would flush k3s's rules on `ufw enable` and break pod networking. OCI NSGs provide
@@ -352,7 +350,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   k3s restart (including a leader-election-lost exit) into a restart of every pod on the node.
 - **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–9 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
 - **Vault and key have `prevent_destroy = true`** — OCI DEFAULT vaults have a low per-tenancy limit and take a minimum of 7 days to fully delete (the `PENDING_DELETION` state counts against quota). `prevent_destroy` keeps the vault alive across `tofu destroy`/`tofu apply` cycles. If you genuinely need to delete the vault, remove the `lifecycle` block or run `tofu state rm` first.
-- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Envoy Gateway NodePorts
+- **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik's NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
   adds latency and complexity with no benefit.
 - **Do not reduce `boot_volume_size_in_gbs` below 50 GB** — OCI requires ≥ 50 GB for boot
@@ -370,32 +368,35 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - When `expose_ssh = true`, OCI Bastion Service (`enable_bastion`) is redundant. Set `enable_bastion = false` to avoid the lingering-VNIC delay when destroying (OCI Bastion VNICs take 15-30 min to clean up internally after deletion, blocking subnet deletion).
 - NSG rules for NLB SSH/kubeapi traffic MUST use `source_type = "CIDR_BLOCK"` with `source = var.my_public_ip_cidr`, NOT `source_type = "NETWORK_SECURITY_GROUP"`. The NLB uses `is_preserve_source = true` so real client IPs arrive at node VNICs directly — NLB NSG rules only match health-check traffic.
 
-### Envoy Gateway (Gateway API)
+### Traefik (ingress)
 
-- Deployed as a **DaemonSet** (one Envoy proxy pod per node) via the `EnvoyProxy` resource — every NLB backend serves ingress locally, no cross-node forwarding, no single-pod SPOF.
-- `priorityClassName: system-cluster-critical` ensures Envoy proxy pods preempt user workloads under memory pressure and are never evicted before system daemons.
-- `resources.requests: 100m CPU / 128Mi RAM` prevents scheduling on nodes that cannot sustain ingress load.
-- `PodDisruptionBudget maxUnavailable: 1` for the Envoy DaemonSet is NOT used — Kubernetes PDB does not support DaemonSet-controlled pods (DaemonSets do not implement the scale subresource). kured uses `--ignore-daemonsets` during drain so the one-node-at-a-time guarantee comes from kured's own distributed lock, not a PDB. Do not add a PDB for the Envoy DaemonSet pods.
-- All HTTP/HTTPS routing uses standard `HTTPRoute` resources (Gateway API v1). Proprietary `IngressRoute` CRDs are not used.
-- HTTP-01 ACME challenges use `gatewayHTTPRoute` solver (cert-manager Gateway API integration). cert-manager is installed with both `--feature-gates=ExperimentalGatewayAPISupport=true` **and** `config.enableGatewayAPI=true` (via `config.apiVersion` + `config.kind` + `config.enableGatewayAPI` Helm values). Both are required since cert-manager v1.15 — the feature gate alone is not sufficient to enable the `gatewayHTTPRoute` HTTP-01 solver.
-- TLS certificates live in the `envoy-gateway-system` namespace (same as the Gateway) so no `ReferenceGrant` is needed.
-- BasicAuth for Longhorn UI uses Envoy Gateway `SecurityPolicy` with `.htpasswd` Secret — same security, standard API.
-- Do not change `envoyDaemonSet` back to `envoyDeployment` — this would reintroduce a single-pod SPOF for all HTTP/HTTPS traffic.
+- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`--disable traefik` in `k3s-server.sh`) so the version is pinned and Renovate-managed.
+- **DaemonSet** (one pod per node): every NLB backend serves ingress locally, no cross-node hop, no single-pod SPOF. Updates surge (maxUnavailable 0, maxSurge 1), so a node keeps serving while its new pod starts.
+- `priorityClassName: system-cluster-critical`, like kured and Longhorn's instance managers.
+- No PDB: Kubernetes PDBs don't apply to DaemonSet pods; kured drains with `--ignore-daemonsets`.
+- **NodePort 30080/30443** must match `ingress_controller_http_nodeport` / `ingress_controller_https_nodeport` (the NLB backends and NSG rules). **`externalTrafficPolicy: Local`** keeps the client IP (the NLB preserves it); Cluster would SNAT and break rate limits and allowlists.
+- **websecure is the default entrypoint** (`asDefault`), with TLS: Ingresses without an explicit entrypoint are served on :443 only. **:80 redirects** to HTTPS at router priority 1, so cert-manager's HTTP-01 solver Ingress, pinned to `web` through the ClusterIssuers' `ingressTemplate` annotation (`traefik.ingress.kubernetes.io/router.entrypoints: web`), outranks it. Do not raise the redirect's priority or remove the solver annotation: HTTP-01 would stop working. Plain-HTTP Ingresses pin themselves to `web`.
+- **TLSOption `default`** (chart values): TLS 1.2+, AES-GCM suites. Go's TLS has no aarch64 cipher problem (Envoy/BoringSSL had one with ChaCha20).
+- **No Ingress status**: the NodePort Service has no load-balancer address and `gitops/` is IP-free, so `publishedService` is off and status stays empty. `gitops/apps/argocd.yaml` adds an Argo CD health customization that treats an Ingress as Healthy; cloud-init's Ingresses get `external-dns.alpha.kubernetes.io/target: <public NLB IP>` (`PUBLIC_NLB_IP`).
+- Middlewares: `gitops/argocd/rate-limit.yaml` (Argo CD UI, 100 req/s per client IP) and the Longhorn basicAuth Middleware cloud-init creates (Secret key `users`, `{SHA}` hash from `k3s-secrets.sh`). Reference them as `<namespace>-<name>@kubernetescrd`. Middleware manifests in apps that sync before wave 1 carry `SkipDryRunOnMissingResource=true`.
+- Certificates live in the Ingress's namespace (an Ingress can only use a TLS Secret of its own); the HTTP-01 solver pods run there too, so those namespaces allow ingress from `traefik` to `acme.cert-manager.io/http01-solver` pods on 8089 (`gitops/network-policies/argocd.yaml`, `longhorn-system.yaml`).
+- Network policies: `gitops/network-policies/traefik.yaml` (default-deny; ingress on the container ports 8000/8443, which kube-router matches post-DNAT, never the nodePorts; egress to backends, 6443, DNS). The `traefik` namespace is created in `namespaces.yaml` (wave -1) so the policies apply before the app.
 
 ### Longhorn storage
 - Replica count is **explicitly pinned to 2** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=2` and `persistence.defaultClassReplicaCount=2`. Do not rely on the upstream chart default. With 2 nodes and hard replica anti-affinity, a third replica can never be scheduled — **do not increase it**.
 - Longhorn is managed entirely by ArgoCD (`gitops/apps/longhorn.yaml`). Cloud-init does NOT install Longhorn.
+- **One replica per controller** (CSI attacher/provisioner/resizer/snapshotter, global manager, UI; chart defaults 3/3/2) and `guaranteedInstanceManagerCPU` 5%: on two 1-OCPU nodes the extra replicas were 9 pods mostly on the control plane, whose memory k3s needs. Volume I/O is served by the instance managers; a rescheduling controller only delays provisioning, attach, resize and snapshots for seconds. Don't raise them back without a reason.
 - With 2 nodes and 2 replicas, either node can be lost without PVC data loss (one replica per node). There is no 3-replica StorageClass — it would be unschedulable. Off-cluster protection comes from Longhorn backups (`enable_longhorn_backup`).
 - etcd is single-node: losing the server's boot volume means restoring from an etcd snapshot, regardless of Longhorn replicas.
 
 ### Longhorn UI BasicAuth
 - Password is generated by `random_password.longhorn_ui_password` in `data.tf` and exported by
   `files/server-vars.sh.tpl` as `LONGHORN_UI_PASSWORD_PLAIN` (or fetched from Vault when `enable_vault = true`).
-- `files/lib/k3s-bootstrap.sh` generates the APR1 hash via `openssl passwd -apr1` and creates
-  `Secret/longhorn-basic-auth-secret` in `longhorn-system` at bootstrap time. The hash requires
+- `files/lib/k3s-secrets.sh` generates a `{SHA}` hash with openssl and creates
+  `Secret/longhorn-basic-auth-secret` (key `users`) in `longhorn-system` at bootstrap time. The hash requires
   runtime password resolution so it cannot be a static gitops file.
-- `gitops/longhorn/ingress.yaml` is a template — users configure the `HTTPRoute`, `SecurityPolicy`,
-  and `Certificate` resources there pointing to the pre-created Secret.
+- `gitops/longhorn/ingress.yaml` is a template — users configure the `Ingress`, basicAuth `Middleware`
+  and `Certificate` resources there pointing to the pre-created Secret (key `users`).
 - Credentials are available via the `longhorn_ui_credentials` sensitive output.
 
 ### cert-manager GitOps adoption
@@ -421,15 +422,14 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   - `k3s-argocd.sh` — `install_argocd()`, `create_dockerhub_secret()`, `create_optional_app()`,
     `create_optional_apps()`, `configure_app_ingress()`,
     `configure_argocd_ingress()`, `configure_longhorn_ingress()`
-  - `k3s-bootstrap.sh` — `install_gateway_api_crds()` + `run_bootstrap()` (calls the above)
+  - `k3s-bootstrap.sh` — `run_bootstrap()` (calls the above)
 - **GitOps-first**: cloud-init only bootstraps what ArgoCD cannot self-manage:
-  - Gateway API CRDs (must exist before ArgoCD syncs `gateway-config` app)
   - cert-manager Helm + ClusterIssuers (email is a runtime Terraform var, not static git)
   - ArgoCD Helm + App of Apps bootstrap
   - External Secrets Operator Helm + ClusterSecretStore (conditional, vault_ocid is runtime)
   - Pre-create Kubernetes Secrets with runtime values (passwords, endpoints)
-  - Hostname-specific HTTPS Gateway listener + TLS Certificate + HTTPRoute (NLB IP is runtime; see `configure_argocd_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
-- **Managed by ArgoCD, NOT cloud-init**: Envoy Gateway, Longhorn, kured,
+  - Hostname-specific Ingress + TLS Certificate (+ Middleware) (NLB IP is runtime; see `configure_argocd_ingress()` in `k3s-argocd.sh` and the "Hostname-specific HTTPS resources" section in Deploying web apps)
+- **Managed by ArgoCD, NOT cloud-init**: Traefik, Longhorn, kured,
   system-upgrade-controller — all in `gitops/apps/*.yaml`. The opt-in components live in
   `gitops/optional/` and get an Application only when their flag is on: ESO through the
   `optional-external-secrets` wrapper, external-dns through `create_external_dns_app()`.
@@ -543,8 +543,9 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 ### External DNS (`enable_external_dns`)
 - Controlled by `enable_external_dns` variable (default: `false`).
 - Installs External DNS (chart version tracked by Renovate) configured for the Cloudflare provider.
-- Syncs `HTTPRoute` hostnames to Cloudflare DNS automatically — annotate resources with
-  `external-dns.alpha.kubernetes.io/hostname: your.host.example.com`.
+- Syncs Ingress hosts to Cloudflare DNS. Traefik publishes no Ingress status behind the NLB, so
+  each Ingress needs `external-dns.alpha.kubernetes.io/target: <public NLB IP>` (cloud-init adds it
+  to the ArgoCD and Longhorn Ingresses); `.../hostname` adds names beyond the Ingress's hosts.
 - Requires `cloudflare_api_token` and `cloudflare_zone_id`.
 - `external_dns_domain_filter` limits which zones External DNS manages (prevents accidental changes
   to unrelated zones when the API token covers multiple zones).
@@ -564,16 +565,17 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 ### Adding HTTPS ingress for a new app
 
 Use `configure_app_ingress()` in `files/lib/k3s-argocd.sh` when a new cluster component needs
-an HTTPS endpoint with a cert-manager TLS certificate. The generic helper handles the three
-required resources atomically (Gateway listener, Certificate, HTTPRoute) using SSA so ArgoCD
-reconciliation never removes cloud-init-owned fields.
+an HTTPS endpoint with a cert-manager TLS certificate. It waits for the `traefik` IngressClass,
+then creates a Certificate and an Ingress (SSA, field-manager `cloud-init-bootstrap`) in the
+Service's namespace, with optional Middlewares and the external-dns target annotation.
 
 **Signature:**
 ```bash
-configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [route_name]
+configure_app_ingress <hostname> <namespace> <service> <port> <name> [middlewares]
 ```
 
-`route_name` is optional and defaults to `<service>`. Set it explicitly when the gitops HTTPRoute file uses a different name from the backend service (e.g. `longhorn` vs `longhorn-frontend`).
+`name` is the Ingress name (the Certificate and Secret are `<name>-tls`); `middlewares` is a
+comma-separated list of `<namespace>-<middleware>@kubernetescrd` references.
 
 **To add a new cloud-init-managed HTTPS app:**
 1. Add `var.myapp_hostname` to `vars.tf` (nullable string, default null).
@@ -589,7 +591,7 @@ configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [r
        "my-namespace" \
        "my-service" \
        "8080" \
-       "https-myapp"
+       "myapp"
    }
    ```
 6. Call it from `run_bootstrap()` in `k3s-bootstrap.sh`. Ingress setup is non-fatal (the
@@ -597,11 +599,11 @@ configure_app_ingress <hostname> <namespace> <service> <port> <listener_name> [r
    ```bash
    configure_myapp_ingress || echo "WARNING: configure_myapp_ingress failed — cluster is functional; ingress can be retried via cloud-init."
    ```
-7. Add `ignoreDifferences` for the new listener in `gitops/apps/gateway-config.yaml`
-   — it's already covered by the `jqPathExpression` targeting `https-*` listener names.
+7. If the namespace has a default-deny ingress policy, allow `traefik` to the app's pods and to
+   the HTTP-01 solver pods (see `gitops/network-policies/argocd.yaml`).
 
-**Note:** For apps that also need BasicAuth (like Longhorn), add the `SecurityPolicy` resource
-after calling `configure_app_ingress()`. See `configure_longhorn_ingress()` as the reference.
+**Note:** For apps that also need BasicAuth (like Longhorn), create the `Middleware` first and
+pass it to `configure_app_ingress()`. See `configure_longhorn_ingress()` as the reference.
 
 ### Deploying web apps — known pitfalls
 
@@ -615,13 +617,13 @@ The public NLB uses `is_preserve_source = true` on all backend sets. This means 
 
 `gitops/network-policies/cert-manager.yaml` deploys egress NetworkPolicies that kube-router enforces strictly. The original `allow-https-egress` policy only permitted TCP 443/6443/8443 — it did NOT allow TCP 80. cert-manager's HTTP-01 solver performs a self-check GET request to `http://<hostname>/.well-known/acme-challenge/...` before submitting to Let's Encrypt. With port 80 egress blocked, kube-router REJECTs the packet with ICMP port-unreachable, which Go's `net/http` reports as "connection refused". The `allow-http-egress` NetworkPolicy was added to fix this — do not remove it.
 
-**CHACHA20_POLY1305 ciphers crash Envoy TLS on aarch64**
+**The HTTP->HTTPS redirect must stay below the HTTP-01 solver**
 
-`gitops/gateway/tls-policy.yaml` (`ClientTrafficPolicy`) must NOT include `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305` or `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305`. Envoy/BoringSSL on aarch64 rejects these TLS 1.2 cipher names with error code 13, which causes the **entire xDS TLS snapshot to be rejected**. The result is that no TLS certificate is ever loaded via SDS and all HTTPS connections are dropped with TCP RST. The AES-GCM ciphers are sufficient; TLS 1.3 ChaCha20 (`TLS_CHACHA20_POLY1305_SHA256`) still negotiates automatically and is unaffected.
-
-**HTTPRoute `hostnames: []` matches ALL requests**
-
-An empty `hostnames` list in a Gateway API `HTTPRoute` is identical to omitting the field — it matches every hostname. An HTTP-to-HTTPS redirect route with no (or empty) `hostnames` redirects ALL HTTP traffic. cert-manager's ACME HTTP-01 challenge HTTPRoute (created automatically by cert-manager) has a more specific hostname+path match and takes precedence — so the match-all redirect is safe. `gitops/gateway/redirect.yaml` intentionally omits `hostnames` for exactly this reason. Do NOT add explicit hostnames to the redirect route — the route would break for any hostname not listed.
+Traefik's entrypoint redirect is a router on `web`; by default its priority is the highest, which
+would swallow cert-manager's ACME challenge. `gitops/apps/traefik.yaml` sets it to 1, websecure is
+the default entrypoint (so no ordinary Ingress listens on `web`), and the ClusterIssuers pin the
+solver Ingress to `web`. Keep all three; DNS-01 (`enable_dns01_challenge = true`) avoids the
+question entirely.
 
 **Hostname-specific HTTPS resources are managed by cloud-init, not gitops/**
 
@@ -629,27 +631,13 @@ NLB IP changes on every redeploy. Hardcoding sslip.io addresses in `gitops/` bre
 - `local.argocd_hostname` auto-computes `argocd.<nlb-ip>.sslip.io` (or uses `var.argocd_hostname` if set).
 - `local.longhorn_hostname` uses `var.longhorn_hostname` (no sslip.io fallback — Longhorn UI is opt-in).
 - `files/server-vars.sh.tpl` exports `ARGOCD_HOSTNAME`, `LONGHORN_HOSTNAME`.
-- `files/lib/k3s-argocd.sh:configure_app_ingress(hostname namespace service port listener_name)` is the generic helper.
-  - Creates the Gateway HTTPS listener (SSA, field-manager=cloud-init-bootstrap)
-  - Creates the cert-manager Certificate in `envoy-gateway-system`
-  - Creates the app HTTPRoute in the app namespace (SSA, field-manager=cloud-init-bootstrap)
+- `files/lib/k3s-argocd.sh:configure_app_ingress(hostname namespace service port name [middlewares])` is the generic helper.
+  - Creates the cert-manager Certificate in the app namespace
+  - Creates the app Ingress in the app namespace (SSA, field-manager=cloud-init-bootstrap), with the external-dns target annotation
 - `configure_argocd_ingress()`, `configure_longhorn_ingress()` each call the generic helper.
-- `configure_longhorn_ingress()` additionally applies the `SecurityPolicy` for BasicAuth.
-- `gitops/gateway/gateway.yaml` has ONLY the `http` listener (ArgoCD owns it via SSA).
-- The ArgoCD HTTPRoute is defined WITHOUT `hostnames` (ArgoCD owns all fields except `spec.hostnames`, which cloud-init-bootstrap owns).
-
-**SSA field-manager ownership prevents ArgoCD from clearing cloud-init patches**
-
-Gateway API's `spec.listeners` is a `x-kubernetes-list-map-keys: [name]` list — SSA treats it as a named map and merges by the `name` key. Each SSA manager owns the entries it applied:
-- `argocd-controller` owns `spec.listeners[name=http]` (applied from gateway.yaml)
-- `cloud-init-bootstrap` owns `spec.listeners[name=https-argocd]` (applied by configure_argocd_ingress)
-When ArgoCD syncs gateway.yaml (without `https-argocd`), it only owns `http` and never touches `https-argocd`. The `ignoreDifferences: /spec/listeners` in gateway-config ArgoCD Application suppresses OutOfSync warnings.
-
-Similarly, `spec.hostnames` in the ArgoCD HTTPRoute is owned by `cloud-init-bootstrap` (via `kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts`). ArgoCD's SSA apply (without `hostnames` in the manifest) doesn't claim or clear the field.
+- `configure_longhorn_ingress()` first applies the basicAuth `Middleware`.
 
 **Do NOT use CSA (kubectl apply without --server-side) to patch ArgoCD-managed resources.** CSA sets the `kubectl.kubernetes.io/last-applied-configuration` annotation, which confuses ArgoCD's 3-way merge on the next sync. Always use SSA with a custom field-manager for cloud-init patches to ArgoCD-managed resources.
-
-**gateway-config MUST use ServerSideApply=true** to avoid `resourceVersion: 0` errors. Without SSA, ArgoCD's CSA apply with `RespectIgnoreDifferences` strips `spec.listeners` from the patch payload, causing a malformed UPDATE request to fail validation.
 
 ### Feature flag co-dependencies (`checks.tf`)
 Terraform 1.9+ `check {}` blocks in `checks.tf` catch invalid feature flag combinations at plan time
@@ -784,6 +772,6 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
   unconditionally, creating an sslip.io HTTPS hostname derived from the NLB IP.
 - The ArgoCD UI is reachable from the internet. Mitigations in place: TLS (cert-manager/Let's Encrypt),
   random admin password (output only to Terraform state), ArgoCD RBAC.
-- To restrict access: add an Envoy `SecurityPolicy` (Gateway API ExtAuth or IP-based allow-list)
-  on the ArgoCD HTTPRoute, or set `var.my_public_ip_cidr` and add an NSG rule that
+- To restrict access: add a Traefik `Middleware` (`ipAllowList` or `forwardAuth`) to the ArgoCD
+  Ingress's `router.middlewares` annotation, or set `var.my_public_ip_cidr` and add an NSG rule that
   limits NLB HTTP/HTTPS to your IP. Set `var.argocd_hostname = ""` to skip the ArgoCD ingress (`null` derives the sslip.io hostname) and reach the UI another way, e.g. a Tailscale LoadBalancer Service.

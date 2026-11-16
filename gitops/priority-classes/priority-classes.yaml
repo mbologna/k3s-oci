@@ -15,7 +15,7 @@
 #
 # platform-critical: cluster plumbing that is not system-* but that a failure
 # elsewhere hangs on, above worker-pinned on purpose: cert-manager (without it
-# no certificate renews). kured, Longhorn and Envoy Gateway use the built-in
+# no certificate renews). kured, Longhorn and Traefik use the built-in
 # system-cluster-critical.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass

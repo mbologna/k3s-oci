@@ -49,6 +49,48 @@ spec:
             # The default skips detached volumes, so a PVC mounted only by a CronJob
             # never gets a backup, and nothing reports it.
             allowRecurringJobWhileVolumeDetached: true
+            # CPU each instance manager reserves, as a share of the node (default
+            # 12%, i.e. 120m on a 1-OCPU node): with a few small volumes 5% is
+            # plenty, and the reservation counts against what a drain can move.
+            guaranteedInstanceManagerCPU: '{"v1":"5","v2":"5"}'
+          # One replica of each controller instead of the chart's 3 (CSI
+          # sidecars, global manager) or 2 (UI): on a 2-node cluster with 1 OCPU
+          # each, the spare replicas are 9 pods mostly on the control plane, whose
+          # memory k3s server needs (see gitops/apps/argocd.yaml). A controller
+          # that dies is rescheduled within seconds; volume I/O does not depend
+          # on them (the instance managers serve it), only provisioning, attach,
+          # resize and snapshots wait meanwhile.
+          csi:
+            attacherReplicaCount: 1
+            provisionerReplicaCount: 1
+            resizerReplicaCount: 1
+            snapshotterReplicaCount: 1
+          # The global manager and the UI prefer the worker, like the other small
+          # controllers (gitops/apps/argocd.yaml): the control plane keeps its
+          # memory for k3s and etcd. Preferences only, so they run on the control
+          # plane while the worker is drained; the descheduler moves them back.
+          # (The CSI sidecars have no placement value: longhorn-driver-deployer
+          # creates them.)
+          longhornGlobalManager:
+            replicas: 1
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    preference:
+                      matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: DoesNotExist
+          longhornUI:
+            replicas: 1
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    preference:
+                      matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: DoesNotExist
           persistence:
             # Make longhorn the default StorageClass so PVCs without explicit
             # storageClassName are satisfied automatically.

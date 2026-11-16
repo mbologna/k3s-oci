@@ -40,9 +40,6 @@ install_certmanager() {
     --namespace cert-manager --create-namespace \
     --version "${CERTMANAGER_CHART_VERSION}" \
     --set crds.enabled=true \
-    --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
-    --set config.kind=ControllerConfiguration \
-    --set config.enableGatewayAPI=true \
     --set prometheus.servicemonitor.enabled=false \
     --atomic --wait --timeout 5m
 
@@ -74,16 +71,18 @@ EOF
       "https://acme-v02.api.letsencrypt.org/directory" \
       "${dns01_solver}"
   else
-    # HTTP-01 solver uses Gateway API (gatewayHTTPRoute) -- no Ingress controller needed.
+    # HTTP-01 solver: an Ingress of class traefik pinned to Traefik's web
+    # entrypoint, where it outranks the HTTP->HTTPS redirect (gitops/apps/traefik.yaml).
     # Bootstrap ClusterIssuers with the correct email address.
     # Adoptable by ArgoCD via gitops/cert-manager/ (update email in cluster-issuers.yaml first).
     local http01_solver
     http01_solver="      - http01:
-          gatewayHTTPRoute:
-            parentRefs:
-              - name: eg
-                namespace: envoy-gateway-system
-                kind: Gateway"
+          ingress:
+            ingressClassName: traefik
+            ingressTemplate:
+              metadata:
+                annotations:
+                  traefik.ingress.kubernetes.io/router.entrypoints: web"
 
     apply_cluster_issuer "letsencrypt-staging" \
       "https://acme-staging-v02.api.letsencrypt.org/directory" \

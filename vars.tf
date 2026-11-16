@@ -404,7 +404,7 @@ variable "certmanager_email_address" {
 
 variable "longhorn_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, a Gateway API HTTPRoute with BasicAuth (Envoy Gateway SecurityPolicy) and a cert-manager TLS certificate is created."
+  description = "Fully-qualified hostname for the Longhorn UI (e.g. longhorn.example.com). When set, cloud-init creates a Traefik Ingress with a BasicAuth Middleware and a cert-manager TLS certificate."
   default     = null
 }
 
@@ -418,7 +418,7 @@ variable "longhorn_ui_username" {
 
 variable "argocd_hostname" {
   type        = string
-  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, a Gateway API HTTPRoute with a cert-manager TLS certificate is created by cloud-init. If null, an sslip.io hostname is derived from the NLB IP. Set to \"\" to create no public ArgoCD route."
+  description = "Fully-qualified hostname for the ArgoCD UI (e.g. argocd.example.com). When set, cloud-init creates a Traefik Ingress (rate-limited) with a cert-manager TLS certificate. If null, an sslip.io hostname is derived from the NLB IP. Set to \"\" to create no public ArgoCD route."
   default     = null
 }
 
@@ -623,27 +623,20 @@ variable "enable_dns01_challenge" {
 # Bootstrap chart versions — installed by cloud-init so the cluster starts with
 # the correct version; ArgoCD adopts and manages ongoing upgrades via gitops/apps/*.yaml.
 # Renovate keeps these in sync. Only charts bootstrapped by cloud-init are listed here;
-# charts managed purely by ArgoCD (kured, Longhorn, Envoy Gateway, external-dns) are
+# charts managed purely by ArgoCD (kured, Longhorn, Traefik, external-dns) are
 # versioned in their respective gitops/apps/*.yaml files.
 
+# Deprecated and unused on purpose: kept so v1 tfvars still validate.
+# tflint-ignore: terraform_unused_declarations
 variable "gateway_api_version" {
   type        = string
-  description = "Kubernetes Gateway API CRDs version (experimental channel) installed at bootstrap. Experimental channel is a superset of standard and includes GRPCRoute, TCPRoute, TLSRoute, etc. required by Envoy Gateway. Must exist before ArgoCD syncs gateway-config."
-  # The minor Envoy Gateway bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway's
-  # go.mod): ArgoCD's envoy-gateway app re-applies its own CRDs. CI checks it
-  # (scripts/check-gateway-api.sh), and Renovate takes no minor of its own.
-  # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  default = "v1.6.3"
-
-  validation {
-    condition     = length(var.gateway_api_version) > 0 && can(regex("^[v0-9]", var.gateway_api_version))
-    error_message = "gateway_api_version must be non-empty and start with 'v' or a digit (e.g. 'v1.6.1')."
-  }
+  description = "Deprecated since v2.0.0 and ignored: the module no longer installs Envoy Gateway or the Gateway API CRDs (Traefik serves Ingresses). Accepted so existing tfvars still validate; will be removed in a later major."
+  default     = null
 }
 
 variable "dockerhub_username" {
   type        = string
-  description = "Docker Hub username for ArgoCD to authenticate when pulling OCI Helm charts (e.g. Envoy Gateway from registry-1.docker.io). If empty, anonymous pulls are attempted and may be rate-limited. Create a PAT at https://app.docker.com/settings/personal-access-tokens"
+  description = "Docker Hub username for ArgoCD to authenticate when pulling OCI Helm charts from registry-1.docker.io (none in the default stack since v2.0.0; useful for your own apps). If empty, anonymous pulls are attempted and may be rate-limited. Create a PAT at https://app.docker.com/settings/personal-access-tokens"
   default     = ""
 }
 

@@ -363,7 +363,8 @@ install_k3s_server() {
     install_params+=("--node-ip" "${LOCAL_IP}" "--advertise-address" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
   fi
 
-  # Always disable k3s built-in Traefik; Envoy Gateway is managed via ArgoCD.
+  # Always disable k3s's bundled Traefik: the module installs Traefik's upstream
+  # chart through ArgoCD (gitops/apps/traefik.yaml), pinned and Renovate-managed.
   # Disable local-path-provisioner too: Longhorn is the default StorageClass, and
   # two classes annotated is-default-class makes PVCs without storageClassName
   # land on whichever the admission plugin picks (node-local, no replicas).

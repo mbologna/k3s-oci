@@ -72,17 +72,6 @@
         "dependencies",
         "manual-review"
       ]
-    },
-    {
-      "description": "Gateway API CRDs follow Envoy Gateway: gateway_api_version is installed at bootstrap only, and Envoy Gateway's chart re-applies the CRDs it bundles (sigs.k8s.io/gateway-api in envoyproxy/gateway's go.mod) at every sync. A Gateway API minor is therefore taken when an Envoy Gateway bump brings it, in that PR (scripts/check-gateway-api.sh fails the PR until gateway_api_version matches), never on its own. Patches within the bundled minor still update.",
-      "matchPackageNames": [
-        "kubernetes-sigs/gateway-api"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "major"
-      ],
-      "enabled": false
     }
   ],
   "customManagers": [
