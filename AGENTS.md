@@ -385,6 +385,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ### Longhorn storage
 - Replica count is **explicitly pinned to 2** in `gitops/apps/longhorn.yaml` via `defaultSettings.defaultReplicaCount=2` and `persistence.defaultClassReplicaCount=2`. Do not rely on the upstream chart default. With 2 nodes and hard replica anti-affinity, a third replica can never be scheduled — **do not increase it**.
 - Longhorn is managed entirely by ArgoCD (`gitops/apps/longhorn.yaml`). Cloud-init does NOT install Longhorn.
+- **One replica per controller** (CSI attacher/provisioner/resizer/snapshotter, global manager, UI; chart defaults 3/3/2) and `guaranteedInstanceManagerCPU` 5%: on two 1-OCPU nodes the extra replicas were 9 pods mostly on the control plane, whose memory k3s needs. Volume I/O is served by the instance managers; a rescheduling controller only delays provisioning, attach, resize and snapshots for seconds. Don't raise them back without a reason.
 - With 2 nodes and 2 replicas, either node can be lost without PVC data loss (one replica per node). There is no 3-replica StorageClass — it would be unschedulable. Off-cluster protection comes from Longhorn backups (`enable_longhorn_backup`).
 - etcd is single-node: losing the server's boot volume means restoring from an etcd snapshot, regardless of Longhorn replicas.
 
