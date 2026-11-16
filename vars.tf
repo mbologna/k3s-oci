@@ -626,6 +626,8 @@ variable "enable_dns01_challenge" {
 # charts managed purely by ArgoCD (kured, Longhorn, Traefik, external-dns) are
 # versioned in their respective gitops/apps/*.yaml files.
 
+# Deprecated and unused on purpose: kept so v1 tfvars still validate.
+# tflint-ignore: terraform_unused_declarations
 variable "gateway_api_version" {
   type        = string
   description = "Deprecated since v2.0.0 and ignored: the module no longer installs Envoy Gateway or the Gateway API CRDs (Traefik serves Ingresses). Accepted so existing tfvars still validate; will be removed in a later major."
