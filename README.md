@@ -451,7 +451,7 @@ To set it up:
 
 4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
 
-The Terraform providers rule in `renovate.json` stays `manual-review` until the job has run against a real deployment; after that it can automerge on an empty plan.
+Since 2026-11-16 this job runs against the maintainer's deployment as a required check, so Terraform provider updates automerge here once their plan is empty. On a fork, set the job up before relying on that: without its secrets it reports a notice and succeeds, so a provider update would automerge unplanned.
 
 ## Remote Terraform state (OCI Object Storage)
 
