@@ -8,7 +8,8 @@
 # Options:
 #   --compartment-id OCID   Compartment OCID (default: tenancy root)
 #   --region REGION         OCI region identifier (default: from ~/.oci/config)
-#   --leap-version VERSION  openSUSE Leap version (default: 16.0)
+#   --leap-version VERSION  openSUSE Leap version (default: LEAP_VERSION below,
+#                           same as opensuse_leap_version in vars.tf)
 #   --bucket-name NAME      Temp Object Storage bucket (default: opensuse-image-import-tmp)
 #   --keep-bucket           Do not delete the temp bucket object after import
 #   --no-cleanup            Alias for --keep-bucket
@@ -34,6 +35,10 @@
 #   7. Removes the QCOW2 object from the temp bucket (unless --keep-bucket)
 #   8. Prints the image OCID and SSH user-data hint
 #
+# The image records operating system "openSUSE Leap" and its Leap version, which the
+# module filters on to pick it up without os_image_id. Re-running the script on an
+# existing image (same display name) sets those fields on it and exits.
+#
 # Known caveats for openSUSE on OCI (verified with Leap 16.0):
 #   - SSH key injection: the openSUSE cloud image's cloud-init does NOT read keys
 #     from OCI's --metadata field by default. Always pass --user-data-file with a
@@ -46,6 +51,8 @@
 set -euo pipefail
 
 # ── defaults ────────────────────────────────────────────────────────────────
+# Keep in step with opensuse_leap_version in vars.tf (Renovate bumps both in one PR).
+# renovate: datasource=endoflife-date depName=opensuse
 LEAP_VERSION="16.0"
 BUCKET_NAME="opensuse-image-import-tmp"
 KEEP_BUCKET=false
@@ -120,12 +127,17 @@ EXISTING_ID=$(oci compute image list \
 
 if [[ -n "$EXISTING_ID" && "$EXISTING_ID" != "None" && "$EXISTING_ID" != "null" ]]; then
   ok "Image already exists: $EXISTING_ID"
+  # Images imported by older versions of this script lack the OS fields the module
+  # filters on (os_image_id = null); set them so the image is auto-resolved.
+  oci compute image update \
+    --image-id "$EXISTING_ID" \
+    --operating-system "openSUSE Leap" \
+    --operating-system-version "$LEAP_VERSION" \
+    --force >/dev/null
+  ok "Operating system set to 'openSUSE Leap ${LEAP_VERSION}'."
   echo ""
-  echo "════════════════════════════════════════════════════════"
-  echo "  Image OCID : $EXISTING_ID"
-  echo "  SSH user   : opensuse"
-  echo "  Launch hint: see end of this output"
-  print_launch_hint "$EXISTING_ID"
+  echo "  Image OCID: $EXISTING_ID"
+  echo "  With os_family = \"opensuse\" and os_image_id unset, the module resolves it automatically."
   exit 0
 fi
 log "No existing image found — proceeding with import."
@@ -219,7 +231,9 @@ IMPORT_RESPONSE=$(oci raw-request \
       \"bucketName\": \"${BUCKET_NAME}\",
       \"namespaceName\": \"${NS}\",
       \"objectName\": \"${OBJECT_NAME}\",
-      \"sourceImageType\": \"QCOW2\"
+      \"sourceImageType\": \"QCOW2\",
+      \"operatingSystem\": \"openSUSE Leap\",
+      \"operatingSystemVersion\": \"${LEAP_VERSION}\"
     },
     \"launchMode\": \"CUSTOM\",
     \"launchOptions\": {
@@ -319,7 +333,10 @@ echo "    --boot-volume-size-in-gbs 50"
 echo ""
 echo "  ── Use with this Terraform module ───────────────────────────────"
 echo ""
-echo "  # Add to terraform.tfvars:"
-echo "  os_family   = \"opensuse\""
-echo "  os_image_id = \"${IMAGE_ID}\""
+echo "  # Add to terraform.tfvars (the image is resolved automatically; no os_image_id):"
+echo "  os_family             = \"opensuse\""
+echo "  opensuse_leap_version = \"${LEAP_VERSION}\""
+if [[ "$COMPARTMENT_ID" != "$TENANCY_ID" ]]; then
+  echo "  opensuse_image_compartment_ocid = \"${COMPARTMENT_ID}\""
+fi
 echo ""

@@ -104,7 +104,7 @@ variable "my_public_ip_cidr" {
 
 variable "os_family" {
   type        = string
-  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses OCI-native Ubuntu 26.04 LTS and auto-resolves the latest image. \"opensuse\" uses openSUSE Leap 16.0 — requires os_image_id (use scripts/import-opensuse-aarch64.sh to import the image and obtain its OCID)."
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses the OCI-native Ubuntu LTS release in ubuntu_version and auto-resolves its latest image. \"opensuse\" uses the openSUSE Leap release in opensuse_leap_version, imported as a custom image with scripts/import-opensuse-aarch64.sh and auto-resolved like Ubuntu."
   default     = "ubuntu"
 
   validation {
@@ -115,12 +115,47 @@ variable "os_family" {
 
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest Ubuntu 26.04 aarch64 image is resolved automatically. Required when os_family = \"opensuse\" — use scripts/import-opensuse-aarch64.sh to import and capture the OCID."
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest aarch64 image of ubuntu_version is resolved automatically. If null and os_family = \"opensuse\", the newest image imported by scripts/import-opensuse-aarch64.sh for opensuse_leap_version is resolved automatically (see opensuse_image_compartment_ocid)."
   default     = null
 
   validation {
     condition     = var.os_image_id == null || startswith(var.os_image_id, "ocid1.image.")
     error_message = "os_image_id must be a valid OCI image OCID starting with 'ocid1.image.' or null."
+  }
+}
+
+variable "ubuntu_version" {
+  type        = string
+  description = "Ubuntu LTS release for os_family = \"ubuntu\" (OCI platform image operating_system_version). Renovate bumps it to a new LTS once that release's .1 point release is out. Only nodes created afterwards boot the new release: running nodes are never replaced on an image change."
+  # renovate: datasource=endoflife-date depName=ubuntu
+  default = "26.04"
+
+  validation {
+    condition     = can(regex("^[0-9]{2}\\.04$", var.ubuntu_version))
+    error_message = "ubuntu_version must be an Ubuntu LTS release such as \"26.04\"."
+  }
+}
+
+variable "opensuse_leap_version" {
+  type        = string
+  description = "openSUSE Leap release for os_family = \"opensuse\". New nodes boot the newest imported image of this release; until it is imported (scripts/import-opensuse-aarch64.sh --leap-version <version>) they boot the newest imported image of any release and plans warn. Renovate bumps it together with the import script default. Running nodes are never replaced on an image change."
+  # renovate: datasource=endoflife-date depName=opensuse
+  default = "16.0"
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+$", var.opensuse_leap_version))
+    error_message = "opensuse_leap_version must look like \"16.0\"."
+  }
+}
+
+variable "opensuse_image_compartment_ocid" {
+  type        = string
+  description = "Compartment searched for imported openSUSE images when os_family = \"opensuse\" and os_image_id is null. Null means the tenancy root, the import script's default (--compartment-id)."
+  default     = null
+
+  validation {
+    condition     = var.opensuse_image_compartment_ocid == null || can(regex("^ocid1\\.(tenancy|compartment)\\.", var.opensuse_image_compartment_ocid))
+    error_message = "opensuse_image_compartment_ocid must be a tenancy or compartment OCID, or null."
   }
 }
 

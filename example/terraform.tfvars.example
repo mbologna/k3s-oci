@@ -23,14 +23,17 @@ availability_domain = "Uocm:EU-FRANKFURT-1-AD-1"
 cluster_name  = "my-k3s"
 environment   = "staging"
 
-# OS images — optional; the latest Ubuntu 26.04 image is auto-detected.
+# OS images — optional; the latest image of the module's Ubuntu LTS (ubuntu_version) is auto-detected.
 # Override if you need a pinned or custom image OCID.
 # Find OCIDs at: https://docs.oracle.com/en-us/iaas/images/
 # os_image_id = "ocid1.image.oc1..example"   # aarch64 (A1.Flex nodes)
 
 # OS family — "ubuntu" (default, auto-resolves OCI-native image) or "opensuse"
-# For openSUSE, run scripts/import-opensuse-aarch64.sh first and set os_image_id above.
+# For openSUSE, run scripts/import-opensuse-aarch64.sh first; the imported image is then
+# auto-detected (leave os_image_id unset). If you imported it outside the tenancy root
+# (--compartment-id), point the lookup at that compartment.
 # os_family = "ubuntu"
+# opensuse_image_compartment_ocid = "ocid1.compartment.oc1..example"
 
 # Your workstation IP(s) — restricts kubeapi access (expose_kubeapi=true) and
 # direct SSH access (expose_ssh=true). Use /16 for dynamic ISP ranges

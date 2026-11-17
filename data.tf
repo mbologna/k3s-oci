@@ -253,14 +253,13 @@ data "oci_core_instance" "k3s_workers" {
   instance_id = data.oci_core_instance_pool_instances.k3s_workers.instances[count.index].id
 }
 
-# ── k3s node image (Ubuntu 26.04 LTS aarch64 — A1.Flex) ────────────────────
+# ── k3s node image (Ubuntu LTS aarch64 — A1.Flex) ──────────────────────────
 # Auto-resolved from tenancy when os_family = "ubuntu" and os_image_id is not set.
-# For os_family = "opensuse", set os_image_id explicitly (use scripts/import-opensuse-aarch64.sh).
 data "oci_core_images" "k3s_nodes" {
   count                    = var.os_family == "ubuntu" && var.os_image_id == null ? 1 : 0
   compartment_id           = var.tenancy_ocid
   operating_system         = "Canonical Ubuntu"
-  operating_system_version = "26.04"
+  operating_system_version = var.ubuntu_version
   shape                    = var.compute_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
@@ -268,7 +267,34 @@ data "oci_core_images" "k3s_nodes" {
   lifecycle {
     postcondition {
       condition     = length(self.images) > 0
-      error_message = "No Ubuntu 26.04 image found for shape ${var.compute_shape} in tenancy. Set os_image_id explicitly."
+      error_message = "No Ubuntu ${var.ubuntu_version} image found for shape ${var.compute_shape} in tenancy. Set os_image_id explicitly."
     }
   }
+}
+
+# ── k3s node image (openSUSE Leap aarch64 custom import) ───────────────────
+# Auto-resolved when os_family = "opensuse" and os_image_id is not set: every image that
+# scripts/import-opensuse-aarch64.sh imported (operating system "openSUSE Leap"). locals.tf picks
+# the newest one of opensuse_leap_version, falling back to the newest of any release (checks.tf warns).
+data "oci_core_images" "opensuse" {
+  count            = var.os_family == "opensuse" && var.os_image_id == null ? 1 : 0
+  compartment_id   = coalesce(var.opensuse_image_compartment_ocid, var.tenancy_ocid)
+  operating_system = "openSUSE Leap"
+  shape            = var.compute_shape
+  state            = "AVAILABLE"
+  sort_by          = "TIMECREATED"
+  sort_order       = "DESC"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.images) > 0
+      error_message = "No imported openSUSE Leap image found for shape ${var.compute_shape} in compartment ${coalesce(var.opensuse_image_compartment_ocid, var.tenancy_ocid)}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version} (re-running it also tags images imported by older versions of the script), or set os_image_id."
+    }
+  }
+}
+
+# Pinned openSUSE image, read so checks.tf can compare its release with opensuse_leap_version.
+data "oci_core_image" "opensuse" {
+  count    = var.os_family == "opensuse" && var.os_image_id != null ? 1 : 0
+  image_id = var.os_image_id
 }

@@ -3,10 +3,21 @@
 # invalid variable combinations at plan time with clear error messages,
 # before any OCI API call is made.
 
-check "opensuse_requires_os_image_id" {
+# Warns after Renovate bumps opensuse_leap_version until the new release is imported
+# (scripts/import-opensuse-aarch64.sh); new nodes boot the older image meanwhile.
+# A pinned image imported before the script recorded operatingSystemVersion is matched by display name.
+check "opensuse_image_matches_leap_version" {
   assert {
-    condition     = var.os_family != "opensuse" || var.os_image_id != null
-    error_message = "os_family = \"opensuse\" requires os_image_id to be set. Run scripts/import-opensuse-aarch64.sh to import the image and capture its OCID."
+    condition = var.os_family != "opensuse" || (
+      var.os_image_id == null
+      ? length(local.opensuse_images) == 0 || length(local.opensuse_matching_images) > 0
+      : try(
+        data.oci_core_image.opensuse[0].operating_system_version == var.opensuse_leap_version ||
+        can(regex("Leap-${replace(var.opensuse_leap_version, ".", "\\.")}([^0-9]|$)", data.oci_core_image.opensuse[0].display_name)),
+        true
+      )
+    )
+    error_message = "The openSUSE image new nodes boot is not openSUSE Leap ${var.opensuse_leap_version}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version}${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. Running nodes are not replaced."
   }
 }
 

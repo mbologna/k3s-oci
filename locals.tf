@@ -9,9 +9,16 @@ locals {
     var.github_ssh_keys_username != "" ? [for k in split("\n", trimspace(data.http.github_ssh_keys[0].response_body)) : k if k != ""] : []
   )))
 
-  # Resolved OS image IDs: explicit variable wins; for Ubuntu, auto-detected from tenancy.
-  # try() guards against os_family = "opensuse" where the data source count = 0.
-  os_image_id = var.os_image_id != null ? var.os_image_id : try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
+  # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy.
+  # openSUSE: newest import of opensuse_leap_version, else the newest import of any release.
+  # try() guards against the data source of the other os_family, whose count = 0.
+  opensuse_images          = try(data.oci_core_images.opensuse[0].images, [])
+  opensuse_matching_images = [for i in local.opensuse_images : i if i.operating_system_version == var.opensuse_leap_version]
+  os_image_id = var.os_image_id != null ? var.os_image_id : (
+    var.os_family == "opensuse"
+    ? try(coalescelist(local.opensuse_matching_images, local.opensuse_images)[0].id, null)
+    : try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
+  )
   # Default SSH user for the selected OS family.
   os_user = var.os_family == "opensuse" ? "sles" : "ubuntu"
 
