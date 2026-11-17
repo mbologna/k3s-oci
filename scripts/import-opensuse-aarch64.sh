@@ -53,7 +53,7 @@ set -euo pipefail
 # ── defaults ────────────────────────────────────────────────────────────────
 # Keep in step with opensuse_leap_version in vars.tf (Renovate bumps both in one PR).
 # renovate: datasource=custom.opensuse-leap depName=opensuse-leap
-LEAP_VERSION="16.0"
+LEAP_VERSION="16.1"
 BUCKET_NAME="opensuse-image-import-tmp"
 KEEP_BUCKET=false
 COMPARTMENT_ID=""

@@ -140,7 +140,7 @@ variable "opensuse_leap_version" {
   type        = string
   description = "openSUSE Leap release for os_family = \"opensuse\". New nodes boot the newest imported image of this release; until it is imported (scripts/import-opensuse-aarch64.sh --leap-version <version>) they boot the newest imported image of any release and plans warn. Renovate bumps it together with the import script default. Running nodes are never replaced on an image change."
   # renovate: datasource=custom.opensuse-leap depName=opensuse-leap
-  default = "16.0"
+  default = "16.1"
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+$", var.opensuse_leap_version))
