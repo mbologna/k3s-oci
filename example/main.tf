@@ -12,6 +12,10 @@ variable "os_family" {
   type    = string
   default = "ubuntu"
 }
+variable "opensuse_image_compartment_ocid" {
+  type    = string
+  default = null
+}
 variable "certmanager_email_address" { type = string }
 
 # Optional explicit API key auth — when null, the OCI provider reads from ~/.oci/config.
@@ -400,6 +404,7 @@ module "k3s_cluster" {
   environment                         = var.environment
   os_image_id                         = var.os_image_id
   os_family                           = var.os_family
+  opensuse_image_compartment_ocid     = var.opensuse_image_compartment_ocid
   certmanager_email_address           = var.certmanager_email_address
   k3s_server_pool_size                = var.k3s_server_pool_size
   k3s_worker_pool_size                = var.k3s_worker_pool_size

@@ -16,7 +16,7 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu 26.04 LTS (aarch64) — default. openSUSE Leap (aarch64) via `var.os_family = "opensuse"` |
+| OS | Ubuntu LTS (aarch64, `var.ubuntu_version`, default 26.04) — default. openSUSE Leap (aarch64, `var.opensuse_leap_version`) via `var.os_family = "opensuse"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Traefik (Kubernetes Ingress + Traefik Middlewares; since v2.0.0, Envoy Gateway before) |
 | Logging | OCI Unified Logging (optional) |
@@ -99,7 +99,7 @@ example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — 
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
 scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
-scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image
+scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 SECURITY.md      — supported versions + vulnerability reporting
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
@@ -138,7 +138,7 @@ renovate.json    — Automated dependency updates
   exported by the prepended template header, plus two documented inline `SC2097,SC2098`
   suppressions on the `K3S_URL="" sh -s -` installer calls in `k3s-server.sh` / `k3s-agent.sh`.
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
-- Ubuntu 26.04 is the default OS (`var.os_family = "ubuntu"`); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support.
+- Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`, default 26.04); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` (Renovate bumps them).
 - Standalone scripts (`scripts/`, `example/*.sh`, `gitops/update-repo-url.sh`) start with `set -euo pipefail`.
   The bootstrap files (`common.sh`, `bootstrap-*.sh`) set it for the assembled cloud-init script; the other
   `files/lib/*.sh` files only define functions and inherit it — do not add it there.
@@ -260,6 +260,19 @@ terraform-docs .
   one `k3s` PR per update: patches automerge, a minor only from its x.y.3 release and then
   automerges after the 14-day gate (`matchNewValue` disables x.y.0-x.y.2), majors wait for a
   person. Keep the `k3s-io/k3s` versioning rule (`+k3sN` builds) and `separateMultipleMinor`.
+- OS releases: `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
+  `scripts/import-opensuse-aarch64.sh` use `datasource=endoflife-date` (depNames `ubuntu`,
+  `opensuse`). The PRs are `feat(os):` and automerge. Ubuntu: endoflife.date reports a cycle's
+  latest point release (`26.04.1`); `extractVersion` keeps only even-year `.04` cycles that have
+  one and normalises them to `xx.04` (OCI's `operating_system_version`), so a new LTS arrives from
+  its `.1` (90-day `minimumReleaseAge` as backstop); the required Plan check's image postcondition
+  fails the PR if OCI has no image yet. openSUSE: `allowedVersions` drops the legacy `42.x`
+  numbering; grouped so vars.tf and the script move together. With `os_image_id` null the module
+  resolves the image (`data.oci_core_images.opensuse`, OS `openSUSE Leap`, which the import script
+  records; in `opensuse_image_compartment_ocid`, default tenancy root): newest of
+  `opensuse_leap_version`, else newest of any release, and the `opensuse_image_matches_leap_version`
+  check warns until the new release is imported. Running nodes are never
+  replaced on an image change (`ignore_changes` in `compute.tf`).
 - `.github/workflows/plan.yml` (`Plan / tofu plan (example)`) runs a read-only `tofu plan` of
   `example/` against a live deployment on same-repository PRs: a dedicated OCI user in a
   read-only group, state read from the remote backend with `-lock=false`, and only changed
@@ -331,7 +344,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ## What NOT to do
 
 - Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
-- Do not add Oracle Linux support — Ubuntu 26.04 LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
+- Do not add Oracle Linux support — Ubuntu LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
 - Do not remove `lifecycle { prevent_destroy = true }` from the Vault or its key
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables
@@ -649,6 +662,7 @@ before any OCI API call is made:
 - `k3s_ca_vault_secret_id` requires `enable_vault = true`
 - `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
+- `os_family = "opensuse"`: the resolved or pinned image should be the `opensuse_leap_version` release (warns after a Renovate bump until the new release is imported)
 
 These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
 Do not remove these checks.
@@ -664,6 +678,8 @@ The following variables have explicit format validation to prevent late-apply OC
 - `boot_volume_size_in_gbs`: must be `>= 50` (OCI hard minimum)
 - `k3s_server_pool_size`: must be odd positive integer (etcd quorum; Always Free only fits 1)
 - `standalone_worker_fault_domain`: `FAULT-DOMAIN-[1-3]` or null
+- `ubuntu_version`: `^[0-9]{2}\.04$` (LTS only); `opensuse_leap_version`: `^[0-9]+\.[0-9]+$`
+- `opensuse_image_compartment_ocid`: tenancy or compartment OCID, or null
 
 When adding a new variable that maps to an OCI resource name or OCID, add a `validation {}` block.
 

@@ -58,9 +58,64 @@
       "prBodyNotes": [
         "**Why this waits for you:** a k3s major upgrades the cluster through system-upgrade-controller in its next window, one node at a time. Read the release notes for removed APIs first."
       ]
+    },
+    {
+      "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION) from endoflife.date. They change what nodes created afterwards boot; running nodes are never replaced on an image change (compute.tf ignore_changes). feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
+      "matchDatasources": [
+        "endoflife-date"
+      ],
+      "matchDepNames": [
+        "ubuntu",
+        "opensuse"
+      ],
+      "commitMessagePrefix": "feat(os):",
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "automerge"
+      ]
+    },
+    {
+      "description": "Ubuntu: endoflife.date reports a cycle's latest point release (26.04.1) once there is one, and the bare cycle (26.04) before. extractVersion keeps only LTS cycles (xx.04 of an even year, never interim releases) that already have a point release and writes them back as xx.04, the value OCI's operating_system_version uses. So a new LTS is proposed from its .1 point release (when Ubuntu itself opens LTS-to-LTS upgrades); minimumReleaseAge 90 days is the backstop. Point releases of the current LTS normalise to the same xx.04 and open no PR. The required Plan check runs the image lookup's postcondition against the live tenancy, so a release OCI does not publish yet fails the PR instead of merging.",
+      "matchDatasources": [
+        "endoflife-date"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "extractVersion": "^(?<version>\\d[02468]\\.04)\\.\\d+$",
+      "minimumReleaseAge": "90 days",
+      "prBodyNotes": [
+        "New Ubuntu LTS: only nodes created after this merges boot it (rebuilds, pool replacements); running nodes keep their OS. The Plan check confirmed OCI publishes an aarch64 image for it, not that cloud-init succeeds on it: test a rebuild before relying on it."
+      ],
+      "groupName": "ubuntu"
+    },
+    {
+      "description": "openSUSE Leap: the image is a custom import, so the bump cannot reach nodes by itself. After it merges, new nodes keep booting the newest imported image and plans warn (checks.tf) until the new release is imported, then pick it up without os_image_id. The group keeps vars.tf and the import script in one PR, outside the preset's weekly maintenance group. allowedVersions drops the legacy 42.x numbering (Leap 42.1-42.3, 2015-2017), which sorts above 16.0.",
+      "matchDatasources": [
+        "endoflife-date"
+      ],
+      "matchDepNames": [
+        "opensuse"
+      ],
+      "allowedVersions": "!/^42\\./",
+      "prBodyNotes": [
+        "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then new nodes boot the newest image already imported and plans warn; afterwards the module resolves the new image by itself (unless you pin `os_image_id`). Running nodes are never replaced."
+      ],
+      "groupName": "opensuse"
     }
   ],
   "customManagers": [
+    {
+      "description": "openSUSE Leap release imported by scripts/import-opensuse-aarch64.sh (LEAP_VERSION, renovate comment on the line above). Same depName as opensuse_leap_version in vars.tf, so a bump updates both in one PR.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)scripts/import-opensuse-aarch64\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*LEAP_VERSION=\"(?<currentValue>[^\"]+)\""
+      ]
+    },
     {
       "description": "k3s pinned in the system-upgrade-controller Plans: the inline renovate comment sits directly above the version: line (gitops/system-upgrade/plans.yaml shows how). Commented-out lines don't match, so the default channel-based Plans have no pin.",
       "customType": "regex",
