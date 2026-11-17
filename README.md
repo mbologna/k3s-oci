@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mbologna/k3s-oci/actions/workflows/ci.yml/badge.svg)](https://github.com/mbologna/k3s-oci/actions/workflows/ci.yml)
 
-A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Free tier](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
+A Terraform/OpenTofu module that builds a [k3s](https://k3s.io) cluster on the [OCI Always Free tier](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm): one control-plane node and one worker on Arm A1.Flex, with ingress, storage, GitOps and backups installed, for $0 a month.
 
 ## Features
 
