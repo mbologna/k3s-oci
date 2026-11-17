@@ -60,13 +60,14 @@
       ]
     },
     {
-      "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION) from endoflife.date. They change what nodes created afterwards boot; running nodes are never replaced on an image change (compute.tf ignore_changes). feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
+      "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION): Ubuntu from endoflife.date, openSUSE Leap from openSUSE's own release API (custom.opensuse-leap). They change what nodes created afterwards boot; running nodes are never replaced on an image change (compute.tf ignore_changes). feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
       "matchDatasources": [
-        "endoflife-date"
+        "endoflife-date",
+        "custom.opensuse-leap"
       ],
       "matchDepNames": [
         "ubuntu",
-        "opensuse"
+        "opensuse-leap"
       ],
       "commitMessagePrefix": "feat(os):",
       "automerge": true,
@@ -91,20 +92,30 @@
       "groupName": "ubuntu"
     },
     {
-      "description": "openSUSE Leap: the image is a custom import, so the bump cannot reach nodes by itself. After it merges, new nodes keep booting the newest imported image and plans warn (checks.tf) until the new release is imported, then pick it up without os_image_id. The group keeps vars.tf and the import script in one PR, outside the preset's weekly maintenance group. allowedVersions drops the legacy 42.x numbering (Leap 42.1-42.3, 2015-2017), which sorts above 16.0.",
+      "description": "openSUSE Leap, from get.opensuse.org's distributions API (custom.opensuse-leap): endoflife.date added Leap releases weeks late (16.1 was missing while openSUSE already called it Stable). The datasource keeps releases in state Stable or EOL, so Beta and RC builds never match. The API has no release dates, so timestamp-optional: with the default timestamp-required the preset's 14-day minor gate would hold a dateless update forever; openSUSE's Stable state is the gate instead. The image is a custom import, so the bump cannot reach nodes by itself: after it merges, new nodes keep booting the newest imported image and plans warn (checks.tf) until the new release is imported, then pick it up without os_image_id. The group keeps vars.tf and the import script in one PR, outside the preset's weekly maintenance group. allowedVersions drops the legacy 42.x numbering (Leap 42.1-42.3, 2015-2017), which sorts above 16.0.",
       "matchDatasources": [
-        "endoflife-date"
+        "custom.opensuse-leap"
       ],
       "matchDepNames": [
-        "opensuse"
+        "opensuse-leap"
       ],
       "allowedVersions": "!/^42\\./",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
       "prBodyNotes": [
         "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then new nodes boot the newest image already imported and plans warn; afterwards the module resolves the new image by itself (unless you pin `os_image_id`). Running nodes are never replaced."
       ],
       "groupName": "opensuse"
     }
   ],
+  "customDatasources": {
+    "opensuse-leap": {
+      "description": "openSUSE Leap releases from openSUSE's distributions API (also behind get.opensuse.org), released ones only: state Stable or EOL.",
+      "defaultRegistryUrlTemplate": "https://get.opensuse.org/api/v0/distributions.json",
+      "transformTemplates": [
+        "{\"homepage\": \"https://get.opensuse.org/leap/\", \"releases\": [Leap[state in [\"Stable\", \"EOL\"]].{\"version\": version}]}"
+      ]
+    }
+  },
   "customManagers": [
     {
       "description": "openSUSE Leap release imported by scripts/import-opensuse-aarch64.sh (LEAP_VERSION, renovate comment on the line above). Same depName as opensuse_leap_version in vars.tf, so a bump updates both in one PR.",

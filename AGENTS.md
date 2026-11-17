@@ -261,13 +261,15 @@ terraform-docs .
   automerges after the 14-day gate (`matchNewValue` disables x.y.0-x.y.2), majors wait for a
   person. Keep the `k3s-io/k3s` versioning rule (`+k3sN` builds) and `separateMultipleMinor`.
 - OS releases: `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
-  `scripts/import-opensuse-aarch64.sh` use `datasource=endoflife-date` (depNames `ubuntu`,
-  `opensuse`). The PRs are `feat(os):` and automerge. Ubuntu: endoflife.date reports a cycle's
+  `scripts/import-opensuse-aarch64.sh` use `datasource=endoflife-date depName=ubuntu` and
+  `datasource=custom.opensuse-leap depName=opensuse-leap` (openSUSE's distributions API, Stable/EOL
+  releases only; endoflife.date lagged on Leap 16.1). The PRs are `feat(os):` and automerge. Ubuntu: endoflife.date reports a cycle's
   latest point release (`26.04.1`); `extractVersion` keeps only even-year `.04` cycles that have
   one and normalises them to `xx.04` (OCI's `operating_system_version`), so a new LTS arrives from
   its `.1` (90-day `minimumReleaseAge` as backstop); the required Plan check's image postcondition
   fails the PR if OCI has no image yet. openSUSE: `allowedVersions` drops the legacy `42.x`
-  numbering; grouped so vars.tf and the script move together. With `os_image_id` null the module
+  numbering; the API has no release dates, so `timestamp-optional` (else the preset's 14-day
+  minor gate holds the PR forever); grouped so vars.tf and the script move together. With `os_image_id` null the module
   resolves the image (`data.oci_core_images.opensuse`, OS `openSUSE Leap`, which the import script
   records; in `opensuse_image_compartment_ocid`, default tenancy root): newest of
   `opensuse_leap_version`, else newest of any release, and the `opensuse_image_matches_leap_version`
