@@ -420,12 +420,12 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
 
-**OS releases** come from [endoflife.date](https://endoflife.date) and arrive as `feat(os):` PRs that automerge after CI, so each one ships in a release:
+**OS releases** come from [endoflife.date](https://endoflife.date) (Ubuntu) and [openSUSE's release API](https://get.opensuse.org/api/v0/distributions.json) (Leap) and arrive as `feat(os):` PRs that automerge after CI, so each one ships in a release:
 
 | Release | Bump | After it merges |
 |---|---|---|
 | Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | Nodes created afterwards (rebuilds, pool replacements) boot the new release. Running nodes keep theirs: an image change never replaces a node |
-| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release (the legacy `42.x` numbering is ignored) | New nodes keep booting the newest imported image, and plans warn, until you run `scripts/import-opensuse-aarch64.sh`; the module then resolves the new image by itself |
+| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | New nodes keep booting the newest imported image, and plans warn, until you run `scripts/import-opensuse-aarch64.sh`; the module then resolves the new image by itself |
 
 ### CI plan against a live deployment
 
