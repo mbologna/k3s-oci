@@ -126,7 +126,7 @@ variable "os_image_id" {
 
 variable "ubuntu_version" {
   type        = string
-  description = "Ubuntu LTS release for os_family = \"ubuntu\" (OCI platform image operating_system_version). Renovate bumps it to a new LTS once that release's .1 point release is out. Only nodes created afterwards boot the new release: running nodes are never replaced on an image change."
+  description = "Ubuntu LTS release for os_family = \"ubuntu\" (OCI platform image operating_system_version). Renovate bumps it to a new LTS once that release's .1 point release is out. Only the next full rebuild boots the new release: the instance configurations ignore image changes, so running nodes and pool replacements keep the image the pool was created with."
   # renovate: datasource=endoflife-date depName=ubuntu
   default = "26.04"
 
@@ -138,7 +138,7 @@ variable "ubuntu_version" {
 
 variable "opensuse_leap_version" {
   type        = string
-  description = "openSUSE Leap release for os_family = \"opensuse\". New nodes boot the newest imported image of this release; until it is imported (scripts/import-opensuse-aarch64.sh --leap-version <version>) they boot the newest imported image of any release and plans warn. Renovate bumps it together with the import script default. Running nodes are never replaced on an image change."
+  description = "openSUSE Leap release for os_family = \"opensuse\". The newest imported image of this release is used; until it is imported (scripts/import-opensuse-aarch64.sh --leap-version <version>) the newest imported image of any release is, and plans warn. Renovate bumps it together with the import script default. Like ubuntu_version, it reaches nodes only on the next full rebuild."
   # renovate: datasource=custom.opensuse-leap depName=opensuse-leap
   default = "16.1"
 

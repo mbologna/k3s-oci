@@ -60,7 +60,7 @@
       ]
     },
     {
-      "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION): Ubuntu from endoflife.date, openSUSE Leap from openSUSE's own release API (custom.opensuse-leap). They change what nodes created afterwards boot; running nodes are never replaced on an image change (compute.tf ignore_changes). feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
+      "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION): Ubuntu from endoflife.date, openSUSE Leap from openSUSE's own release API (custom.opensuse-leap). They reach nodes only on the next full rebuild: the instance configurations ignore image changes (compute.tf ignore_changes), so running nodes and pool replacements keep their image and the PR's plan is empty. feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
       "matchDatasources": [
         "endoflife-date",
         "custom.opensuse-leap"
@@ -87,7 +87,7 @@
       "extractVersion": "^(?<version>\\d[02468]\\.04)\\.\\d+$",
       "minimumReleaseAge": "90 days",
       "prBodyNotes": [
-        "New Ubuntu LTS: only nodes created after this merges boot it (rebuilds, pool replacements); running nodes keep their OS. The Plan check confirmed OCI publishes an aarch64 image for it, not that cloud-init succeeds on it: test a rebuild before relying on it."
+        "New Ubuntu LTS: nothing changes on the cluster when this merges. The next full rebuild (`tofu destroy` + `apply`, or `just teardown-keep-data`) boots it; running nodes and pool replacements keep their image. The Plan check confirmed OCI publishes an aarch64 image for it, not that cloud-init succeeds on it: test a rebuild before relying on it."
       ],
       "groupName": "ubuntu"
     },
@@ -102,7 +102,7 @@
       "allowedVersions": "!/^42\\./",
       "minimumReleaseAgeBehaviour": "timestamp-optional",
       "prBodyNotes": [
-        "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then new nodes boot the newest image already imported and plans warn; afterwards the module resolves the new image by itself (unless you pin `os_image_id`). Running nodes are never replaced."
+        "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then plans warn and a rebuild boots the newest image already imported; afterwards the next full rebuild boots the new release without `os_image_id` (unless you pin it). Running nodes and pool replacements keep their image."
       ],
       "groupName": "opensuse"
     }

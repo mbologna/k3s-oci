@@ -273,8 +273,10 @@ terraform-docs .
   resolves the image (`data.oci_core_images.opensuse`, OS `openSUSE Leap`, which the import script
   records; in `opensuse_image_compartment_ocid`, default tenancy root): newest of
   `opensuse_leap_version`, else newest of any release, and the `opensuse_image_matches_leap_version`
-  check warns until the new release is imported. Running nodes are never
-  replaced on an image change (`ignore_changes` in `compute.tf`).
+  check warns until the new release is imported. A bump reaches nodes only on a full rebuild:
+  the instance configurations ignore `instance_details` and the pools ignore
+  `instance_configuration_id` (`compute.tf`), so running nodes and pool replacements keep their
+  image, and the bump PR's plan is empty. The same holds for newer image builds of the same release.
 - `.github/workflows/plan.yml` (`Plan / tofu plan (example)`) runs a read-only `tofu plan` of
   `example/` against a live deployment on same-repository PRs: a dedicated OCI user in a
   read-only group, state read from the remote backend with `-lock=false`, and only changed
