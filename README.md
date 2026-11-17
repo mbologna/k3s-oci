@@ -9,7 +9,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Single control plane**: 1 control-plane node with embedded etcd + 1 standalone worker (OCI Always Free 2 OCPU / 12 GB limit)
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD + Image Updater, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
-- **Traefik ingress**: one Traefik pod per node (DaemonSet, upstream chart via ArgoCD) with `system-cluster-critical` priority; standard Kubernetes `Ingress` plus Traefik Middlewares; HTTP→HTTPS redirect and TLS 1.2+ by default; real client IP preservation via NLB transparent mode and `externalTrafficPolicy: Local`. Since v2.0.0 (Envoy Gateway and the Gateway API before; see [Upgrading from 1.x](#upgrading-from-1x-to-20))
+- **Traefik ingress**: one Traefik pod per node (DaemonSet, upstream chart via ArgoCD) with `system-cluster-critical` priority; standard Kubernetes `Ingress` plus Traefik Middlewares; HTTP→HTTPS redirect and TLS 1.2+ by default; real client IP preservation via NLB transparent mode and `externalTrafficPolicy: Local`
 - **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
 - **Configurable OS** (`os_family`): Ubuntu 26.04 LTS (default, OCI-native image auto-resolved) or openSUSE Leap 16.0 (custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`)
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
@@ -22,7 +22,7 @@ A production-ready [k3s](https://k3s.io) Terraform module for the [OCI Always Fr
 - **Longhorn backups to Object Storage** (`enable_longhorn_backup = true`): a second versioned bucket; with `create_longhorn_backup_user = true` the module creates a bucket-scoped service user and cloud-init wires the BackupTarget and a daily backup job
 - **Rebuild without data loss** (`just teardown-keep-data`): destroys the cluster but keeps the Vault and both buckets, then re-imports them so the next apply reuses them
 - **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
-- **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS record management from Ingress hosts (with an `external-dns.alpha.kubernetes.io/target` annotation, since Traefik publishes no Ingress status behind the NLB)
+- **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS records for Ingress hosts (see [Deploying a web application](#deploying-a-web-application))
 - **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate. This lets the nodes read every secret in the compartment; swap in an API-key store and set `external_secrets_instance_principal = false` to scope them to their boot secrets
 
 ## Architecture
@@ -73,7 +73,7 @@ Both A1.Flex instances live in a **private subnet** with no public IPs. Internet
 
 **Internal Flex LB** provides a stable private VIP for the control-plane node. Workers join via this VIP; the optional public kubeapi listener on the NLB targets the server directly.
 
-**Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. Control-plane `NoSchedule` taints are removed after cluster init so user workloads schedule across both identically-sized nodes.
+**Longhorn** runs on both nodes with `defaultReplicaCount=2`; each PVC is replicated across both nodes. User workloads schedule on both nodes ([Node roles](#node-roles-and-workload-placement)).
 
 The server and worker run in different fault domains (`fault_domains` / `standalone_worker_fault_domain`). Why there are only two nodes and what a single etcd node means: see [Why this topology](#why-this-topology) and [Failure tolerance](#failure-tolerance).
 
@@ -322,11 +322,9 @@ Instead of a separate Certificate, you can annotate the Ingress with `cert-manag
 
 Middlewares (BasicAuth, rate limits, IP allowlists, headers) are Traefik `Middleware` objects attached with `traefik.ingress.kubernetes.io/router.middlewares: <namespace>-<name>@kubernetescrd`; `gitops/argocd/rate-limit.yaml` and `gitops/longhorn/ingress.yaml` show two.
 
-> **With a real domain**: set `enable_external_dns = true` and annotate the Ingress with
-> `external-dns.alpha.kubernetes.io/target: <NLB_IP>`. External DNS creates the A record for
-> the Ingress's hosts, then cert-manager issues the certificate. Alternatively, set
-> `enable_dns01_challenge = true` to use DNS-01 (supports wildcard certs and does not
-> require inbound port 80).
+> **With a real domain**: set `enable_external_dns = true` and add the `target` annotation
+> described above; External DNS creates the records, then cert-manager issues the certificate.
+> `enable_dns01_challenge = true` switches to DNS-01 (wildcard certificates, no inbound port 80).
 
 ### Resilience: spread replicas across nodes
 
@@ -451,7 +449,7 @@ To set it up:
 
 4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
 
-Since 2026-11-16 this job runs against the maintainer's deployment as a required check, so Terraform provider updates automerge here once their plan is empty. On a fork, set the job up before relying on that: without its secrets it reports a notice and succeeds, so a provider update would automerge unplanned.
+In this repository the job is a required check, so Terraform provider updates automerge once their plan is empty. On a fork, set it up before relying on that: without its secrets it reports a notice and succeeds, so a provider update would automerge unplanned.
 
 ## Remote Terraform state (OCI Object Storage)
 
@@ -496,11 +494,9 @@ The namespace is in `terraform output terraform_state_backend`.
 
 > **S3 credentials are OCI Customer Secret Keys** (**Identity → Users → <user> → Customer Secret Keys**).
 > A key is **not** scoped to a bucket: it carries every permission of the user it belongs to. A key that
-> only lives on your laptop can belong to your own user. Any key stored *inside* the cluster (such as
-> Longhorn backups) must belong to a dedicated service user. For Longhorn backups,
-> `create_longhorn_backup_user = true` makes the module create one; see [Longhorn backups](#longhorn-backups). Put that user in a group whose policy is limited
-> to one bucket: `Allow group <g> to manage objects in tenancy where target.bucket.name='<bucket>'`
-> (plus `read buckets` with the same condition). New keys take about 5 minutes to work on the S3 endpoint.
+> only lives on your laptop can belong to your own user; a key stored *inside* the cluster must belong
+> to a service user limited to one bucket, which [Longhorn backups](#longhorn-backups) can create for you.
+> New keys take about 5 minutes to work on the S3 endpoint.
 
 ## Longhorn backups
 
@@ -572,7 +568,7 @@ instance_principal External Secrets store needs the whole compartment (see `exte
 | **Kubernetes API** | ❌ CP loss | Single control-plane; ILB has no failover target |
 | **PVC data (Longhorn)** | ✅ 1 node | 2 replicas across 2 nodes; 1 replica lost, 1 remains serving |
 | **cert-manager** | ⚠️ Soft | Pod reschedules within minutes; TLS serving unaffected (certs live in Secrets); only new issuance/renewal is paused |
-| **Planned reboots / k3s upgrades** | ⚠️ Brief | One node at a time, but every single-replica pod on the drained node restarts elsewhere (a short outage each), and while the control plane reboots the API is down: nothing reschedules and Argo CD can't sync. A node left cordoned after a failed upgrade is not reported unless you enable `gitops/node-cordon-alert/` |
+| **Planned reboots / k3s upgrades** | ⚠️ Brief | One node at a time; see [Automatic updates](#automatic-updates--reboots-unattended-upgrades--kured). A node left cordoned after a failed upgrade is not reported unless you enable `gitops/node-cordon-alert/` |
 | **ArgoCD** | ⚠️ Soft | GitOps sync pauses until rescheduled; running workloads unaffected |
 | **MySQL (if enabled)** | ❌ None | Always Free tier = single OCI-managed instance; no HA failover |
 
@@ -594,8 +590,6 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 > **Why control-plane runs user workloads:** with one worker, a tainted server would make that worker a single point of failure for every workload. k3s does not taint servers by default; cloud-init still removes any `control-plane`/`etcd` `NoSchedule` taint defensively. Keep IO-heavy batch jobs (CI runners, Renovate, image builds) off the server with a **required** `node-role.kubernetes.io/control-plane DoesNotExist` node affinity: they slow etcd's fsync on the shared boot volume. Give them `priorityClassName: worker-pinned` (`gitops/priority-classes/`) too: after a drain of the control plane its pods sit on the worker and fill its CPU requests, and the class lets a worker-pinned pod preempt them instead of waiting Pending.
 >
 > **Pods go back where they prefer:** nothing moves a pod once it is running, so after kured drains the worker, the pods that prefer it stay on the control plane. A nightly descheduler run (04:30 UTC, `gitops/apps/descheduler.yaml`) evicts a pod that sits off its preferred node when it fits there, and does nothing else.
->
-> **Recommendation:** use `replicas ≥ 2` with [topologySpreadConstraints](#resilience-spread-replicas-across-nodes) to spread pods across nodes.
 
 ### Memory budget (measured)
 
@@ -641,7 +635,6 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 | OCI Bastion VM (E2.1.Micro) | OCI Bastion Service provides managed SSH proxying for free with no VM, no OS to patch, and no boot volume consuming storage budget |
 | Boot volumes < 50 GB | OCI hard minimum is 50 GB per shape; the default 2 × 100 GB uses the whole 200 GB free block storage allowance |
 | Additional NLB for kubeapi | Only 1 NLB is Always Free; the existing NLB conditionally exposes port 6443 via `expose_kubeapi = true` |
-| Oracle Linux or other distros as the base OS | Only Ubuntu 26.04 (default) and openSUSE Leap 16.0 have bootstrap code; see [Choosing an OS](#choosing-an-os) below |
 
 ### Choosing an OS
 
@@ -705,30 +698,6 @@ os_image_id = "ocid1.image.oc1..."   # OCID printed by the script above
 #### Using any other OS image
 
 Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic, fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
-
-
-## Upgrading from 1.x to 2.0
-
-v2.0.0 replaces Envoy Gateway and the Gateway API with Traefik and plain Kubernetes Ingress. The module's interface is otherwise unchanged; existing tfvars still validate (`gateway_api_version` is accepted and ignored, the Docker Hub variables keep working for your own OCI charts on Docker Hub).
-
-What moves:
-
-| 1.x (Envoy Gateway) | 2.0 (Traefik) |
-|---|---|
-| `HTTPRoute` attached to Gateway `eg` | `Ingress` with `ingressClassName: traefik` |
-| An HTTPS listener per hostname on Gateway `eg` | `spec.tls` on the Ingress; :443 is the default entrypoint |
-| `Certificate` in `envoy-gateway-system` | `Certificate` in the Ingress's namespace (or the `cert-manager.io/cluster-issuer` annotation) |
-| HTTP→HTTPS redirect HTTPRoute | Built in: the `web` entrypoint redirects |
-| `SecurityPolicy` basicAuth (`.htpasswd` key) | `Middleware` basicAuth (Secret key `users`) |
-| `BackendTrafficPolicy` local rate limit | `Middleware` rateLimit |
-| `ClientTrafficPolicy` TLS settings | TLSOption `default` (chart values) |
-| HTTP-01 via `gatewayHTTPRoute` | HTTP-01 via an Ingress solver pinned to the `web` entrypoint |
-| external-dns from HTTPRoute hostnames | external-dns from Ingress hosts plus a `target` annotation (the NLB IP) |
-
-Paths:
-
-- **Rebuild** (simplest): tear down keeping data (`just teardown-keep-data`), check out the v2.0.0 tag, apply. Cloud-init no longer installs the Gateway API CRDs, and the Argo CD and Longhorn Ingresses are created fresh.
-- **In place**: update your GitOps fork to v2.0.0's `gitops/` (Argo CD prunes `envoy-gateway` and `gateway-config` and installs `traefik`), convert your own HTTPRoutes and policies as in the table, re-create the ArgoCD/Longhorn ingresses (re-run `configure_argocd_ingress` / `configure_longhorn_ingress` from `files/lib/k3s-argocd.sh`, or write the Ingresses by hand), then delete the leftovers: the `envoy-gateway-system` namespace and, once nothing uses them, the `gateway.networking.k8s.io` and `gateway.envoyproxy.io` CRDs (deleting a CRD deletes all its objects). Envoy and Traefik both bind NodePorts 30080/30443, so expect a few minutes without ingress between the prune and Traefik's start. Instance configurations ignore `user_data` changes, so the new cloud-init applies at the next rebuild either way.
 
 ## Teardown
 
