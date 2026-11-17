@@ -424,8 +424,8 @@ Renovate then updates both in one `k3s` PR:
 
 | Release | Bump | After it merges |
 |---|---|---|
-| Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | Nodes created afterwards (rebuilds, pool replacements) boot the new release. Running nodes keep theirs: an image change never replaces a node |
-| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | New nodes keep booting the newest imported image, and plans warn, until you run `scripts/import-opensuse-aarch64.sh`; the module then resolves the new image by itself |
+| Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | The next full rebuild (`tofu destroy` + `apply`, or `just teardown-keep-data`) boots the new release. Until then nothing changes: the instance configurations ignore image changes, so running nodes and pool replacements keep the image the pool was created with |
+| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | Run `scripts/import-opensuse-aarch64.sh`; the next full rebuild then boots the new release without `os_image_id`. Until it is imported, plans warn and a rebuild boots the newest imported image |
 
 ### CI plan against a live deployment
 
@@ -707,7 +707,7 @@ imported by older versions of the script have no OS recorded: re-run the script 
 
 | Caveat | Detail |
 |---|---|
-| **Image must be re-imported on new Leap releases** | The image is a custom import, so no update reaches it by itself. When Renovate bumps `opensuse_leap_version`, new nodes keep booting the newest imported image and plans warn (`opensuse_image_matches_leap_version`) until you run the script for the new release. For a newer build of the same release, import it under a new `--image-name`: the newest import wins |
+| **Image must be re-imported on new Leap releases** | The image is a custom import, so no update reaches it by itself. When Renovate bumps `opensuse_leap_version`, a rebuild keeps booting the newest imported image and plans warn (`opensuse_image_matches_leap_version`) until you run the script for the new release. For a newer build of the same release, import it under a new `--image-name`: the newest import wins |
 | **UEFI_64 required at import time** | OCI's `oci compute image import` CLI hard-codes `firmware: BIOS`. The script works around this via a direct REST API call |
 | **Shape compatibility not auto-detected** | OCI does not auto-detect the architecture of imported QCOW2 images; the script adds `VM.Standard.A1.Flex` explicitly |
 | **Oracle Cloud Agent (OCA) unavailable** | No OCI-native monitoring agent on custom images |

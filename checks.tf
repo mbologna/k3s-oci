@@ -4,7 +4,7 @@
 # before any OCI API call is made.
 
 # Warns after Renovate bumps opensuse_leap_version until the new release is imported
-# (scripts/import-opensuse-aarch64.sh); new nodes boot the older image meanwhile.
+# (scripts/import-opensuse-aarch64.sh); a rebuild boots the older image meanwhile.
 # A pinned image imported before the script recorded operatingSystemVersion is matched by display name.
 check "opensuse_image_matches_leap_version" {
   assert {
@@ -17,7 +17,7 @@ check "opensuse_image_matches_leap_version" {
         true
       )
     )
-    error_message = "The openSUSE image new nodes boot is not openSUSE Leap ${var.opensuse_leap_version}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version}${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. Running nodes are not replaced."
+    error_message = "The openSUSE image a rebuild would boot is not openSUSE Leap ${var.opensuse_leap_version}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version}${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. Running nodes are not replaced."
   }
 }
 
