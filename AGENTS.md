@@ -233,13 +233,13 @@ terraform-docs .
 ## Releases and branch protection
 
 - `main` is always releasable and protected by the `main` ruleset, with no bypass, admins
-  included: changes arrive only through a pull request, squash-merged, once the `terraform / …`
-  checks and `pr-title / Conventional PR title` pass; no force-push, no deletion. The squash
-  commit's subject is the PR title, which auto-release reads, so PR titles are Conventional
-  Commits. No workflow commits to `main` (the terraform-docs README auto-commit is off).
+  included: changes arrive only through a pull request, rebase-merged, once the `terraform / …`
+  checks and `commits / Conventional commits` pass; no force-push, no deletion. Every commit
+  lands on `main` as it is and auto-release reads the subjects, so each commit is linted with
+  the shared commitlint base. No workflow commits to `main` (the terraform-docs README auto-commit is off).
 - Renovate PRs merge only after CI: the shared preset turns on GitHub auto-merge
   (`platformAutomerge`), so GitHub merges an automerge PR once the ruleset's required checks
-  (`terraform / …`, `pr-title / …`) pass, and it sets `internalChecksAsSuccess: false`, so
+  (`terraform / …`, `commits / …`) pass, and it sets `internalChecksAsSuccess: false`, so
   Renovate's own stability-days check never counts as CI. A new CI job that must gate merges has to
   be added to the ruleset's required checks too.
 - Releases are cut by [auto-release](https://github.com/mbologna/auto-release)
