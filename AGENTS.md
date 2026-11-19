@@ -233,7 +233,7 @@ terraform-docs .
 ## Releases and branch protection
 
 - `main` is always releasable and protected by the `main` ruleset, with no bypass, admins
-  included: changes arrive only through a pull request, rebase-merged, once the `terraform / …`
+  included: changes arrive only through a pull request, merged with a merge commit, once the `terraform / …`
   checks and `commits / Conventional commits` pass; no force-push, no deletion. Every commit
   lands on `main` as it is and auto-release reads the subjects, so each commit is linted with
   the shared commitlint base. No workflow commits to `main` (the terraform-docs README auto-commit is off).
