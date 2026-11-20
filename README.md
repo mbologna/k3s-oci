@@ -93,7 +93,8 @@ cd example && tofu init && tofu apply
 ```
 
 To consume the module from your own configuration, pin a release tag; the
-[Releases](https://github.com/mbologna/k3s-oci/releases) page lists them with their notes.
+[Releases](https://github.com/mbologna/k3s-oci/releases) page lists them with their notes, and
+[Versioning](#versioning) says which bumps need changes on your side.
 [![Latest release](https://img.shields.io/github/v/release/mbologna/k3s-oci)](https://github.com/mbologna/k3s-oci/releases/latest)
 
 ```hcl
@@ -457,6 +458,10 @@ To set it up:
 4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
 
 In this repository the job is a required check, so Terraform provider updates automerge once their plan is empty. On a fork, set it up before relying on that: without its secrets it reports a notice and succeeds, so a provider update would automerge unplanned.
+
+## Versioning
+
+Releases follow SemVer: [auto-release](https://github.com/mbologna/auto-release) tags `vX.Y.Z` from the Conventional Commit types (`feat` minor; `fix`, `perf`, `revert` patch; a breaking change major) and publishes a GitHub release; you consume one as `?ref=vX.Y.Z`. A major is what may need changes on your side: a removed or renamed variable, or a change that forces resources of an existing deployment to be replaced. An OS release bump (`feat(os)`, above) is a minor, since it reaches nodes only at the next full rebuild. k3s follows its channel (`stable` by default), so tags carry no k3s version. See the [versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
 
 ## Remote Terraform state (OCI Object Storage)
 

@@ -230,6 +230,25 @@ trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terrafor
 terraform-docs .
 ```
 
+## Versioning
+
+Plain SemVer: `vX.Y.Z` tags, each a GitHub release that consumers pin as
+`source = "github.com/mbologna/k3s-oci?ref=vX.Y.Z"` (nothing builds on a tag), per the
+[versioning standard](https://github.com/mbologna/.github/blob/main/VERSIONING.md).
+
+- Never create, move or delete tags, and never edit a version number to cut a release:
+  auto-release tags from the commit types (`feat` minor; `fix`, `perf`, `revert` patch; `!` or a
+  `BREAKING CHANGE:` footer major).
+- Write Conventional Commit subjects; they decide the next version.
+- Breaking, for a module consumer, means a removed or renamed variable, or a change that forces
+  resources of an existing deployment to be replaced: commit it with `!` and a `BREAKING CHANGE:`
+  footer that says how to migrate. Deprecate a variable rather than remove it, and drop it at the
+  next major (as with `gateway_api_version`).
+- `feat(os):` OS release bumps (`ubuntu_version`, `opensuse_leap_version`) are minor: they reach
+  nodes only at the next full rebuild.
+- Tags carry no k3s version: k3s follows its channel (`stable` by default, `k3s_version` and the
+  system-upgrade Plans), so a new k3s release is not a release of this module.
+
 ## Releases and branch protection
 
 - `main` is always releasable and protected by the `main` ruleset, with no bypass, admins
@@ -247,8 +266,8 @@ terraform-docs .
   other repository: if a `feat:`, `fix:`, `perf:`, `revert:` or breaking commit landed on `main`
   since the last tag, it tags the next version and publishes the GitHub release; chores (Renovate's
   `chore(deps)` updates among them) ship with the next such release. A push that brings a Renovate
-  `fix(security):` update releases at once. `feat:` → minor, `!` / `BREAKING CHANGE:` → major,
-  anything else → patch. Write commit subjects as changelog entries.
+  `fix(security):` update releases at once. The bump rules are under Versioning. Write commit
+  subjects as changelog entries.
 - There is no release PR and nothing is committed back to `main`. Running the Release workflow by
   hand on `main` (*Actions → Release → Run workflow*) releases at once; with `dry_run` on it only
   shows the next version and its notes in the job summary.
