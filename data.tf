@@ -118,10 +118,11 @@ locals {
 
   # etcd snapshot upload and Longhorn backup target vars
   _server_backup_vars = {
-    enable_etcd_snapshots   = var.enable_etcd_snapshots
-    etcd_snapshot_bucket    = var.enable_etcd_snapshots && var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
-    etcd_snapshot_retention = var.etcd_snapshot_retention
-    oci_object_namespace    = local.oci_object_namespace
+    enable_etcd_snapshots      = var.enable_etcd_snapshots
+    etcd_snapshot_bucket       = var.enable_etcd_snapshots && var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""
+    etcd_snapshot_retention    = var.etcd_snapshot_retention
+    etcd_snapshot_upload_hours = var.etcd_snapshot_upload_hours
+    oci_object_namespace       = local.oci_object_namespace
     # Separate lock bucket: driven by enable_object_storage_state alone, independent of
     # enable_etcd_snapshots. Disabling etcd snapshots must NOT disable split-brain protection.
     cluster_lock_bucket    = var.enable_object_storage_state ? "${var.cluster_name}-terraform-state" : ""

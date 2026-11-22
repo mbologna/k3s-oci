@@ -77,12 +77,14 @@ export DOCKERHUB_PASSWORD="${dockerhub_password}"
 export VAULT_SECRET_ID_DOCKERHUB="${vault_secret_id_dockerhub}"
 
 # -- etcd snapshot upload (requires enable_etcd_snapshots + enable_object_storage_state) ----
-# Enables a cron job that uploads k3s etcd snapshots to OCI Object Storage every 6h.
+# Enables a cron job that uploads k3s etcd snapshots to OCI Object Storage at
+# ETCD_SNAPSHOT_UPLOAD_HOURS (UTC, a cron hour field; every 6h by default).
 # Uses OCI CLI instance_principal auth — no Customer Secret Keys required.
 # ETCD_SNAPSHOT_BUCKET is empty when enable_etcd_snapshots = false.
 export ENABLE_ETCD_SNAPSHOTS="${enable_etcd_snapshots ? "true" : "false"}"
 export ETCD_SNAPSHOT_BUCKET="${etcd_snapshot_bucket}"
 export ETCD_SNAPSHOT_RETENTION="${etcd_snapshot_retention}"
+export ETCD_SNAPSHOT_UPLOAD_HOURS="${etcd_snapshot_upload_hours}"
 export OCI_OBJECT_NAMESPACE="${oci_object_namespace}"
 # CLUSTER_LOCK_BUCKET is set whenever enable_object_storage_state=true, independent of
 # enable_etcd_snapshots. Used by claim_first_server_lock() to ensure split-brain protection
