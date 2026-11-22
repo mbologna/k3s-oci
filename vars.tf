@@ -506,8 +506,19 @@ variable "enable_longhorn_backup" {
 
 variable "enable_etcd_snapshots" {
   type        = bool
-  description = "Upload etcd snapshots to the OCI Object Storage state bucket every 6 hours using OCI CLI instance_principal auth (no Customer Secret Keys required). Requires enable_object_storage_state = true. Provides off-node etcd backup for split-brain recovery."
+  description = "Upload etcd snapshots to the OCI Object Storage state bucket at etcd_snapshot_upload_hours (every 6 hours by default) using OCI CLI instance_principal auth (no Customer Secret Keys required). Requires enable_object_storage_state = true. Provides off-node etcd backup for split-brain recovery."
   default     = true
+}
+
+variable "etcd_snapshot_upload_hours" {
+  type        = string
+  description = "Hours (UTC, the hour field of a cron expression) at which each server uploads an etcd snapshot to OCI Object Storage. The default uploads every 6 hours from midnight; set the hours so an upload lands just before your maintenance window (a restore point for what it changes) and none during its reboots. Each server adds a 0, 2 or 4 minute offset of its own. Keep it clear of k3s's own snapshot at :15 past 00 and 12 (etcd-snapshot-schedule-cron)."
+  default     = "*/6"
+
+  validation {
+    condition     = can(regex("^[0-9*/,-]+$", var.etcd_snapshot_upload_hours))
+    error_message = "etcd_snapshot_upload_hours must be a cron hour field, e.g. \"*/6\" or \"1,7,13,19\"."
+  }
 }
 
 variable "etcd_snapshot_retention" {

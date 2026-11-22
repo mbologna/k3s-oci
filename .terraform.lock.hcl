@@ -174,6 +174,7 @@ provider "registry.opentofu.org/oracle/oci" {
     "zh:6f3a5f9088de87456cf7545690c933fbad043daebd76d0dffd61f7f4f93bc726",
     "zh:7cdde32dc5ea895d6e3361147c2b97b506f76d050b1a2e7bcfe8c75b6b12d014",
     "zh:813ea7e0549efb67a284a35bae5f97b22b29cfe6fe51490fe1c769aabd13a0c9",
+    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
     "zh:b8529ca8bf6651c1c98a2efdb3579bac1a89bbc7db8504f8ccd4946e2fbe43b8",
     "zh:bd69d4c38214fb0230770adef394ad50b09f13c06602abce6dbd37171fc4ff51",
     "zh:c502ada3107359330a21bd7615b36e1dcdb62b38393fd60cf5889c8cb6c3a01d",

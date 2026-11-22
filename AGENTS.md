@@ -716,7 +716,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 
 ### etcd Snapshots (`enable_etcd_snapshots`)
 - Controlled by `enable_etcd_snapshots` variable (default: `true`). Requires `enable_object_storage_state = true`.
-- Cloud-init installs `/usr/local/bin/etcd-snapshot-upload.sh` + cron job on every server (every 6h, at :00–:04).
+- Cloud-init installs `/usr/local/bin/etcd-snapshot-upload.sh` + cron job on every server, at the hours in `etcd_snapshot_upload_hours` (default `*/6`, UTC), minute :00–:04 per node.
 - k3s's built-in snapshot schedule is moved to `15 */12 * * *` (`--etcd-snapshot-schedule-cron`) — the default `0 */12 * * *` collides with the upload cron and fails with "snapshot save already in progress". Do not align the two schedules.
 - Snapshots are uploaded to `${cluster_name}-terraform-state` bucket under `etcd-snapshots/${CLUSTER_NAME}/<hostname>/` using OCI CLI instance_principal auth — **no Customer Secret Keys required**.
 - Pruning keeps the newest `etcd_snapshot_retention` objects across the whole `etcd-snapshots/${CLUSTER_NAME}/` prefix (not per hostname), so prefixes of replaced servers are cleaned up too. There is deliberately no age-based expiry rule: it would delete the last restore points of a cluster that has been down for a while.

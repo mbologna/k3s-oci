@@ -360,7 +360,8 @@ ETCD_SCRIPT
   chmod +x "${upload_script}"
 
   # Staggered schedule: offset 0, 2, or 4 min based on node IP last octet.
-  echo "${cron_offset} */6 * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
+  local hours="${ETCD_SNAPSHOT_UPLOAD_HOURS:-*/6}"
+  echo "${cron_offset} ${hours} * * * root ${upload_script} >> /var/log/etcd-snapshot-upload.log 2>&1" \
     > /etc/cron.d/etcd-snapshot-upload
 
   # Run an initial snapshot immediately — but only if this node is the elected first server
@@ -373,7 +374,7 @@ ETCD_SCRIPT
     echo "Joining server — skipping immediate snapshot; cron will run within 6h."
   fi
 
-  echo "etcd snapshot cron job installed (every 6h at minute ${cron_offset}; retaining last ${retain} snapshots per node)."
+  echo "etcd snapshot cron job installed (hours ${hours} UTC at minute ${cron_offset}; retaining last ${retain} snapshots per node)."
 }
 
 
