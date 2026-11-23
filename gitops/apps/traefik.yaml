@@ -34,8 +34,12 @@ spec:
         #     ingress_controller_https_nodeport (default 30443) in vars.tf,
         # which the OCI NLB backends and NSG rules are built from.
         service:
-          type: NodePort
           spec:
+            # The chart reads the type from service.spec. Chart 42.3.2's schema
+            # rejects service.type (Argo CD can't render the app), and older
+            # charts ignored it: the Service stayed LoadBalancer, with k3s
+            # ServiceLB pods holding 80/443 on every node.
+            type: NodePort
             # Local keeps the client's source IP (the NLB preserves it,
             # is_preserve_source), which the rate limits and any IP allowlist
             # need; Cluster would SNAT every request. With a DaemonSet every
