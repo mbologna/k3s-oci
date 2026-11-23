@@ -89,6 +89,16 @@ restart_affected_services() {
     | xargs -r systemctl try-restart 2>/dev/null || true
 }
 
+# A reboot this patch run needs: always kured's stock sentinel, and on the
+# security-only run also /run/security-reboot-required, which kured reboots for on
+# any night (the stock one waits for Tuesday to Thursday, gitops/apps/kured.yaml).
+flag_reboot() {
+  touch /var/run/reboot-required
+  case " $* " in
+    *" --category security "*) touch /run/security-reboot-required ;;
+  esac
+}
+
 # Retry on zypp lock (exit 7) up to 5 minutes.
 waited=0
 while true; do
@@ -115,7 +125,7 @@ case "$rc" in
   102)
     # Restart affected services first, then flag for kured reboot.
     restart_affected_services
-    touch /var/run/reboot-required
+    flag_reboot "$@"
     ;;
   103)
     # Package-manager patch was installed (ZYPPER_EXIT_INF_RESTART_NEEDED — informational,
@@ -134,7 +144,7 @@ case "$rc" in
       100) restart_affected_services ;;
       102)
         restart_affected_services
-        touch /var/run/reboot-required
+        flag_reboot "$@"
         ;;
       *) exit "$rc" ;;
     esac
