@@ -126,6 +126,76 @@ $nrconf{restart} = 'a';
 $nrconf{blacklist_rc} = [qr(^k3s)];
 NREOF
 
+  # security-reboot-check: Ubuntu sets /var/run/reboot-required for any package
+  # that asks for a reboot, security fix or not. This writes
+  # /run/security-reboot-required, which kured reboots for on any night (the
+  # stock flag waits for Tuesday to Thursday, gitops/apps/kured.yaml), when a
+  # package in /run/reboot-required.pkgs has its installed version published in
+  # a -security pocket, and removes it otherwise. /run empties at boot.
+  cat > /usr/local/sbin/security-reboot-check << 'SRCEOF'
+#!/usr/bin/python3
+"""Flag a pending reboot that installs a security fix (k3s-oci)."""
+import re
+import subprocess
+from pathlib import Path
+
+REQUIRED = Path("/run/reboot-required")
+PKGS = Path("/run/reboot-required.pkgs")
+SENTINEL = Path("/run/security-reboot-required")
+
+
+def from_security(pkg):
+    """True if the installed version of pkg is published in a -security pocket."""
+    out = subprocess.run(["apt-cache", "policy", pkg], capture_output=True, text=True).stdout
+    installed = re.search(r"^\s+Installed: (\S+)", out, re.M)
+    version, security = None, set()
+    for line in out.splitlines():
+        if line.startswith(" *** ") or (line.startswith("     ") and line[5:6] not in ("", " ")):
+            version = line[5:].split()[0]
+        elif version and "-security" in line:
+            security.add(version)
+    return bool(installed) and installed[1] in security
+
+
+pkgs = sorted(set(PKGS.read_text().split())) if REQUIRED.exists() and PKGS.exists() else []
+reasons = [f"{p}: security update" for p in pkgs if from_security(p)]
+if reasons:
+    SENTINEL.write_text("\n".join(reasons) + "\n")
+    print("security reboot needed:", "; ".join(reasons))
+else:
+    SENTINEL.unlink(missing_ok=True)
+    print("no security reboot needed" + (" (reboot-required ignored)" if REQUIRED.exists() else ""))
+SRCEOF
+  chmod 755 /usr/local/sbin/security-reboot-check
+
+  cat > /etc/systemd/system/security-reboot-check.service << 'SRCEOF'
+[Unit]
+Description=Flag a pending reboot that installs a security fix (for kured)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/security-reboot-check
+SRCEOF
+  # Hourly, for package runs outside the timer (a manual apt upgrade).
+  cat > /etc/systemd/system/security-reboot-check.timer << 'SRCEOF'
+[Unit]
+Description=Refresh /run/security-reboot-required hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
+SRCEOF
+  # And right after the nightly package run, so the flag is there for kured's
+  # window that same night.
+  mkdir -p /etc/systemd/system/apt-daily-upgrade.service.d
+  cat > /etc/systemd/system/apt-daily-upgrade.service.d/security-reboot-check.conf << 'SRCEOF'
+[Service]
+ExecStartPost=-/usr/local/sbin/security-reboot-check
+SRCEOF
+
   # Override apt-daily-upgrade.timer to run daily at 01:00 UTC (0–30 min jitter; RandomizedDelaySec=1800).
   # unattended-upgrade uses 50unattended-upgrades (all security + stable origins).
   # apt.conf.d/ lists are additive — a "security-only" override file in apt.conf.d/
@@ -143,6 +213,7 @@ TIMEREOF
 
   systemctl daemon-reload
   systemctl restart apt-daily.timer apt-daily-upgrade.timer
+  systemctl enable --now security-reboot-check.timer
 
   systemctl enable --now unattended-upgrades
 

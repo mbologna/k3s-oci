@@ -380,15 +380,21 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 
 `unattended-upgrades` applies Ubuntu security patches daily and sets `/var/run/reboot-required` when a kernel update needs a reboot.
 
-[kured](https://github.com/kubereboot/kured) watches every node for `/var/run/reboot-required` and, when found:
+[kured](https://github.com/kubereboot/kured) checks every node's reboot flags (below) and, when one says a reboot is due:
 1. Acquires a cluster-wide lock (only one node reboots at a time)
 2. Cordons + drains the node
 3. Reboots
 4. Waits for the node to return and uncordons it
 
-kured only reboots on Tuesday, Wednesday and Thursday between 02:15 and 04:15 UTC, after the package
-timers have finished (`gitops/apps/kured.yaml`). Every schedule the module creates is in UTC, so that
-order cannot change at a daylight-saving switch.
+kured reboots between 02:15 and 04:15 UTC, after the package timers have finished
+(`gitops/apps/kured.yaml`), and checks every minute, so the second node follows as soon as the first is
+back. A reboot that installs a security fix happens that same night, any day of the week; any other
+reboot waits for Tuesday, Wednesday or Thursday. The nodes tell them apart: `security-reboot-check`
+(Ubuntu: after each package run and hourly) writes `/run/security-reboot-required` when a package in
+`/run/reboot-required.pkgs` came from a `-security` pocket, and on openSUSE the security-only patch run
+writes it when its patches need a reboot. kured's sentinel command reboots for that file on any night
+and for `/var/run/reboot-required` only Tuesday to Thursday. Every schedule the module creates is in
+UTC, so that order cannot change at a daylight-saving switch.
 
 k3s itself is upgraded by system-upgrade-controller, one node at a time, in a nightly window
 (23:00-23:59 UTC, `gitops/system-upgrade/plans.yaml`) that ends before every other nightly job. An

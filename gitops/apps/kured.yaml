@@ -15,7 +15,6 @@ spec:
     helm:
       valuesObject:
         configuration:
-          rebootSentinelFile: /var/run/reboot-required
           # Maintenance window: 02:15-04:15 UTC (03:15-05:15 CET, 04:15-06:15 CEST).
           #
           # UTC, like every other schedule this module creates: the package timers
@@ -42,14 +41,22 @@ spec:
           # Only the per-node upgrade Job pods carry the plan label.
           blockingPodSelector:
             - upgrade.cattle.io/plan
-          rebootDays:
-            - tue
-            - wed
-            - thu
-          # Check every 10 min, not the chart's 1 h: with two nodes taking turns in
-          # a 2 h window, an hourly check can push the second node to the next
-          # reboot day.
-          period: 10m
+          # Every night, but the sentinel decides what may reboot when. A
+          # security fix (/run/security-reboot-required, written by the nodes'
+          # security-reboot-check, files/lib/bootstrap-*.sh) reboots on any
+          # night; any other /var/run/reboot-required only Tuesday to Thursday
+          # (UTC), so routine reboots stay off weekends and a kernel CVE fixed
+          # on a Friday doesn't run unpatched until Tuesday. The command runs on
+          # the host (useRebootSentinelHostPath: false: kured nsenters into it).
+          rebootSentinelCommand: >-
+            sh -c 'test -f /run/security-reboot-required ||
+            { test -f /var/run/reboot-required &&
+            case "$(date -u +%u)" in 2|3|4) true ;; *) false ;; esac; }'
+          useRebootSentinelHostPath: false
+          # Check every minute, not the chart's 1 h: the second node then starts as
+          # soon as the first is back, instead of up to a period later. A check is
+          # one command per node, so the cost is nothing.
+          period: 1m
           # A node that dies mid-drain or mid-reboot otherwise holds the lock
           # forever and blocks every later reboot (no TTL by default).
           lockTtl: 2h
