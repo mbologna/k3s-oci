@@ -778,6 +778,14 @@ It has `prevent_destroy = false` (so `tofu destroy` works for full rebuilds); if
 
 **If using sslip.io defaults**, run `tofu apply` again after NLB recreation: `local.argocd_hostname` recomputes automatically from the new IP, cloud-init re-creates the Ingresses and certificates, and cert-manager reissues via Let's Encrypt.
 
+## Why not an existing tool
+
+- [terraform-oci-oke](https://github.com/oracle-terraform-modules/terraform-oci-oke) (Oracle's module for OKE, its managed Kubernetes) builds OKE, not k3s, so it has no etcd snapshot uploads.
+- It also leaves out the rest of this stack: no Longhorn with its backup target, no OCI Vault and External Secrets wiring, no Tailscale bootstrap, no Traefik behind the NLB with client IPs kept, and no rebuild that keeps data.
+- [garutilorenzo/k3s-oci-cluster](https://github.com/garutilorenzo/k3s-oci-cluster) (a k3s module for OCI) has had no push since July 2025.
+
+Checked 2026-11-23.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
