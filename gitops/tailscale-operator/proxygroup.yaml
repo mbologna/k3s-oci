@@ -1,0 +1,87 @@
+---
+# Opt-in HA proxies: list this file in kustomization.yaml to use it.
+#
+# Without a ProxyGroup every Tailscale Service gets its own single-replica
+# proxy, so a reboot of that proxy's node (kured, a k3s upgrade) takes the name
+# off the tailnet. A ProxyGroup runs two proxies, one per node, that together
+# serve every Service annotated tailscale.com/proxy-group: ingress-ha (as a
+# Tailscale Service, a virtual IP under the Service's MagicDNS name), or that
+# reach the tailnet through egress-ha.
+#
+# Needs the OAuth client's Services → Write scope and, in the tailnet policy,
+# "autoApprovers": {"services": {"tag:k8s": ["tag:k8s"]}}. Clients reach a
+# Tailscale Service from Tailscale 1.86 on. An egress Service that joins
+# egress-ha must list its ports.
+#
+# Moving an existing Service to ingress-ha: the operator stops managing its old
+# single proxy but leaves it running, and that device keeps the MagicDNS name
+# ("name exists but is not a service"). Delete the old ts-<svc>-* StatefulSet,
+# Secret and Service in the tailscale namespace and the old tailnet device.
+#
+# One proxy per node is *required*: with a preference both proxies ended up on
+# the control plane after a drain and stayed there, so its reboot took the name
+# off the tailnet. While a node is drained its proxy waits Pending and the
+# other one serves.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: ha-ingress
+spec:
+  statefulSet:
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  tailscale.com/parent-resource: ingress-ha
+      tailscaleContainer:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: ingress-ha
+spec:
+  type: ingress
+  replicas: 2
+  proxyClass: ha-ingress
+---
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: ha-egress
+spec:
+  statefulSet:
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  tailscale.com/parent-resource: egress-ha
+      tailscaleContainer:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyGroup
+metadata:
+  name: egress-ha
+spec:
+  type: egress
+  replicas: 2
+  proxyClass: ha-egress
