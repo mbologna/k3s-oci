@@ -69,6 +69,7 @@ locals {
   _server_gitops_vars = {
     gitops_repo_url                    = var.gitops_repo_url
     gitops_path                        = var.gitops_path
+    gitops_optional_path               = var.gitops_optional_path
     vault_secret_id_gitops_ssh_key     = var.enable_vault && var.gitops_ssh_private_key != "" ? try(oci_vault_secret.gitops_ssh_key[0].id, "") : ""
     gitops_https_username              = var.gitops_https_username
     vault_secret_id_gitops_https_token = var.enable_vault && var.gitops_https_token != "" ? try(oci_vault_secret.gitops_https_token[0].id, "") : ""

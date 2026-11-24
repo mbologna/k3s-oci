@@ -73,10 +73,14 @@ EOF
   helm repo update
 
   # server.insecure=true: Traefik terminates TLS; ArgoCD backend serves plain HTTP.
+  # kustomize.buildOptions matches gitops/apps/argocd.yaml: a kustomization with
+  # helmCharts fails to render without it, and Argo CD keeps the cached error
+  # until a hard refresh even after the self-managed values add it.
   helm upgrade --install argocd argo/argo-cd \
     --namespace argocd \
     --version "${ARGOCD_CHART_VERSION}" \
     --set "configs.params.server\.insecure=true" \
+    --set "configs.cm.kustomize\.buildOptions=--enable-helm" \
     --atomic --wait --timeout 5m
 
   # Add gitops repo host keys to ArgoCD known hosts so ArgoCD can clone
@@ -206,7 +210,7 @@ spec:
   source:
     repoURL: ${GITOPS_REPO_URL}
     targetRevision: HEAD
-    path: gitops/optional
+    path: ${GITOPS_OPTIONAL_PATH}
     directory:
       include: "${filename}"
   destination:
@@ -230,7 +234,9 @@ create_optional_apps() {
     create_external_dns_app
   fi
 
-  if [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]]; then
+  # An empty GITOPS_OPTIONAL_PATH means the gitops repo manages these components
+  # itself: cloud-init still installs ESO, but creates no wrapper Application.
+  if [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" && -n "${GITOPS_OPTIONAL_PATH}" ]]; then
     create_optional_app "external-secrets" "external-secrets.yaml" "ServerSideApply=true"
   fi
 }

@@ -468,7 +468,8 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Managed by ArgoCD, NOT cloud-init**: Traefik, Longhorn, kured,
   system-upgrade-controller — all in `gitops/apps/*.yaml`. The opt-in components live in
   `gitops/optional/` and get an Application only when their flag is on: ESO through the
-  `optional-external-secrets` wrapper, external-dns through `create_external_dns_app()`.
+  `optional-external-secrets` wrapper (path `gitops_optional_path`; `""` skips the wrapper), external-dns
+  through `create_external_dns_app()`.
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
   `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
   removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
