@@ -287,8 +287,19 @@ variable "k3s_extra_server_args" {
 
 variable "k3s_secrets_encryption" {
   type        = bool
-  description = "Start k3s servers with --secrets-encryption, so Secrets are AES-CBC encrypted in etcd and in the etcd snapshots uploaded to Object Storage. Applies at install time only. A cluster started without it needs `k3s secrets-encrypt enable`, a restart with the flag, `k3s secrets-encrypt rotate-keys` and a second restart (https://docs.k3s.io/cli/secrets-encrypt). Never turn it off on an encrypted cluster: its data can't be read without the flag."
+  description = "Start k3s servers with secrets encryption, so Secrets are encrypted in etcd and in the etcd snapshots uploaded to Object Storage (cipher: k3s_secrets_encryption_provider). Applies at install time only. A cluster started without it needs `k3s secrets-encrypt enable`, a restart with the flag, `k3s secrets-encrypt rotate-keys` and a second restart (https://docs.k3s.io/cli/secrets-encrypt). Never turn it off on an encrypted cluster: its data can't be read without the flag."
   default     = true
+}
+
+variable "k3s_secrets_encryption_provider" {
+  type        = string
+  description = "Cipher for k3s secrets encryption on a new cluster: \"secretbox\" (XSalsa20-Poly1305, which Kubernetes recommends over AES-CBC) or \"aescbc\" (k3s's own default). Read only when a cluster is first created: a server restored from an etcd snapshot keeps the snapshot's cipher, and so does a running cluster. k3s marks the flag experimental."
+  default     = "secretbox"
+
+  validation {
+    condition     = contains(["secretbox", "aescbc"], var.k3s_secrets_encryption_provider)
+    error_message = "k3s_secrets_encryption_provider must be \"secretbox\" or \"aescbc\"."
+  }
 }
 
 variable "k3s_ca_vault_secret_id" {

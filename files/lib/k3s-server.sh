@@ -388,7 +388,9 @@ install_k3s_server() {
   # single server has only one candidate. NOTE: re-enable it for HA (>1 server).
   #
   # secrets-encryption: without it etcd, and every snapshot uploaded to Object
-  # Storage, holds Secrets in plaintext.
+  # Storage, holds Secrets in plaintext. The provider (secretbox by default) is
+  # read only when the cluster is created: a server restored from a snapshot keeps
+  # the snapshot's cipher (tested: an aescbc snapshot restores and stays aescbc).
   {
     # node-name: pin node identity to the OCI instance's own display name instead
     # of letting k3s default to `hostname` at first start. Without this, any later
@@ -429,7 +431,8 @@ kube-cloud-controller-manager-arg+:
   - "leader-elect=false"
 K3SEOF
     if [[ "${K3S_SECRETS_ENCRYPTION:-true}" == "true" ]]; then
-      printf 'secrets-encryption: true\n'
+      printf 'secrets-encryption: true\nsecrets-encryption-provider: "%s"\n' \
+        "${K3S_SECRETS_ENCRYPTION_PROVIDER:-secretbox}"
     fi
   } | write_k3s_config
 
