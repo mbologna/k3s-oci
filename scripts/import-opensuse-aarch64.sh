@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# import-opensuse-aarch64.sh — Import the latest openSUSE Leap Minimal VM Cloud
-# aarch64 image into an OCI tenancy as a custom image ready for VM.Standard.A1.Flex.
+# import-opensuse-aarch64.sh — Import the latest openSUSE Leap Minimal VM Cloud (or
+# Immutable Mode) aarch64 image into an OCI tenancy as a custom image ready for
+# VM.Standard.A1.Flex.
 #
 # Usage:
 #   ./scripts/import-opensuse-aarch64.sh [OPTIONS]
@@ -10,11 +11,14 @@
 #   --region REGION         OCI region identifier (default: from ~/.oci/config)
 #   --leap-version VERSION  openSUSE Leap version (default: LEAP_VERSION below,
 #                           same as opensuse_leap_version in vars.tf)
+#   --variant VARIANT       minimal (default: Minimal VM Cloud image) or immutable
+#                           (Immutable Mode Base image), as opensuse_variant in vars.tf
 #   --bucket-name NAME      Temp Object Storage bucket (default: opensuse-image-import-tmp)
 #   --keep-bucket           Do not delete the temp bucket object after import
 #   --no-cleanup            Alias for --keep-bucket
 #   --image-name NAME       Display name for the imported image
-#                           (default: openSUSE-Leap-<VERSION>-Minimal-aarch64)
+#                           (default: openSUSE-Leap-<VERSION>-Minimal-aarch64, or
+#                           openSUSE-Leap-<VERSION>-Immutable-aarch64)
 #   --help                  Show this help text
 #
 # Prerequisites:
@@ -22,7 +26,7 @@
 #   - curl, python3 (standard on macOS and most Linux distros)
 #
 # What this script does:
-#   1. Resolves the latest openSUSE Leap Minimal VM Cloud aarch64 QCOW2 URL
+#   1. Resolves the latest aarch64 QCOW2 URL of the variant
 #   2. Creates a temporary OCI Object Storage bucket (idempotent)
 #   3. Streams the QCOW2 directly into the bucket (no local disk required)
 #   4. Imports the image via the OCI REST API with:
@@ -35,9 +39,10 @@
 #   7. Removes the QCOW2 object from the temp bucket (unless --keep-bucket)
 #   8. Prints the image OCID and SSH user-data hint
 #
-# The image records operating system "openSUSE Leap" and its Leap version, which the
-# module filters on to pick it up without os_image_id. Re-running the script on an
-# existing image (same display name) sets those fields on it and exits.
+# The image records operating system "openSUSE Leap" ("openSUSE Leap Immutable" for the
+# immutable variant) and its Leap version, which the module filters on to pick it up
+# without os_image_id. Re-running the script on an existing image (same display name)
+# sets those fields on it and exits.
 #
 # Known caveats for openSUSE on OCI (verified with Leap 16.0):
 #   - SSH key injection: the openSUSE cloud image's cloud-init does NOT read keys
@@ -59,6 +64,7 @@ KEEP_BUCKET=false
 COMPARTMENT_ID=""
 REGION=""
 IMAGE_NAME=""
+VARIANT="minimal"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 log()  { echo "  [$(date '+%H:%M:%S')] $*"; }
@@ -77,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --compartment-id) COMPARTMENT_ID="$2"; shift 2 ;;
     --region)         REGION="$2";         shift 2 ;;
     --leap-version)   LEAP_VERSION="$2";   shift 2 ;;
+    --variant)        VARIANT="$2";        shift 2 ;;
     --bucket-name)    BUCKET_NAME="$2";    shift 2 ;;
     --image-name)     IMAGE_NAME="$2";     shift 2 ;;
     --keep-bucket|--no-cleanup) KEEP_BUCKET=true; shift ;;
@@ -85,7 +92,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="openSUSE-Leap-${LEAP_VERSION}-Minimal-aarch64"
+# Per variant: download file pattern (versioned build first, then the symlink), image
+# name suffix, and the operating system the module's image lookup filters on.
+case "$VARIANT" in
+  minimal)
+    VARIANT_LABEL="Minimal"
+    OS_NAME="openSUSE Leap"
+    QCOW2_PATTERNS=('Minimal-VM\.aarch64-Cloud-Build[^"]+\.qcow2' 'Minimal-VM\.aarch64-Cloud\.qcow2')
+    ;;
+  immutable)
+    VARIANT_LABEL="Immutable"
+    OS_NAME="openSUSE Leap Immutable"
+    QCOW2_PATTERNS=('Immutable\.aarch64-Base-qcow-Build[^"]+\.qcow2' 'Immutable\.aarch64-Base-qcow\.qcow2')
+    ;;
+  *) die "--variant must be 'minimal' or 'immutable', not '$VARIANT'." ;;
+esac
+
+[[ -z "$IMAGE_NAME" ]] && IMAGE_NAME="openSUSE-Leap-${LEAP_VERSION}-${VARIANT_LABEL}-aarch64"
 
 # ── prerequisites ─────────────────────────────────────────────────────────────
 for cmd in oci curl python3; do
@@ -131,19 +154,19 @@ if [[ -n "$EXISTING_ID" && "$EXISTING_ID" != "None" && "$EXISTING_ID" != "null" 
   # filters on (os_image_id = null); set them so the image is auto-resolved.
   oci compute image update \
     --image-id "$EXISTING_ID" \
-    --operating-system "openSUSE Leap" \
+    --operating-system "$OS_NAME" \
     --operating-system-version "$LEAP_VERSION" \
     --force >/dev/null
-  ok "Operating system set to 'openSUSE Leap ${LEAP_VERSION}'."
+  ok "Operating system set to '${OS_NAME} ${LEAP_VERSION}'."
   echo ""
   echo "  Image OCID: $EXISTING_ID"
-  echo "  With os_family = \"opensuse\" and os_image_id unset, the module resolves it automatically."
+  echo "  With os_family = \"opensuse\", opensuse_variant = \"${VARIANT}\" and os_image_id unset, the module resolves it automatically."
   exit 0
 fi
 log "No existing image found — proceeding with import."
 
 # ── resolve latest qcow2 URL ─────────────────────────────────────────────────
-info "Resolving latest openSUSE Leap ${LEAP_VERSION} Minimal VM Cloud aarch64 QCOW2"
+info "Resolving latest openSUSE Leap ${LEAP_VERSION} ${VARIANT_LABEL} aarch64 QCOW2"
 
 BASE_URL="https://download.opensuse.org/distribution/leap/${LEAP_VERSION}/appliances"
 # Prefer the versioned build filename (e.g. Leap-16.0-Minimal-VM.aarch64-Cloud-Build16.2.qcow2)
@@ -152,20 +175,16 @@ QCOW2_FILE=$(curl -sL "${BASE_URL}/" \
   | python3 -c "
 import sys, re
 content = sys.stdin.read()
-# versioned build first (more specific), then plain symlink
 # links on the page are prefixed with './' — strip it
-for pat in [
-  r'href=\"\./?(Leap-[0-9.]+-Minimal-VM\.aarch64-Cloud-Build[^\"]+\.qcow2)\"',
-  r'href=\"\./?(Leap-[0-9.]+-Minimal-VM\.aarch64-Cloud\.qcow2)\"',
-]:
-    m = re.search(pat, content)
+for pat in sys.argv[1:]:
+    m = re.search(r'href=\"\./?(Leap-[0-9.]+-' + pat + r')\"', content)
     if m:
         print(m.group(1))
         break
-" 2>/dev/null || true)
+" "${QCOW2_PATTERNS[@]}" 2>/dev/null || true)
 
 [[ -z "$QCOW2_FILE" ]] \
-  && die "Could not find Minimal VM Cloud aarch64 QCOW2 for Leap ${LEAP_VERSION} at ${BASE_URL}/"
+  && die "Could not find the ${VARIANT_LABEL} aarch64 QCOW2 for Leap ${LEAP_VERSION} at ${BASE_URL}/"
 
 QCOW2_URL="${BASE_URL}/${QCOW2_FILE}"
 QCOW2_SIZE=$(curl -sIL "$QCOW2_URL" | grep -i "^content-length:" | tail -1 | awk '{print $2}' | tr -d '\r')
@@ -232,7 +251,7 @@ IMPORT_RESPONSE=$(oci raw-request \
       \"namespaceName\": \"${NS}\",
       \"objectName\": \"${OBJECT_NAME}\",
       \"sourceImageType\": \"QCOW2\",
-      \"operatingSystem\": \"openSUSE Leap\",
+      \"operatingSystem\": \"${OS_NAME}\",
       \"operatingSystemVersion\": \"${LEAP_VERSION}\"
     },
     \"launchMode\": \"CUSTOM\",
@@ -293,7 +312,7 @@ fi
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════════════════════════════════"
-echo "  openSUSE Leap ${LEAP_VERSION} Minimal aarch64 — import complete"
+echo "  openSUSE Leap ${LEAP_VERSION} ${VARIANT_LABEL} aarch64 — import complete"
 echo "════════════════════════════════════════════════════════════════════"
 echo ""
 echo "  Image OCID  : $IMAGE_ID"
@@ -335,6 +354,7 @@ echo "  ── Use with this Terraform module ───────────�
 echo ""
 echo "  # Add to terraform.tfvars (the image is resolved automatically; no os_image_id):"
 echo "  os_family             = \"opensuse\""
+[[ "$VARIANT" != "minimal" ]] && echo "  opensuse_variant      = \"${VARIANT}\""
 echo "  opensuse_leap_version = \"${LEAP_VERSION}\""
 if [[ "$COMPARTMENT_ID" != "$TENANCY_ID" ]]; then
   echo "  opensuse_image_compartment_ocid = \"${COMPARTMENT_ID}\""

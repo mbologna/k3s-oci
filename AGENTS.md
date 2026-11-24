@@ -16,7 +16,7 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu LTS (aarch64, `var.ubuntu_version`, default 26.04) — default. openSUSE Leap (aarch64, `var.opensuse_leap_version`) via `var.os_family = "opensuse"` |
+| OS | Ubuntu LTS (aarch64, `var.ubuntu_version`, default 26.04) — default. openSUSE Leap (aarch64, `var.opensuse_leap_version`) via `var.os_family = "opensuse"`: Minimal VM, or Immutable Mode with `var.opensuse_variant = "immutable"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Traefik (Kubernetes Ingress + Traefik Middlewares; since v2.0.0, Envoy Gateway before) |
 | Logging | OCI Unified Logging (optional) |
@@ -75,6 +75,7 @@ files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when
 files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs() (iscsid timeout, multipathd blacklist), setup_k3s_memory_protection() (MemoryLow/GOMEMLIMIT drop-in, fwupd masked), setup_flannel_fdb_fix(), install_oci_cli(), install_helm(), resolve_flannel_params()
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
+files/lib/bootstrap-opensuse-immutable.sh — pure bash: openSUSE Leap Immutable bootstrap (opensuse_variant = "immutable"): leap_immutable_install() (phase 1: transactional-update), bootstrap(), configure_unattended_upgrades() (/usr/local/sbin/tu-patch-with-sentinel, kured sentinel)
 files/lib/two-phase.sh           — pure bash: two_phase_begin() — image-based OSes: persist the script, k3s-oci-bootstrap.service, stage packages, reboot, run again (local.two_phase); two_phase_k3s_selinux() — INSTALL_K3S_SKIP_SELINUX_RPM + restorecon drop-in for the k3s binary
 files/lib/two-phase-done.sh      — pure bash: appended after the entry point for two-phase OSes; retires k3s-oci-bootstrap.service
 files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point
@@ -108,7 +109,7 @@ scripts/pre-teardown-backup.sh   — fresh etcd snapshot upload + Longhorn backu
 scripts/longhorn-restore.sh      — after a rebuild, restore each Longhorn PVC from its newest backup via the Longhorn API
 scripts/validate-gitops.sh       — kubeconform over gitops/ (each file, plus each kustomize build); CI job `gitops manifests`
 scripts/check-bootstrap-chart-versions.sh — vars.tf bootstrap chart defaults (argo-cd, cert-manager, ESO) must equal the gitops targetRevisions
-scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
+scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image (--variant minimal|immutable) as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 SECURITY.md      — supported versions + vulnerability reporting
 .github/workflows/ci.yml         — CI: fmt, validate, tflint, ShellCheck, terraform-docs
@@ -147,7 +148,7 @@ renovate.json    — Automated dependency updates
   exported by the prepended template header, plus two documented inline `SC2097,SC2098`
   suppressions on the `K3S_URL="" sh -s -` installer calls in `k3s-server.sh` / `k3s-agent.sh`.
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`; the file lists are `local._server_script_files` / `local._worker_script_files`.
-- Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`, default 26.04); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` (Renovate bumps them).
+- Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`, default 26.04); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`, and with `var.opensuse_variant = "immutable"` (Leap Immutable Mode, the successor of the discontinued Leap Micro) in `files/lib/bootstrap-opensuse-immutable.sh`, a two-phase OS: it stages packages with `transactional-update`, reboots once, and calls `two_phase_k3s_selinux` because k3s-selinux is already in the snapshot: `INSTALL_K3S_SKIP_SELINUX_RPM=true` (otherwise the k3s installer stages it again and skips starting k3s) plus a `restorecon` drop-in, since that flag also skips the installer's `chcon` of the binary. Its updates go through `tu-patch-with-sentinel` (`transactional-update --continue --drop-if-no-change run zypper patch`), which writes the same kured sentinels as Leap Minimal; the image's `transactional-update.timer` and `rebootmgr` stay disabled. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` (Renovate bumps them).
 - Standalone scripts (`scripts/`, `example/*.sh`, `gitops/update-repo-url.sh`) start with `set -euo pipefail`.
   The bootstrap files (`common.sh`, `bootstrap-*.sh`) set it for the assembled cloud-init script; the other
   `files/lib/*.sh` files only define functions and inherit it — do not add it there.
@@ -227,6 +228,7 @@ shellcheck --severity=warning \
   files/lib/common.sh \
   files/lib/bootstrap-ubuntu.sh \
   files/lib/bootstrap-opensuse.sh \
+  files/lib/bootstrap-opensuse-immutable.sh \
   files/lib/two-phase.sh \
   files/lib/two-phase-done.sh \
   files/lib/k3s-server.sh \
@@ -731,6 +733,7 @@ before any OCI API call is made:
 - `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
 - `create_external_secrets_user = true` requires `enable_external_secrets = true`, `enable_vault = true` and `region != null`
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
+- `enable_oci_logging` needs `os_family = "ubuntu"`: custom images have no Oracle Cloud Agent (`oci_logging_needs_platform_image`, a warning)
 - node metadata (user_data + SSH keys) must stay within OCI's 32,000-byte limit (`user_data_within_oci_limit`)
 - `os_family = "opensuse"`: the resolved or pinned image should be the `opensuse_leap_version` release (warns after a Renovate bump until the new release is imported)
 

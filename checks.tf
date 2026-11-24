@@ -17,7 +17,7 @@ check "opensuse_image_matches_leap_version" {
         true
       )
     )
-    error_message = "The openSUSE image a rebuild would boot is not openSUSE Leap ${var.opensuse_leap_version}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version}${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. Running nodes are not replaced."
+    error_message = "The openSUSE image a rebuild would boot is not ${local.opensuse_operating_system} ${var.opensuse_leap_version}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version} --variant ${var.opensuse_variant}${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. Running nodes are not replaced."
   }
 }
 
@@ -31,6 +31,15 @@ check "user_data_within_oci_limit" {
       length(ud) + length(local.ssh_public_key) <= 32000
     ])
     error_message = "Node metadata exceeds OCI's 32,000-byte limit (server user_data ${length(data.cloudinit_config.k3s_server.rendered)} bytes, worker ${length(data.cloudinit_config.k3s_worker.rendered)} bytes, SSH keys ${length(local.ssh_public_key)} bytes): new instances would fail to launch. Shorten the scripts in files/lib/ or the SSH key list."
+  }
+}
+
+# Custom images (openSUSE) have no Oracle Cloud Agent, so its Custom Logs plugin never
+# ships the bootstrap log. The plugin setting and the log resources are harmless there.
+check "oci_logging_needs_platform_image" {
+  assert {
+    condition     = !var.enable_oci_logging || var.os_family == "ubuntu"
+    error_message = "enable_oci_logging = true has no effect with os_family = \"${var.os_family}\": custom images have no Oracle Cloud Agent to ship the logs. Set enable_oci_logging = false, and read /var/log/k3s-cloud-init.log on the node."
   }
 }
 

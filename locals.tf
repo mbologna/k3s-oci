@@ -12,8 +12,10 @@ locals {
   # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy.
   # openSUSE: newest import of opensuse_leap_version, else the newest import of any release.
   # try() guards against the data source of the other os_family, whose count = 0.
-  opensuse_images          = try(data.oci_core_images.opensuse[0].images, [])
-  opensuse_matching_images = [for i in local.opensuse_images : i if i.operating_system_version == var.opensuse_leap_version]
+  # Each variant is imported under its own operating system name (import script --variant).
+  opensuse_operating_system = var.opensuse_variant == "immutable" ? "openSUSE Leap Immutable" : "openSUSE Leap"
+  opensuse_images           = try(data.oci_core_images.opensuse[0].images, [])
+  opensuse_matching_images  = [for i in local.opensuse_images : i if i.operating_system_version == var.opensuse_leap_version]
   os_image_id = var.os_image_id != null ? var.os_image_id : (
     var.os_family == "opensuse"
     ? try(coalescelist(local.opensuse_matching_images, local.opensuse_images)[0].id, null)

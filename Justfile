@@ -99,6 +99,7 @@ shellcheck:
     shellcheck --severity=warning \
         files/lib/bootstrap-ubuntu.sh \
         files/lib/bootstrap-opensuse.sh \
+        files/lib/bootstrap-opensuse-immutable.sh \
         files/lib/two-phase.sh \
         files/lib/two-phase-done.sh \
         files/lib/common.sh \
