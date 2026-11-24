@@ -213,7 +213,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
-| gitops manifests | `just gitops-lint`: `scripts/check-bootstrap-chart-versions.sh` + `scripts/validate-gitops.sh` (kubeconform `-strict`, CRD schemas from the datreeio CRDs-catalog; kubeconform/kustomize versions pinned in `ci.yml`, Renovate-managed). Its check `gitops manifests` must be added to the `main` ruleset's required checks to gate merges |
+| gitops manifests | `just gitops-lint`: `scripts/check-bootstrap-chart-versions.sh` + `scripts/validate-gitops.sh` (kubeconform `-strict`, CRD schemas from the datreeio CRDs-catalog; kubeconform/kustomize versions pinned in `ci.yml`, Renovate-managed). Its check `gitops manifests` is one of the `main` ruleset's required checks |
 | terraform-docs | fails on diff in fork PRs; auto-committed on same-repo PR branches (except Renovate's) and on push to `main` |
 
 Run all checks locally before pushing:
