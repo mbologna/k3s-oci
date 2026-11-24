@@ -368,7 +368,11 @@ install_k3s_server() {
   # Disable local-path-provisioner too: Longhorn is the default StorageClass, and
   # two classes annotated is-default-class makes PVCs without storageClassName
   # land on whichever the admission plugin picks (node-local, no replicas).
-  install_params+=("--disable" "traefik" "--disable" "local-storage")
+  # Disable ServiceLB (klipper-lb): the OCI NLB reaches Traefik's NodePorts, and
+  # Tailscale LoadBalancer Services carry their own loadBalancerClass. Left on, it
+  # only takes host ports: when Traefik's Service fell back to LoadBalancer, its
+  # svclb pods held 80/443 on every node.
+  install_params+=("--disable" "traefik" "--disable" "local-storage" "--disable" "servicelb")
 
   # Kubelet image GC: start pruning at 70% disk instead of 85%. Images, etcd and
   # Longhorn replicas share the single boot volume; letting images fill it to 85%

@@ -406,7 +406,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 
 ### Traefik (ingress)
 
-- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`--disable traefik` in `k3s-server.sh`) so the version is pinned and Renovate-managed.
+- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`--disable traefik` in `k3s-server.sh`) so the version is pinned and Renovate-managed. ServiceLB is disabled too (`--disable servicelb`): a `type: LoadBalancer` Service without a `loadBalancerClass` (e.g. `tailscale`) stays Pending; reach in-cluster services through Traefik's NodePorts.
 - **DaemonSet** (one pod per node): every NLB backend serves ingress locally, no cross-node hop, no single-pod SPOF. Updates surge (maxUnavailable 0, maxSurge 1), so a node keeps serving while its new pod starts.
 - `priorityClassName: system-cluster-critical`, like kured and Longhorn's instance managers.
 - No PDB: Kubernetes PDBs don't apply to DaemonSet pods; kured drains with `--ignore-daemonsets`.
