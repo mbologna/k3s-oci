@@ -80,7 +80,7 @@ output "longhorn_backup_setup" {
     namespace = data.oci_objectstorage_namespace.k3s[0].namespace
     automated = local.longhorn_backup_automated
     note = local.longhorn_backup_automated ? (
-      "Automated: cloud-init creates longhorn-backup-secret, wires the BackupTarget and applies the daily-backup (retain ${var.longhorn_backup_retain}) and weekly-snapshot-cleanup RecurringJobs."
+      "Automated: cloud-init creates longhorn-backup-secret, wires the BackupTarget and applies the daily-backup RecurringJob (retain ${var.longhorn_backup_retain})."
       ) : (
       "Manual wiring required: set create_longhorn_backup_user = true for full automation, or follow steps 1-3 below with a bucket-scoped service user's key."
     )

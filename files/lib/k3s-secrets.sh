@@ -148,7 +148,7 @@ EOF
 
 # setup_longhorn_backup_target
 # Points the Longhorn BackupTarget CR at the backup bucket + credential secret, then
-# applies the default daily-backup and weekly-snapshot-cleanup RecurringJobs.
+# applies the default daily-backup RecurringJob.
 # Must be called AFTER Longhorn CRDs are available (i.e. after ArgoCD syncs longhorn app).
 # Called from run_bootstrap() alongside ingress configuration (both wait for ArgoCD convergence).
 
@@ -191,7 +191,11 @@ setup_longhorn_backup_target() {
   # the oldest backup and its unreferenced blocks after each run. Do not add an
   # age-based Object Storage lifecycle rule on backupstore/ — expiring blocks
   # underneath Longhorn corrupts the incremental chain.
-  # SSA with the cloud-init field manager: a user can take over these jobs from git.
+  # No snapshot-cleanup job: Longhorn removes system-generated snapshots after a
+  # replica rebuild and each backup's snapshot after the backup by itself. Such a
+  # job failed every week: Longhorn can't purge a detached volume, and one failed
+  # volume fails the whole Job.
+  # SSA with the cloud-init field manager: a user can take over this job from git.
   kubectl apply --server-side --field-manager=cloud-init-bootstrap --force-conflicts -f - <<EOF
 apiVersion: longhorn.io/v1beta2
 kind: RecurringJob
@@ -205,21 +209,6 @@ spec:
     - default
   retain: ${LONGHORN_BACKUP_RETAIN:-7}
   concurrency: 1
----
-# Removes system-generated snapshots (e.g. left over from replica rebuilds) that no
-# backup job owns, keeping each volume's snapshot chain and disk use short.
-apiVersion: longhorn.io/v1beta2
-kind: RecurringJob
-metadata:
-  name: weekly-snapshot-cleanup
-  namespace: longhorn-system
-spec:
-  task: snapshot-cleanup
-  cron: "0 1 * * 0"
-  groups:
-    - default
-  retain: 0
-  concurrency: 1
 EOF
-  echo "Longhorn RecurringJobs applied: daily-backup (${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *} UTC, retain ${LONGHORN_BACKUP_RETAIN:-7}), weekly-snapshot-cleanup."
+  echo "Longhorn RecurringJob applied: daily-backup (${LONGHORN_BACKUP_SCHEDULE:-30 0 * * *} UTC, retain ${LONGHORN_BACKUP_RETAIN:-7})."
 }
