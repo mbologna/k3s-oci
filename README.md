@@ -527,9 +527,11 @@ Set `create_longhorn_backup_user = true` to wire backups end to end:
 - Terraform creates the user's Customer Secret Key. With `enable_vault = true` the secret half is
   stored in Vault as `<cluster_name>-longhorn-backup-secret-key` and fetched at boot, so it is never in user-data.
 - Cloud-init creates `longhorn-backup-secret` and points the Longhorn `BackupTarget` at the bucket. It also
-  applies two RecurringJobs for every volume in the `default` group:
-  - `daily-backup`: cron `longhorn_backup_schedule`, default `30 0 * * *` UTC; keeps `longhorn_backup_retain` backups, default 7.
-  - `weekly-snapshot-cleanup`.
+  applies the `daily-backup` RecurringJob to every volume in the `default` group: cron `longhorn_backup_schedule`,
+  default `30 0 * * *` UTC; keeps `longhorn_backup_retain` backups, default 7.
+  There is no snapshot-cleanup job: Longhorn removes system-generated snapshots and each backup's snapshot
+  itself. Clusters built by earlier module versions have a `weekly-snapshot-cleanup` job that fails every week on detached
+  volumes; delete it with `kubectl -n longhorn-system delete recurringjob weekly-snapshot-cleanup`.
 
 Creating IAM users requires tenancy-level IAM permissions. Without them, keep `create_longhorn_backup_user = false`
 and follow the `longhorn_backup_setup` output (or `just setup-longhorn-backup`).
