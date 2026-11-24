@@ -103,6 +103,8 @@ gitops/network-policies/     — Default-deny NetworkPolicies, namespaces.yaml (
 gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
+README.md        — short entry point: what the module builds, Always Free table, quick start, limits, links to docs/
+docs/            — user documentation: access.md, applications.md, operating-systems.md, updates.md, data.md, design.md
 example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/; backend_override.tf.example for a module-external state bucket)
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
 scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
@@ -337,7 +339,7 @@ Plain SemVer: `vX.Y.Z` tags, each a GitHub release that consumers pin as
   `example/` against a live deployment on same-repository PRs: a dedicated OCI user in a
   read-only group, state read from the remote backend with `-lock=false`, and only changed
   resource addresses in the log (the repo's logs are public; never print the plan itself).
-  Without its secrets it reports a notice and succeeds. Setup and secret names: README, "CI
+  Without its secrets it reports a notice and succeeds. Setup and secret names: docs/updates.md, "CI
   plan against a live deployment". It is a required check since 2026-11-16, so provider updates
   automerge on an empty plan (no providers rule in renovate.json any more). PLAN_TFVARS needs `public_key = "..."` when the tfvars use `public_key_path`.
 - Release notes come from commit subjects: add context in the commit body, or edit the release
@@ -566,7 +568,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores 2–10 secrets, all named `${cluster_name}-<suffix>` (same table as the README's "OCI Vault secrets"):
+- Stores 2–10 secrets, all named `${cluster_name}-<suffix>` (same table as "OCI Vault secrets" in docs/data.md):
   | Suffix | Created when |
   |---|---|
   | `k3s-token`, `longhorn-ui-password` | always (`oci_vault_secret.cluster` for_each) |
@@ -626,7 +628,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 
 ### Object Storage Buckets (`objectstorage.tf`)
 - `data.oci_objectstorage_namespace.k3s` is created when **either** `enable_object_storage_state` or `enable_longhorn_backup` is true — both buckets share it.
-- **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. Despite the name it holds etcd snapshots and the leader lock (and, with `os_family = "fcos"`, the node scripts `k3s-oci/fcos-{server,worker}.sh` behind read-only pre-authenticated requests that never expire: frozen Ignition configs of pool replacements still use them). **Do not recommend storing Terraform state in it**: nodes have `manage objects` on it, the state contains every cluster secret, and destroy/clean delete it. The README documents a separate, module-external state bucket configured via a gitignored `backend_override.tf`.
+- **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. Despite the name it holds etcd snapshots and the leader lock (and, with `os_family = "fcos"`, the node scripts `k3s-oci/fcos-{server,worker}.sh` behind read-only pre-authenticated requests that never expire: frozen Ignition configs of pool replacements still use them). **Do not recommend storing Terraform state in it**: nodes have `manage objects` on it, the state contains every cluster secret, and destroy/clean delete it. docs/data.md documents a separate, module-external state bucket configured via a gitignored `backend_override.tf`.
 - **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. With `create_longhorn_backup_user = true` (resources in `iam.tf`: user, capabilities, group, membership, policy — all `${cluster_name}-longhorn-backup`) cloud-init wires everything: `longhorn-backup-secret` with `AWS_ENDPOINTS`, the `backuptargets.longhorn.io/default` CR, and the `daily-backup` RecurringJob (`longhorn_backup_schedule`, `longhorn_backup_retain`) via SSA (no snapshot-cleanup job: it fails on detached volumes, and Longhorn cleans up its own snapshots) (`setup_longhorn_backup_target()` in `k3s-secrets.sh`). Otherwise the `longhorn_backup_setup` output prints the three manual steps (Customer Secret Key → `longhorn-backup-secret` with `AWS_ENDPOINTS` → patch the `backuptargets.longhorn.io/default` CR). Longhorn ≥ 1.8 has no `backup-target` Setting — always use the BackupTarget CR. Nodes need no IAM grant on this bucket (Longhorn authenticates with the Customer Secret Key).
 - Both buckets share the Always Free Object Storage allowance — 20 GB on Free Tier accounts, but only **10 GB once the tenancy is upgraded to Pay As You Go**. Both buckets have a lifecycle rule purging noncurrent versions after 2 days; without it, pruned etcd snapshots kept being billed. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
 - Users need OCI Customer Secret Keys (S3 credentials) to use either bucket. Keys inherit all rights of their user, so keys placed in the cluster must belong to a bucket-scoped service user.
@@ -795,7 +797,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
 - Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
 - Servers start with secrets encryption (`k3s_secrets_encryption`, default `true`), so the snapshots hold Secrets encrypted: secretbox on clusters created since `k3s_secrets_encryption_provider` (default `"secretbox"`), AES-CBC on older ones. The provider is read only at creation: a restore from an AES-CBC snapshot stays AES-CBC (tested with k3s v1.36), so do not expect a rebuild that restores etcd to switch ciphers. The key lives in the k3s bootstrap data, which is encrypted with the cluster token, so a restore needs the same token and a server started with the flag. The flag applies at install time only; a running cluster is switched over with `k3s secrets-encrypt enable`, a restart with the flag, `rotate-keys` and a second restart.
-- These snapshots are the primary recovery path for split-brain and etcd quorum loss. The server logs the restore steps when it finds old snapshots (see README "After a rebuild that kept the buckets").
+- These snapshots are the primary recovery path for split-brain and etcd quorum loss. The server logs the restore steps when it finds old snapshots (see docs/data.md "After a rebuild that kept the buckets").
 
 ### Atomic leader lock (`--cluster-init` safety)
 - `claim_first_server_lock()` in `files/lib/k3s-server.sh` uses **`oci os object put --no-overwrite`** to OCI Object Storage before running `--cluster-init`. `--no-overwrite` maps to server-side If-None-Match: * and is the correct native atomic conditional-create primitive — it exits non-zero when the object already exists. **Do NOT use `--if-none-match` (not a valid CLI flag) or `oci raw-request --request-body-file` (also not a valid flag).**
@@ -838,7 +840,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
   every pod's containerd-shim is charged to its unit (`system-reserved` 3 GiB there). The small
   controllers (Argo CD's parts except argocd-server, cert-manager, External Secrets, the Tailscale
   operator) therefore *prefer* the worker; the nightly descheduler returns them after a drain.
-  Measured numbers: README "Memory budget (measured)". Don't move a controller back to the
+  Measured numbers: docs/design.md "Memory budget (measured)". Don't move a controller back to the
   control plane without re-measuring.
 
 ### Internal LB health check
