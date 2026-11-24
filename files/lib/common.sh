@@ -24,6 +24,11 @@ setup_shared_ssh_host_key() {
   printf '%s\n' "${SSH_HOST_KEY_PUBLIC}"          > /etc/ssh/ssh_host_ed25519_key.pub
   chmod 600 /etc/ssh/ssh_host_ed25519_key
   chmod 644 /etc/ssh/ssh_host_ed25519_key.pub
+  # With SELinux (openSUSE Leap 16) the moved key keeps the temp file's label,
+  # which sshd may not read: it would skip the shared key. Restore the policy label.
+  if command -v restorecon >/dev/null 2>&1; then
+    restorecon /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub
+  fi
   # Service name is "ssh" on Ubuntu/Debian and "sshd" on openSUSE/RHEL.
   systemctl restart ssh 2>/dev/null || systemctl restart sshd
 }

@@ -39,7 +39,7 @@ locals {
     oci_vault_secret.cloudflare_api_token[*].id,
     oci_vault_secret.longhorn_backup_secret_key[*].id,
     oci_vault_secret.external_secrets_api_key[*].id,
-    [coalesce(var.k3s_ca_vault_secret_id, "")],
+    var.k3s_ca_vault_secret_id != null ? [var.k3s_ca_vault_secret_id] : [],
   ))
 }
 

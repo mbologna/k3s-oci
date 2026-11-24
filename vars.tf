@@ -15,15 +15,20 @@ variable "availability_domain" {
   description = "Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1'"
 
   validation {
-    condition     = can(regex("^[^:]+:[A-Z0-9]+-AD-[1-3]$", var.availability_domain))
+    condition     = can(regex("^[^:]+:[A-Z0-9-]+-AD-[1-3]$", var.availability_domain))
     error_message = "availability_domain must match the pattern 'Namespace:REGION-AD-N' (e.g. 'Uocm:EU-FRANKFURT-1-AD-1')."
   }
 }
 
 variable "region" {
   type        = string
-  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required when enable_external_secrets = true for the ClusterSecretStore to locate the OCI Vault endpoint."
+  description = "OCI region identifier (e.g. 'eu-frankfurt-1'). Required with either bucket (enable_object_storage_state, on by default, or enable_longhorn_backup): the Object Storage service policy names the region. Also used by enable_external_secrets for the ClusterSecretStore's OCI Vault endpoint."
   default     = null
+
+  validation {
+    condition     = var.region != null || !(var.enable_object_storage_state || var.enable_longhorn_backup)
+    error_message = "region is required when enable_object_storage_state (the default) or enable_longhorn_backup is true: the IAM policy that lets Object Storage run the buckets' lifecycle rules names the region (objectstorage-<region>)."
+  }
 }
 
 # ── Cluster identity ──────────────────────────────────────────────────────────
