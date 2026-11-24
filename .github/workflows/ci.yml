@@ -55,8 +55,50 @@ jobs:
         scripts/k3s-ca-export.sh
         scripts/pre-teardown-backup.sh
         scripts/longhorn-restore.sh
+        scripts/validate-gitops.sh
+        scripts/check-bootstrap-chart-versions.sh
         gitops/update-repo-url.sh
         example/get-kubeconfig.sh
         example/ssh-node.sh
       example_dir: example
     secrets: inherit
+
+  # Schema checks for gitops/, which the shared Terraform workflow doesn't look at,
+  # and the bootstrap/adoption chart version parity (scripts/ say why).
+  gitops:
+    name: gitops manifests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=github-releases depName=yannh/kubeconform
+      KUBECONFORM_VERSION: "v0.8.0"
+      # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>.+)$
+      KUSTOMIZE_VERSION: "v5.8.3"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install kubeconform and kustomize
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
+          base=https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}
+          curl -fsSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -fsSL "$base/CHECKSUMS" | grep ' kubeconform-linux-amd64.tar.gz$' | sha256sum -c -
+          tar -xzf kubeconform-linux-amd64.tar.gz -C bin kubeconform
+          tarball=kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz
+          base=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}
+          curl -fsSLO "$base/$tarball"
+          curl -fsSL "$base/checksums.txt" | grep " ${tarball}$" | sha256sum -c -
+          tar -xzf "$tarball" -C bin kustomize
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap chart versions match gitops
+        run: scripts/check-bootstrap-chart-versions.sh
+
+      - name: kubeconform
+        run: scripts/validate-gitops.sh

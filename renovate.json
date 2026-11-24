@@ -148,6 +148,16 @@
       ]
     },
     {
+      "description": "Tool versions in workflow env (e.g. KUBECONFORM_VERSION in ci.yml), with the renovate comment on the line above.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(\\s+extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*[A-Z0-9_]+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
       "description": "Update versions declared with inline renovate comments in vars.tf",
       "customType": "regex",
       "managerFilePatterns": [
