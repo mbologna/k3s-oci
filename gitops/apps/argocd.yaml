@@ -18,11 +18,21 @@ spec:
         configs:
           params:
             server.insecure: true
+            # Every Application regenerates its manifests at once and each opens
+            # its own `git ls-remote`: bound both, so a refresh doesn't saturate
+            # the 1-OCPU node or trip a git host's per-IP throttle.
+            reposerver.git.lsremote.parallelism.limit: 1
+            reposerver.parallelism.limit: 4
           cm:
             # Lets kustomization.yaml files use helmCharts (consumer repos wrap
             # charts to patch what their values don't expose). Set at bootstrap
             # too: without it the first render fails and Argo CD caches the error.
             kustomize.buildOptions: --enable-helm
+            # Spread each 2-minute poll (the default) over a minute instead of
+            # one burst. With a push webhook from your git host, raise
+            # timeout.reconciliation to 1800s: the webhook then detects changes
+            # and polling only covers a missed delivery.
+            timeout.reconciliation.jitter: 60s
             # Traefik serves the module's Ingresses from NodePorts behind the OCI
             # NLB and publishes no load-balancer address in their status
             # (gitops/apps/traefik.yaml), so Argo CD's built-in check would leave
@@ -37,7 +47,7 @@ spec:
         # sits in its cgroup), and a cluster built from this module crash-looped
         # k3s for 20 minutes when it ran out after an upgrade. So every Argo CD
         # part except argocd-server prefers the worker: application controller
-        # (the biggest, ~400 MiB on a 40-app cluster), redis, notifications, dex,
+        # (the biggest, ~400 MiB on a 40-app cluster), redis, notifications,
         # applicationset and repo-server, which also writes to disk on every git
         # fetch and render (the control plane's boot volume is etcd's).
         # Preferences, not requirements: with the worker drained they run on the
@@ -88,12 +98,16 @@ spec:
           readinessProbe:
             timeoutSeconds: 10
             failureThreshold: 5
+          # 250m: under CPU contention repo-server's own gRPC health check
+          # missed even the 10 s probe timeout ("Error serving health check
+          # request", then SIGTERM), a restart loop; a bigger request raises its
+          # CPU share. 768Mi: renders of large charts peak well above idle.
           resources:
             requests:
-              cpu: 100m
+              cpu: 250m
               memory: 128Mi
             limits:
-              memory: 512Mi
+              memory: 768Mi
         # The chart's key is `controller`; until this change these values sat
         # under `applicationController`, which the chart ignores, so the
         # controller ran with no requests or limits at all. 50m: it idles at a
@@ -108,14 +122,18 @@ spec:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: DoesNotExist
+          # 512Mi: it holds ~200-430 MiB on a 40-app cluster, and a request
+          # below that lets the scheduler count its memory as free.
           resources:
             requests:
               cpu: 50m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 500m
-              memory: 1Gi
+              memory: 1536Mi
         redis:
+          # Redis never calls the Kubernetes API.
+          automountServiceAccountToken: false
           affinity:
             nodeAffinity:
               preferredDuringSchedulingIgnoredDuringExecution:
@@ -267,15 +285,11 @@ spec:
                 send:
                   - app-sync-failed
                 when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
+        # No SSO is configured, so Dex had nothing to do (~20-75 MiB). To add
+        # SSO through Dex, set enabled: true here with dex.config in configs.cm,
+        # and give it requests (10m / 96Mi, limit 192Mi).
         dex:
-          affinity:
-            nodeAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-                - weight: 100
-                  preference:
-                    matchExpressions:
-                      - key: node-role.kubernetes.io/control-plane
-                        operator: DoesNotExist
+          enabled: false
         applicationSet:
           affinity:
             nodeAffinity:
@@ -285,6 +299,12 @@ spec:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: DoesNotExist
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

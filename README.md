@@ -690,7 +690,7 @@ Each A1.Flex instance has identical resources (1 OCPU / 6 GB RAM). The k3s role 
 | **Traefik** (ingress) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **Longhorn** (storage daemon) | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **cert-manager**, **External Secrets**, **Tailscale operator** | ✅ | ✅ | Deployments: prefer the worker, run on the control plane while it is drained |
-| **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, dex, applicationset, repo-server: prefer the worker |
+| **ArgoCD** | ✅ | ✅ | `argocd-server`: one replica per node. Controller, redis, notifications, applicationset, repo-server: prefer the worker. Dex is off (no SSO) |
 | **kured** | ✅ | ✅ | DaemonSet (1 pod per node) |
 | **User workloads** | ✅ | ✅ | No restrictions, schedules on both nodes |
 
