@@ -10,7 +10,6 @@ gitops/
 │   ├── app-of-apps.yaml              # Root Application — bootstrapped by cloud-init
 │   ├── argocd.yaml                   # ArgoCD Helm release
 │   ├── argocd-config.yaml            # ArgoCD supplementary config (rate-limit Middleware)
-│   ├── argocd-image-updater.yaml     # ArgoCD Image Updater Helm release
 │   ├── cert-manager.yaml             # cert-manager Helm release
 │   ├── coredns.yaml                  # CoreDNS replica count (gitops/coredns/)
 │   ├── descheduler.yaml              # Nightly descheduler: pods back to their preferred node
@@ -29,6 +28,7 @@ gitops/
 │   ├── cluster-issuers.yaml          # Template — update email before using
 │   └── application-template.yaml    # Copy to apps/cert-manager-issuers.yaml after updating email
 ├── optional/                         # Opt-in Applications, outside the App of Apps scope
+│   ├── argocd-image-updater.yaml     # Argo CD Image Updater; copy to apps/ to install
 │   ├── external-dns.yaml             # Reference only: cloud-init creates the real app (runtime filters)
 │   └── external-secrets.yaml         # ESO Helm release; wrapped by cloud-init when enable_external_secrets = true
 ├── external-secrets/                 # External Secrets templates
@@ -122,35 +122,12 @@ kubectl apply -n argocd -f gitops/apps/app-of-apps.yaml
 1. Create a new `Application` manifest in `gitops/apps/`.
 2. Commit and push. ArgoCD will detect it via the App of Apps and apply it automatically.
 
-## ArgoCD Image Updater
+## ArgoCD Image Updater (opt-in)
 
-Image Updater is installed alongside ArgoCD. To enable automatic image updates for a deployment:
-
-```yaml
-# Add these annotations to your ArgoCD Application manifest in gitops/apps/
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-  namespace: argocd
-  annotations:
-    # Track the latest semver tag for myrepo/myapp
-    argocd-image-updater.argoproj.io/image-list: myapp=ghcr.io/myorg/myapp:~1.0
-    argocd-image-updater.argoproj.io/myapp.update-strategy: semver
-    # Write back to git (recommended for GitOps)
-    argocd-image-updater.argoproj.io/write-back-method: git
-    argocd-image-updater.argoproj.io/git-branch: main
-```
-
-For a Helm-based Application, also add:
-```yaml
-    argocd-image-updater.argoproj.io/myapp.helm.image-name: image.repository
-    argocd-image-updater.argoproj.io/myapp.helm.image-tag: image.tag
-```
-
-Supported update strategies: `semver` (recommended), `latest`, `digest`, `name`.
-
-See [Image Updater docs](https://argocd-image-updater.readthedocs.io/) for full reference.
+Image Updater is not installed by default: Renovate already bumps image tags in git, and the
+updater does nothing until you create `ImageUpdater` resources. To install it, copy
+`gitops/optional/argocd-image-updater.yaml` to `gitops/apps/`, then follow the
+[Image Updater docs](https://argocd-image-updater.readthedocs.io/).
 
 ## TLS and ingress (Traefik)
 

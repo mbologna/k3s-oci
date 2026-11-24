@@ -2,7 +2,6 @@
 # Default-deny for kube-system. System components (coredns, kured, metrics-server)
 # are allowed by the targeted policies below.
 # This is the only namespace that previously lacked default-deny coverage.
-# NOTE: argocd-image-updater deploys to the 'argocd' namespace, not kube-system.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

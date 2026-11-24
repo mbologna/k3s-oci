@@ -21,7 +21,7 @@ do not introduce resources that incur cost.
 | Ingress | Traefik (Kubernetes Ingress + Traefik Middlewares; since v2.0.0, Envoy Gateway before) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
-| GitOps | ArgoCD + Image Updater |
+| GitOps | ArgoCD (Image Updater opt-in: `gitops/optional/`) |
 | TLS | cert-manager (Let's Encrypt) |
 | Reboots | kured + unattended-upgrades |
 
@@ -83,7 +83,7 @@ files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_docker
                                     configure_argocd_ingress(), configure_longhorn_ingress()
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
-gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only)
+gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only; argocd-image-updater.yaml, copy to gitops/apps/ to install)
 gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
 gitops/pdbs/                 — PodDisruptionBudgets for ArgoCD / cert-manager (pdbs.yaml App)
 gitops/coredns/              — HPA pinning k3s's CoreDNS at 2 replicas, one per node (coredns.yaml App)

@@ -1,3 +1,9 @@
+# Argo CD Image Updater — opt-in, not part of the App of Apps.
+#
+# It sat idle in the default stack: it acts only on ImageUpdater resources
+# (chart 1.x; the annotation-only setup is gone), and Renovate already bumps
+# image tags in git. To use it, copy this file to gitops/apps/ and create
+# ImageUpdater resources: https://argocd-image-updater.readthedocs.io/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -35,8 +41,3 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 5m
-  # NOTE: ArgoCD Image Updater monitors container images and opens PRs / commits
-  # bumped image tags. To use it, annotate ArgoCD Applications with:
-  #   argocd-image-updater.argoproj.io/image-list: myapp=docker.io/myorg/myapp
-  #   argocd-image-updater.argoproj.io/myapp.update-strategy: semver
-  # See https://argocd-image-updater.readthedocs.io/ for configuration details.
