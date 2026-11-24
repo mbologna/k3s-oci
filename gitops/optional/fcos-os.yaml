@@ -1,0 +1,31 @@
+---
+# Fedora CoreOS OS updates (os_family = "fcos"): the fcos-os upgrade Plan. cloud-init
+# creates this Application through the optional-fcos-os wrapper (create_optional_app
+# in files/lib/k3s-argocd.sh, called by files/lib/k3s-fcos-os.sh); other OS families
+# never get it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fcos-os
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mbologna/k3s-oci.git
+    targetRevision: HEAD
+    path: gitops/fcos-os
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: system-upgrade
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

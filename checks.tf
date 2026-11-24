@@ -27,19 +27,32 @@ check "opensuse_image_matches_leap_version" {
 check "user_data_within_oci_limit" {
   assert {
     condition = alltrue([
-      for ud in [data.cloudinit_config.k3s_server.rendered, data.cloudinit_config.k3s_worker.rendered] :
+      for ud in [local.k3s_server_user_data, local.k3s_worker_user_data] :
       length(ud) + length(local.ssh_public_key) <= 32000
     ])
-    error_message = "Node metadata exceeds OCI's 32,000-byte limit (server user_data ${length(data.cloudinit_config.k3s_server.rendered)} bytes, worker ${length(data.cloudinit_config.k3s_worker.rendered)} bytes, SSH keys ${length(local.ssh_public_key)} bytes): new instances would fail to launch. Shorten the scripts in files/lib/ or the SSH key list."
+    error_message = "Node metadata exceeds OCI's 32,000-byte limit (server user_data ${length(local.k3s_server_user_data)} bytes, worker ${length(local.k3s_worker_user_data)} bytes, SSH keys ${length(local.ssh_public_key)} bytes): new instances would fail to launch. Shorten the scripts in files/lib/ or the SSH key list."
   }
 }
 
-# Custom images (openSUSE) have no Oracle Cloud Agent, so its Custom Logs plugin never
+# Custom images (openSUSE, Fedora CoreOS) have no Oracle Cloud Agent, so its Custom Logs plugin never
 # ships the bootstrap log. The plugin setting and the log resources are harmless there.
 check "oci_logging_needs_platform_image" {
   assert {
     condition     = !var.enable_oci_logging || var.os_family == "ubuntu"
     error_message = "enable_oci_logging = true has no effect with os_family = \"${var.os_family}\": custom images have no Oracle Cloud Agent to ship the logs. Set enable_oci_logging = false, and read /var/log/k3s-cloud-init.log on the node."
+  }
+}
+
+# Warns after Renovate bumps fcos_version until that release is imported
+# (scripts/import-fcos-aarch64.sh). New nodes pivot to fcos_os_version either way.
+check "fcos_image_matches_version" {
+  assert {
+    condition = var.os_family != "fcos" || (
+      var.os_image_id == null
+      ? length(local.fcos_images) == 0 || length(local.fcos_matching_images) > 0
+      : try(data.oci_core_image.fcos[0].operating_system_version == var.fcos_version, true)
+    )
+    error_message = "The Fedora CoreOS image new nodes would boot is not release ${var.fcos_version}. Run scripts/import-fcos-aarch64.sh${var.os_image_id != null ? " and set os_image_id to the new OCID (or unset it to auto-resolve)" : ""}. New nodes still pivot to fcos_os_version before k3s starts."
   }
 }
 

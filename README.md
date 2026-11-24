@@ -10,8 +10,8 @@ A Terraform/OpenTofu module that builds a [k3s](https://k3s.io) cluster on the [
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
 - **Traefik ingress**: one Traefik pod per node (DaemonSet, upstream chart via ArgoCD) with `system-cluster-critical` priority; standard Kubernetes `Ingress` plus Traefik Middlewares; HTTP→HTTPS redirect and TLS 1.2+ by default; real client IP preservation via NLB transparent mode and `externalTrafficPolicy: Local`
-- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu), `zypper patch` systemd timers (openSUSE Leap) or `transactional-update` timers (Leap Immutable)
-- **Configurable OS** (`os_family`): Ubuntu LTS (default, `ubuntu_version`, OCI-native image auto-resolved) or openSUSE Leap (`opensuse_leap_version`, Minimal VM or Immutable Mode with `opensuse_variant`, custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`); Renovate bumps both releases
+- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu), `zypper patch` systemd timers (openSUSE Leap), `transactional-update` timers (Leap Immutable), or on Fedora CoreOS an upgrade Plan that rolls the release pinned in git out one drained node at a time
+- **Configurable OS** (`os_family`): Ubuntu LTS (default, `ubuntu_version`, OCI-native image auto-resolved) or openSUSE Leap (`opensuse_leap_version`, Minimal VM or Immutable Mode with `opensuse_variant`, custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`) or Fedora CoreOS (`fcos_os_version`, custom-imported via `scripts/import-fcos-aarch64.sh`); Renovate bumps the releases
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
 - **Compartment-scoped IAM**: the dynamic group matches instances in the cluster's compartment (tag matching breaks instance_principal for pool members), and the policy grants only narrow verbs (read instances, read only the Vault secrets cloud-init needs, push logs, write objects in the cluster bucket)
 - **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
@@ -497,12 +497,14 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
 
-**OS releases** come from [endoflife.date](https://endoflife.date) (Ubuntu) and [openSUSE's release API](https://get.opensuse.org/api/v0/distributions.json) (Leap) and arrive as `feat(os):` PRs that automerge after CI, so each one ships in a release:
+**OS releases** come from [endoflife.date](https://endoflife.date) (Ubuntu), [openSUSE's release API](https://get.opensuse.org/api/v0/distributions.json) (Leap) and [Fedora CoreOS's stable stream](https://builds.coreos.fedoraproject.org/streams/stable.json) and arrive as PRs that automerge after CI; the OS release bumps are `feat(os):`, so each one ships in a release:
 
 | Release | Bump | After it merges |
 |---|---|---|
 | Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | The next full rebuild (`tofu destroy` + `apply`, or `just teardown-keep-data`) boots the new release. Until then nothing changes: the instance configurations ignore image changes, so running nodes and pool replacements keep the image the pool was created with |
 | openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | Run `scripts/import-opensuse-aarch64.sh` (with `--variant immutable` for Leap Immutable); the next full rebuild then boots the new release without `os_image_id`. Until it is imported, plans warn and a rebuild boots the newest imported image |
+| Fedora CoreOS major (`fcos_version`, the boot image) | The stable stream's new major | Run `scripts/import-fcos-aarch64.sh`. Until then plans warn and new nodes boot the newest imported image; either way they pivot to `fcos_os_version` before k3s starts |
+| Fedora CoreOS release (`fcos_os_version` and the `fcos-os` Plan's `version`, one PR) | Every new stable release (about every two weeks) | The `fcos-os` Plan updates the FCOS nodes in its next window (Tue-Thu 02:15-04:15 UTC), one drained node at a time along the update graph; new nodes pivot to it on first boot |
 
 ### CI plan against a live deployment
 
@@ -747,12 +749,13 @@ Always Free also includes 2 AMD E2.1.Micro instances. They are not worth adding:
 
 ### Choosing an OS
 
-The module supports two OS families, selected via `os_family`:
+The module supports three OS families, selected via `os_family`:
 
 | `os_family` | Image | Auto-resolved | SSH user | Auto-updates |
 |---|---|---|---|---|
 | `"ubuntu"` (default) | Ubuntu LTS aarch64, release in `ubuntu_version` | ✅ Yes (latest OCI-native image) | `ubuntu` | `unattended-upgrades` + `needrestart` |
 | `"opensuse"` | openSUSE Leap Minimal VM aarch64, release in `opensuse_leap_version` | ✅ Yes, once imported (newest image of the release imported with the script) | `sles` | `zypper patch` systemd timers |
+| `"fcos"` | Fedora CoreOS aarch64 (image-based, Ignition), boot image major in `fcos_version`, running release in `fcos_os_version` | ✅ Yes, once imported with `scripts/import-fcos-aarch64.sh` | `core` | OpenShift-style: an upgrade Plan rolls the pinned release out, one drained node at a time |
 | `"opensuse"` + `opensuse_variant = "immutable"` | openSUSE Leap Immutable Mode aarch64 (read-only root), release in `opensuse_leap_version` | ✅ Yes, once imported with `--variant immutable` | `sles` | `transactional-update` systemd timers |
 
 Renovate bumps both releases ([Dependency updates](#dependency-updates-renovate)).
@@ -845,9 +848,50 @@ side. What differs from the Minimal image:
   When a snapshot is waiting, they write kured's sentinels, and kured reboots the node in its window.
   The image's own `transactional-update.timer` and `rebootmgr` are disabled.
 
+#### Fedora CoreOS
+
+Fedora CoreOS is image-based. The module runs it the way OpenShift runs its CoreOS nodes: the
+cluster decides which OS release the nodes run, and an in-cluster controller rolls it out. Zincati,
+FCOS's own updater, is masked. Import the boot image, then select it:
+
+```bash
+./scripts/import-fcos-aarch64.sh            # current stable build (--stream testing|next)
+```
+
+```hcl
+os_family                   = "fcos"
+enable_object_storage_state = true  # required (the default)
+region                      = "eu-frankfurt-1" # required
+enable_oci_logging          = false # custom images have no Oracle Cloud Agent
+```
+
+How it differs from the cloud-init OSes:
+
+- **Ignition, with the script in Object Storage.** FCOS reads only Ignition, and OCI's 32,000-byte
+  metadata limit is too small for the node script inside an Ignition config. The module uploads the
+  script to the `<cluster>-terraform-state` bucket and puts a read-only pre-authenticated request URL
+  for it in a small Ignition config, as OpenShift's pointer Ignition config fetches the real one.
+  Anyone with that URL can read what user-data holds on other OSes (the shared SSH host key, and the
+  cluster secrets if `enable_vault = false`).
+- **First boot pivots to the cluster's release** (OpenShift's firstboot pivot). The imported image
+  (`fcos_version`) is only a starting point: before k3s starts, the node rebases to `fcos_os_version`
+  along FCOS's update graph, one release per reboot when barrier releases lie in between, with
+  k3s-selinux, python3 (for the OCI CLI) and cronie layered on the first hop.
+- **OS updates are a cluster operation.** The release is pinned in `gitops/fcos-os/plan.yaml` (OpenShift's
+  `osImageURL`); Renovate bumps it together with `fcos_os_version` when the stable stream moves. The
+  `fcos-os` system-upgrade-controller Plan, added by the first server, rolls it out like OpenShift's
+  Machine Config Daemon: in kured's window (Tue-Thu 02:15-04:15 UTC), one node at a time, cordoned and
+  drained, then rebased onto the release's image (pinned by digest) and rebooted, through barrier
+  releases first. OS reboots never overlap a k3s upgrade: on a node the Plans are `exclusive`
+  (system-upgrade-controller keeps their jobs apart), and across nodes their windows don't
+  overlap (k3s upgrades start at 23:00-23:59 UTC). kured stays installed and stands down while the Plan's job runs.
+- **SSH** as `core`, with the keys from the instance's `ssh_authorized_keys` (Afterburn).
+- **Longhorn**: the bootstrap adds a SELinux module that lets Fedora's iscsid log in to Longhorn's
+  targets ([Longhorn KB](https://longhorn.io/kb/troubleshooting-volume-attachment-fails-due-to-selinux-denials/)).
+
 #### Using any other OS image
 
-Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu and openSUSE are tested.** Any other OS will need its own bootstrap logic, fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
+Set `os_image_id` to the OCID of any OCI image. **Only Ubuntu, openSUSE and Fedora CoreOS are tested.** Any other OS will need its own bootstrap logic, fork the repo and adapt `files/lib/bootstrap-ubuntu.sh` as a starting point.
 
 ## Teardown
 

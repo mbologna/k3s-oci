@@ -10,19 +10,22 @@ locals {
   )))
 
   # Resolved OS image IDs: explicit variable wins; otherwise auto-detected from tenancy.
-  # openSUSE: newest import of opensuse_leap_version, else the newest import of any release.
+  # openSUSE and Fedora CoreOS: newest import of the configured release, else the newest
+  # import of any release.
   # try() guards against the data source of the other os_family, whose count = 0.
   # Each variant is imported under its own operating system name (import script --variant).
   opensuse_operating_system = var.opensuse_variant == "immutable" ? "openSUSE Leap Immutable" : "openSUSE Leap"
   opensuse_images           = try(data.oci_core_images.opensuse[0].images, [])
   opensuse_matching_images  = [for i in local.opensuse_images : i if i.operating_system_version == var.opensuse_leap_version]
-  os_image_id = var.os_image_id != null ? var.os_image_id : (
-    var.os_family == "opensuse"
-    ? try(coalescelist(local.opensuse_matching_images, local.opensuse_images)[0].id, null)
-    : try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
-  )
+  fcos_images               = try(data.oci_core_images.fcos[0].images, [])
+  fcos_matching_images      = [for i in local.fcos_images : i if i.operating_system_version == var.fcos_version]
+  os_image_id = var.os_image_id != null ? var.os_image_id : {
+    ubuntu   = try(data.oci_core_images.k3s_nodes[0].images[0].id, null)
+    opensuse = try(coalescelist(local.opensuse_matching_images, local.opensuse_images)[0].id, null)
+    fcos     = try(coalescelist(local.fcos_matching_images, local.fcos_images)[0].id, null)
+  }[var.os_family]
   # Default SSH user for the selected OS family.
-  os_user = var.os_family == "opensuse" ? "sles" : "ubuntu"
+  os_user = { ubuntu = "ubuntu", opensuse = "sles", fcos = "core" }[var.os_family]
 
   # Applied to every OCI resource for consistent identification and cost tracking.
   # `clustername` duplicates `k3s-cluster-name` without hyphens, which OCI's rule
