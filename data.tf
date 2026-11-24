@@ -202,13 +202,13 @@ locals {
   # OS bootstrap (bootstrap() and configure_unattended_upgrades()), by var.os_family.
   os_bootstrap_file = {
     ubuntu   = "bootstrap-ubuntu.sh"
-    opensuse = "bootstrap-opensuse.sh"
+    opensuse = var.opensuse_variant == "immutable" ? "bootstrap-opensuse-immutable.sh" : "bootstrap-opensuse.sh"
   }[var.os_family]
 
   # Image-based OSes install packages into a new snapshot and reboot into it before
   # anything else runs: files/lib/two-phase.sh persists the script and runs it again
-  # after the reboot, two-phase-done.sh retires it. No OS family needs it yet.
-  two_phase = false
+  # after the reboot, two-phase-done.sh retires it.
+  two_phase = var.os_family == "opensuse" && var.opensuse_variant == "immutable"
 
   # Node scripts, in order: rendered vars header, OS bootstrap, shared helpers, entry
   # point. The empty lists leave the scripts of one-phase OSes exactly as they were.
@@ -311,12 +311,13 @@ data "oci_core_images" "k3s_nodes" {
 
 # ── k3s node image (openSUSE Leap aarch64 custom import) ───────────────────
 # Auto-resolved when os_family = "opensuse" and os_image_id is not set: every image that
-# scripts/import-opensuse-aarch64.sh imported (operating system "openSUSE Leap"). locals.tf picks
+# scripts/import-opensuse-aarch64.sh imported for opensuse_variant (operating system
+# "openSUSE Leap", or "openSUSE Leap Immutable"). locals.tf picks
 # the newest one of opensuse_leap_version, falling back to the newest of any release (checks.tf warns).
 data "oci_core_images" "opensuse" {
   count            = var.os_family == "opensuse" && var.os_image_id == null ? 1 : 0
   compartment_id   = coalesce(var.opensuse_image_compartment_ocid, var.tenancy_ocid)
-  operating_system = "openSUSE Leap"
+  operating_system = local.opensuse_operating_system
   shape            = var.compute_shape
   state            = "AVAILABLE"
   sort_by          = "TIMECREATED"
@@ -325,7 +326,7 @@ data "oci_core_images" "opensuse" {
   lifecycle {
     postcondition {
       condition     = length(self.images) > 0
-      error_message = "No imported openSUSE Leap image found for shape ${var.compute_shape} in compartment ${coalesce(var.opensuse_image_compartment_ocid, var.tenancy_ocid)}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version} (re-running it also tags images imported by older versions of the script), or set os_image_id."
+      error_message = "No imported ${local.opensuse_operating_system} image found for shape ${var.compute_shape} in compartment ${coalesce(var.opensuse_image_compartment_ocid, var.tenancy_ocid)}. Run scripts/import-opensuse-aarch64.sh --leap-version ${var.opensuse_leap_version} --variant ${var.opensuse_variant} (re-running it also tags images imported by older versions of the script), or set os_image_id."
     }
   }
 }

@@ -109,7 +109,7 @@ variable "my_public_ip_cidr" {
 
 variable "os_family" {
   type        = string
-  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses the OCI-native Ubuntu LTS release in ubuntu_version and auto-resolves its latest image. \"opensuse\" uses the openSUSE Leap release in opensuse_leap_version, imported as a custom image with scripts/import-opensuse-aarch64.sh and auto-resolved like Ubuntu."
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses the OCI-native Ubuntu LTS release in ubuntu_version and auto-resolves its latest image. \"opensuse\" uses the openSUSE Leap release in opensuse_leap_version (Minimal VM, or Immutable Mode with opensuse_variant = \"immutable\"), imported as a custom image with scripts/import-opensuse-aarch64.sh and auto-resolved like Ubuntu."
   default     = "ubuntu"
 
   validation {
@@ -120,7 +120,7 @@ variable "os_family" {
 
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest aarch64 image of ubuntu_version is resolved automatically. If null and os_family = \"opensuse\", the newest image imported by scripts/import-opensuse-aarch64.sh for opensuse_leap_version is resolved automatically (see opensuse_image_compartment_ocid)."
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest aarch64 image of ubuntu_version is resolved automatically. If null and os_family = \"opensuse\", the newest image imported by scripts/import-opensuse-aarch64.sh for opensuse_leap_version and opensuse_variant is resolved automatically (see opensuse_image_compartment_ocid)."
   default     = null
 
   validation {
@@ -150,6 +150,17 @@ variable "opensuse_leap_version" {
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+$", var.opensuse_leap_version))
     error_message = "opensuse_leap_version must look like \"16.0\"."
+  }
+}
+
+variable "opensuse_variant" {
+  type        = string
+  description = "openSUSE Leap image for os_family = \"opensuse\": \"minimal\" (default) is the Minimal VM Cloud image, \"immutable\" the Immutable Mode image (read-only root, packages in transactional-update snapshots; nodes reboot once during their first boot to activate the packages the bootstrap adds). Import it with scripts/import-opensuse-aarch64.sh --variant <variant>. Ignored for other OS families."
+  default     = "minimal"
+
+  validation {
+    condition     = contains(["minimal", "immutable"], var.opensuse_variant)
+    error_message = "opensuse_variant must be \"minimal\" or \"immutable\"."
   }
 }
 

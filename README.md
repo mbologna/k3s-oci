@@ -10,8 +10,8 @@ A Terraform/OpenTofu module that builds a [k3s](https://k3s.io) cluster on the [
 - **Full stack always deployed**: cert-manager, Longhorn, ArgoCD, and kured are always installed; they keep the cluster active and prevent [idle reclamation](#-idle-reclamation)
 - **Separate public/private subnets**: k3s nodes have no public IP; only LBs and the optional bastion are internet-facing
 - **Traefik ingress**: one Traefik pod per node (DaemonSet, upstream chart via ArgoCD) with `system-cluster-critical` priority; standard Kubernetes `Ingress` plus Traefik Middlewares; HTTP→HTTPS redirect and TLS 1.2+ by default; real client IP preservation via NLB transparent mode and `externalTrafficPolicy: Local`
-- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu) or `zypper patch` systemd timers (openSUSE)
-- **Configurable OS** (`os_family`): Ubuntu LTS (default, `ubuntu_version`, OCI-native image auto-resolved) or openSUSE Leap (`opensuse_leap_version`, custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`); Renovate bumps both releases
+- **Automatic security updates**: `unattended-upgrades` + [kured](https://github.com/kubereboot/kured) drain-reboot-uncordon cycle; zero manual intervention (Ubuntu), `zypper patch` systemd timers (openSUSE Leap) or `transactional-update` timers (Leap Immutable)
+- **Configurable OS** (`os_family`): Ubuntu LTS (default, `ubuntu_version`, OCI-native image auto-resolved) or openSUSE Leap (`opensuse_leap_version`, Minimal VM or Immutable Mode with `opensuse_variant`, custom-imported UEFI image via `scripts/import-opensuse-aarch64.sh`); Renovate bumps both releases
 - **k3s version pinned at plan time**: resolved from the GitHub API during `terraform plan`, not at boot time
 - **Compartment-scoped IAM**: the dynamic group matches instances in the cluster's compartment (tag matching breaks instance_principal for pool members), and the policy grants only narrow verbs (read instances, read only the Vault secrets cloud-init needs, push logs, write objects in the cluster bucket)
 - **Idempotent cloud-init**: all `kubectl` operations use `apply`; re-provisioning is safe
@@ -502,7 +502,7 @@ Renovate then updates both in one `k3s` PR:
 | Release | Bump | After it merges |
 |---|---|---|
 | Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | The next full rebuild (`tofu destroy` + `apply`, or `just teardown-keep-data`) boots the new release. Until then nothing changes: the instance configurations ignore image changes, so running nodes and pool replacements keep the image the pool was created with |
-| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | Run `scripts/import-opensuse-aarch64.sh`; the next full rebuild then boots the new release without `os_image_id`. Until it is imported, plans warn and a rebuild boots the newest imported image |
+| openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | Run `scripts/import-opensuse-aarch64.sh` (with `--variant immutable` for Leap Immutable); the next full rebuild then boots the new release without `os_image_id`. Until it is imported, plans warn and a rebuild boots the newest imported image |
 
 ### CI plan against a live deployment
 
@@ -751,8 +751,9 @@ The module supports two OS families, selected via `os_family`:
 
 | `os_family` | Image | Auto-resolved | SSH user | Auto-updates |
 |---|---|---|---|---|
-| `"ubuntu"` (default) | Ubuntu LTS aarch64, release in `ubuntu_version` (default 26.04) | ✅ Yes (latest OCI-native image) | `ubuntu` | `unattended-upgrades` + `needrestart` |
-| `"opensuse"` | openSUSE Leap Minimal VM aarch64, release in `opensuse_leap_version` (default 16.0) | ✅ Yes, once imported (newest image of the release imported with the script) | `sles` | `zypper patch` systemd timers |
+| `"ubuntu"` (default) | Ubuntu LTS aarch64, release in `ubuntu_version` | ✅ Yes (latest OCI-native image) | `ubuntu` | `unattended-upgrades` + `needrestart` |
+| `"opensuse"` | openSUSE Leap Minimal VM aarch64, release in `opensuse_leap_version` | ✅ Yes, once imported (newest image of the release imported with the script) | `sles` | `zypper patch` systemd timers |
+| `"opensuse"` + `opensuse_variant = "immutable"` | openSUSE Leap Immutable Mode aarch64 (read-only root), release in `opensuse_leap_version` | ✅ Yes, once imported with `--variant immutable` | `sles` | `transactional-update` systemd timers |
 
 Renovate bumps both releases ([Dependency updates](#dependency-updates-renovate)).
 
@@ -798,6 +799,7 @@ imported by older versions of the script have no OS recorded: re-run the script 
 --compartment-id OCID   Compartment OCID (default: tenancy root)
 --region REGION         OCI region (default: from ~/.oci/config)
 --leap-version VERSION  openSUSE Leap version (default: LEAP_VERSION in the script)
+--variant VARIANT       minimal (default) or immutable (Leap Immutable Mode, see below)
 --bucket-name NAME      Temp bucket name (default: opensuse-image-import-tmp)
 --keep-bucket           Do not delete the QCOW2 object after import
 --image-name NAME       Custom display name for the imported image
@@ -813,6 +815,35 @@ imported by older versions of the script have no OS recorded: re-run the script 
 | **UEFI_64 required at import time** | OCI's `oci compute image import` CLI hard-codes `firmware: BIOS`. The script works around this via a direct REST API call |
 | **Shape compatibility not auto-detected** | OCI does not auto-detect the architecture of imported QCOW2 images; the script adds `VM.Standard.A1.Flex` explicitly |
 | **Oracle Cloud Agent (OCA) unavailable** | No OCI-native monitoring agent on custom images |
+
+#### openSUSE Leap Immutable
+
+Leap's Immutable Mode (the successor of Leap Micro) has a read-only root filesystem: packages
+go into a new btrfs snapshot with `transactional-update` and are active after the next reboot,
+and a failed update leaves the running snapshot untouched. Import it and select it:
+
+```bash
+./scripts/import-opensuse-aarch64.sh --variant immutable
+```
+
+```hcl
+os_family          = "opensuse"
+opensuse_variant   = "immutable"
+enable_oci_logging = false # custom images have no Oracle Cloud Agent
+```
+
+The image is recorded with OS `openSUSE Leap Immutable`, so both variants can be imported side by
+side. What differs from the Minimal image:
+
+- **Each node reboots once during its first boot.** cloud-init installs what the image lacks (jq, tar,
+  open-iscsi, nfs-client, cronie, k3s-selinux) into a new snapshot and reboots; the systemd unit
+  `k3s-oci-bootstrap.service` then runs the same script again, which installs k3s, and disables
+  itself when the script completes. The first boot's log is `/var/log/k3s-cloud-init.phase1.log`;
+  if the second phase fails, the unit stays enabled and the next boot retries.
+- **Updates** run on the same schedule as on Leap Minimal: `tu-security-patch.timer` (daily,
+  `zypper patch --category security`) and `tu-full-patch.timer` (Tue-Thu), each into a new snapshot.
+  When a snapshot is waiting, they write kured's sentinels, and kured reboots the node in its window.
+  The image's own `transactional-update.timer` and `rebootmgr` are disabled.
 
 #### Using any other OS image
 
