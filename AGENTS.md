@@ -167,6 +167,13 @@ If the component is fully managed by ArgoCD (Helm chart from gitops/apps/):
 New Kubernetes manifests belong in `gitops/`. Add an ArgoCD `Application` CR in
 `gitops/apps/` to have ArgoCD manage them automatically.
 
+NetworkPolicies in `gitops/network-policies/`: egress to TCP 443 goes to `0.0.0.0/0` except the
+RFC1918 ranges and `169.254.0.0/16` (instance metadata hands out the node's instance-principal
+identity); TCP 6443 goes to the RFC1918 ranges only. kube-router matches the endpoint after
+kube-proxy's DNAT, so the kube-API is a node's private `:6443`, never `10.43.0.1:443`. In `argocd`,
+the policies that keep DNS, HTTPS/kube-API and same-namespace traffic open are sync wave `-1`: Argo CD
+applies its own namespace's policies, and the first egress policy isolates every argocd pod.
+
 ### Reusability — fork pattern
 Users who want to add their own apps on top of the built-in stack must fork this
 repo. The workflow is:
