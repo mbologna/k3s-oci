@@ -114,6 +114,8 @@ shellcheck:
         scripts/k3s-ca-export.sh \
         scripts/pre-teardown-backup.sh \
         scripts/longhorn-restore.sh \
+        scripts/validate-gitops.sh \
+        scripts/check-bootstrap-chart-versions.sh \
         gitops/update-repo-url.sh \
         example/get-kubeconfig.sh \
         example/ssh-node.sh
@@ -121,6 +123,12 @@ shellcheck:
 # Run YAML lint on gitops/ and .github/workflows/
 yamllint:
     yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
+
+# Validate gitops/ manifests with kubeconform and check that the bootstrap chart
+# versions in vars.tf match the gitops targetRevisions — requires kubeconform, kustomize
+gitops-lint:
+    scripts/check-bootstrap-chart-versions.sh
+    scripts/validate-gitops.sh
 
 # Run tflint (Terraform linter) — requires tflint installed
 tflint:
@@ -134,5 +142,5 @@ trivy:
 docs:
     terraform-docs .
 
-# Run all CI checks locally (fmt + validate + shellcheck + yamllint + tflint + trivy)
-ci: fmt validate shellcheck yamllint tflint trivy
+# Run all CI checks locally (fmt + validate + shellcheck + yamllint + gitops-lint + tflint + trivy)
+ci: fmt validate shellcheck yamllint gitops-lint tflint trivy

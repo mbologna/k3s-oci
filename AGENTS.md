@@ -105,6 +105,8 @@ scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terrafo
 scripts/k3s-ca-export.sh         — copy the running cluster's CA into the bundle k3s_ca_vault_secret_id expects (VAULT=true stores it as <cluster>-k3s-ca)
 scripts/pre-teardown-backup.sh   — fresh etcd snapshot upload + Longhorn backup of every volume (PRE_BACKUP=true in teardown-keep-data.sh)
 scripts/longhorn-restore.sh      — after a rebuild, restore each Longhorn PVC from its newest backup via the Longhorn API
+scripts/validate-gitops.sh       — kubeconform over gitops/ (each file, plus each kustomize build); CI job `gitops manifests`
+scripts/check-bootstrap-chart-versions.sh — vars.tf bootstrap chart defaults (argo-cd, cert-manager, ESO) must equal the gitops targetRevisions
 scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 SECURITY.md      — supported versions + vulnerability reporting
@@ -211,6 +213,7 @@ When helping users add apps, always remind them to run `update-repo-url.sh` and 
 | YAML lint (gitops/ + .github/workflows/) | `yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/` |
 | actionlint | `actionlint` (GitHub Actions workflow syntax) |
 | Trivy IaC scan | `trivy config . --severity HIGH,CRITICAL` (Terraform + gitops) |
+| gitops manifests | `just gitops-lint`: `scripts/check-bootstrap-chart-versions.sh` + `scripts/validate-gitops.sh` (kubeconform `-strict`, CRD schemas from the datreeio CRDs-catalog; kubeconform/kustomize versions pinned in `ci.yml`, Renovate-managed). Its check `gitops manifests` must be added to the `main` ruleset's required checks to gate merges |
 | terraform-docs | fails on diff in fork PRs; auto-committed on same-repo PR branches (except Renovate's) and on push to `main` |
 
 Run all checks locally before pushing:
@@ -237,10 +240,13 @@ shellcheck --severity=warning \
   scripts/k3s-ca-export.sh \
   scripts/pre-teardown-backup.sh \
   scripts/longhorn-restore.sh \
+  scripts/validate-gitops.sh \
+  scripts/check-bootstrap-chart-versions.sh \
   gitops/update-repo-url.sh \
   example/get-kubeconfig.sh \
   example/ssh-node.sh
 yamllint -d '{extends: relaxed, rules: {line-length: {max: 200}}}' gitops/ .github/workflows/
+just gitops-lint
 actionlint
 trivy config . --severity HIGH,CRITICAL --skip-dirs .terraform,example/.terraform
 terraform-docs .
