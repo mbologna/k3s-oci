@@ -22,6 +22,8 @@ spec:
     syncOptions:
       # The optional feature namespaces (external-dns, external-secrets) are created by
       # gitops/network-policies/namespaces.yaml — CreateNamespace only covers "default".
+      # The same file sets every platform namespace's Pod Security labels, and
+      # default-serviceaccounts.yaml turns off token automount on the default SAs.
       - CreateNamespace=true
     retry:
       limit: 5
