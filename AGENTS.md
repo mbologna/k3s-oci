@@ -91,7 +91,7 @@ gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager
 gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays cordoned 25+ min (application-template.yaml; needs a webhook Secret)
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
 gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
-gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)
+gitops/network-policies/     — Default-deny NetworkPolicies, namespaces.yaml (optional-feature namespaces + Pod Security labels) and token-less default ServiceAccounts (managed by network-policies.yaml App)
 gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
