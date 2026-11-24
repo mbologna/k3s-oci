@@ -99,6 +99,9 @@ example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — 
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
 scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
+scripts/k3s-ca-export.sh         — copy the running cluster's CA into the bundle k3s_ca_vault_secret_id expects (VAULT=true stores it as <cluster>-k3s-ca)
+scripts/pre-teardown-backup.sh   — fresh etcd snapshot upload + Longhorn backup of every volume (PRE_BACKUP=true in teardown-keep-data.sh)
+scripts/longhorn-restore.sh      — after a rebuild, restore each Longhorn PVC from its newest backup via the Longhorn API
 scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 SECURITY.md      — supported versions + vulnerability reporting
@@ -221,6 +224,9 @@ shellcheck --severity=warning \
   scripts/teardown-keep-data.sh \
   scripts/import-opensuse-aarch64.sh \
   scripts/setup-longhorn-backup.sh \
+  scripts/k3s-ca-export.sh \
+  scripts/pre-teardown-backup.sh \
+  scripts/longhorn-restore.sh \
   gitops/update-repo-url.sh \
   example/get-kubeconfig.sh \
   example/ssh-node.sh

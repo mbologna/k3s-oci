@@ -53,6 +53,19 @@ clean-oci-resources:
 teardown-keep-data:
     ./scripts/teardown-keep-data.sh
 
+# Fresh etcd snapshot + Longhorn backup of every volume, e.g. right before a teardown
+# (PRE_BACKUP=true just teardown-keep-data runs it too). Needs kubectl access.
+pre-teardown-backup:
+    ./scripts/pre-teardown-backup.sh
+
+# After a rebuild: restore every Longhorn PVC from its newest backup. Needs kubectl access.
+longhorn-restore:
+    ./scripts/longhorn-restore.sh
+
+# Export the cluster CA (for k3s_ca_vault_secret_id); VAULT=true also stores it in OCI Vault
+k3s-ca-export:
+    ./scripts/k3s-ca-export.sh
+
 # Wire Longhorn backups to OCI Object Storage (interactive).
 # Use when user_ocid is not set in tfvars — creates Customer Secret Key, K8s Secret,
 # and applies the Longhorn BackupTarget. Requires kubectl + oci CLI configured.
@@ -98,6 +111,9 @@ shellcheck:
         scripts/teardown-keep-data.sh \
         scripts/import-opensuse-aarch64.sh \
         scripts/setup-longhorn-backup.sh \
+        scripts/k3s-ca-export.sh \
+        scripts/pre-teardown-backup.sh \
+        scripts/longhorn-restore.sh \
         gitops/update-repo-url.sh \
         example/get-kubeconfig.sh \
         example/ssh-node.sh

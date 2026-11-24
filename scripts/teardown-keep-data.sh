@@ -3,6 +3,10 @@
 # Object Storage buckets (etcd snapshots, Longhorn backups) survive, and are back in
 # the tofu state afterwards, so the next `tofu apply` reuses them.
 #
+#   0. With PRE_BACKUP=true, scripts/pre-teardown-backup.sh first takes a fresh
+#      etcd snapshot and Longhorn backups (needs kubectl access to the cluster);
+#      the teardown stops if they fail. Restore the PVCs after the rebuild with
+#      scripts/longhorn-restore.sh.
 #   1. Record the import ID of every kept resource (vault, key, oci_vault_secret.*,
 #      buckets, lifecycle policies) in $TF_DIR/.teardown-keep-data.tsv (no secrets).
 #   2. `state rm` them, so `tofu destroy` skips them (the vault and key also have
@@ -21,6 +25,7 @@
 #   CLEAN_CMD     (default scripts/clean-oci-resources.sh) — a wrapper may add
 #                 its own cleanup (e.g. Tailscale devices) and call the module script
 #   IMPORT_ONLY   (default false)
+#   PRE_BACKUP    (default false)      true: run step 0
 # Requirements: tofu/terraform, oci CLI, jq
 set -euo pipefail
 
@@ -31,6 +36,7 @@ TF_DIR="${TF_DIR:-$SCRIPT_DIR/../example}"
 TOFU="${TOFU:-$(command -v tofu >/dev/null 2>&1 && echo tofu || echo terraform)}"
 CLEAN_CMD="${CLEAN_CMD:-bash $SCRIPT_DIR/clean-oci-resources.sh}"
 IMPORT_ONLY="${IMPORT_ONLY:-false}"
+PRE_BACKUP="${PRE_BACKUP:-false}"
 TSV="$TF_DIR/.teardown-keep-data.tsv"
 
 # OCI Go SDK has a TLS/HTTP2 bug — GODEBUG=http2client=0 is required for all tofu operations.
@@ -42,6 +48,13 @@ tf() { "$TOFU" -chdir="$TF_DIR" "$@"; }
 [ -d "$TF_DIR" ] || { echo "ERROR: TF_DIR $TF_DIR not found" >&2; exit 1; }
 
 if [ "$IMPORT_ONLY" != "true" ]; then
+  # ── 0. Fresh backups ────────────────────────────────────────────────────────
+  if [ "$PRE_BACKUP" = "true" ]; then
+    log "Taking fresh backups before the teardown..."
+    TF_DIR="$TF_DIR" bash "$SCRIPT_DIR/pre-teardown-backup.sh" \
+      || { echo "ERROR: pre-teardown backup failed — nothing was torn down" >&2; exit 1; }
+  fi
+
   log "Initialising $TF_DIR..."
   tf init -input=false >/dev/null
 
