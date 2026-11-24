@@ -396,6 +396,11 @@ writes it when its patches need a reboot. kured's sentinel command reboots for t
 and for `/var/run/reboot-required` only Tuesday to Thursday. Every schedule the module creates is in
 UTC, so that order cannot change at a daylight-saving switch.
 
+Two guards keep this from stalling on Ubuntu: `apt-daily.service` (the package-list refresh) is killed
+after an hour, because a fetch hung for weeks once and quietly stopped all patching; and
+`unattended-upgrades.service` restarts with `systemd-logind`, so its shutdown delay lock never outlives
+a logind restart and holds up a reboot.
+
 k3s itself is upgraded by system-upgrade-controller, one node at a time, in a nightly window
 (23:00-23:59 UTC, `gitops/system-upgrade/plans.yaml`) that ends before every other nightly job. An
 upgrade cordons the node and restarts k3s without draining it: running containers stay up across a k3s
