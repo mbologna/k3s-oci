@@ -16,9 +16,12 @@
 # Progress messages go to stderr, so a command's stdout can be piped or captured.
 #
 # Override SSH key:  SSH_KEY_PATH=~/.ssh/id_ed25519 ./ssh-node.sh
+# Override user:     SSH_USER=ubuntu ./ssh-node.sh   (default: the ssh_user output)
 set -euo pipefail
 
 SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
+# Login user: ubuntu on Ubuntu nodes, sles on openSUSE (the module's ssh_user output).
+SSH_USER="${SSH_USER:-$(tofu output -raw ssh_user 2>/dev/null || echo ubuntu)}"
 
 TARGET="${1:-server}"
 shift || true
@@ -43,8 +46,8 @@ if [ -z "$BASTION_OCID" ]; then
   NLB_IP=$(tofu output -json public_nlb_ip | jq -r '.[0]')
   echo "🖥️  Connecting to ${NODE_IP} via NLB ${NLB_IP}:22..." >&2
   exec ssh "${SSH_BASE_OPTS[@]}" \
-    -o "ProxyCommand=ssh ${SSH_BASE_OPTS[*]} -o ConnectTimeout=10 -W %h:%p ubuntu@${NLB_IP}" \
-    ubuntu@"$NODE_IP" "$@"
+    -o "ProxyCommand=ssh ${SSH_BASE_OPTS[*]} -o ConnectTimeout=10 -W %h:%p ${SSH_USER}@${NLB_IP}" \
+    "${SSH_USER}@${NODE_IP}" "$@"
 fi
 
 echo "🔐 Creating OCI Bastion port-forwarding session to ${NODE_IP}:22..." >&2
@@ -78,4 +81,4 @@ echo "🖥️  Connecting to ${NODE_IP}..." >&2
 # end-to-end connection before handing over the interactive session.
 ssh "${SSH_BASE_OPTS[@]}" \
   -o "ProxyCommand=ssh ${SSH_BASE_OPTS[*]} -W %h:22 -p 22 $BASTION_ENDPOINT" \
-  ubuntu@"$NODE_IP" "$@"
+  "${SSH_USER}@${NODE_IP}" "$@"

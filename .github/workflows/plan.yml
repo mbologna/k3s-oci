@@ -111,15 +111,22 @@ jobs:
               echo "No changes: the plan is empty." | tee -a "$GITHUB_STEP_SUMMARY"
               ;;
             2)
-              {
-                echo "### tofu plan has changes"
-                echo
-                tofu show -json plan.bin | jq -r '.resource_changes[]
-                  | select(.change.actions != ["no-op"])
-                  | "- `\(.change.actions | join(","))` \(.address)"'
-              } | tee -a "$GITHUB_STEP_SUMMARY"
-              echo "::error title=tofu plan has changes::a person must review this update (step summary)"
-              exit 1
+              # -detailed-exitcode also returns 2 when only root outputs change
+              # (a new output in example/); nothing would be applied to OCI.
+              changes=$(tofu show -json plan.bin | jq -r '(.resource_changes // [])[]
+                | select(.change.actions != ["no-op"])
+                | "- `\(.change.actions | join(","))` \(.address)"')
+              if [ -z "$changes" ]; then
+                echo "No resource changes: only root outputs change." | tee -a "$GITHUB_STEP_SUMMARY"
+              else
+                {
+                  echo "### tofu plan has changes"
+                  echo
+                  echo "$changes"
+                } | tee -a "$GITHUB_STEP_SUMMARY"
+                echo "::error title=tofu plan has changes::a person must review this update (step summary)"
+                exit 1
+              fi
               ;;
             *)
               mask <plan.log

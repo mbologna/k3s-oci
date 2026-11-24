@@ -48,6 +48,11 @@ output "ssh_command" {
   value       = var.expose_ssh ? "ssh -i ~/.ssh/id_ed25519 ${local.os_user}@${try(local.public_lb_ip[0], "<public-nlb-ip>")}" : null
 }
 
+output "ssh_user" {
+  description = "Login user on the nodes: ubuntu on Ubuntu, sles on openSUSE (os_family). example/ssh-node.sh and example/get-kubeconfig.sh read it."
+  value       = local.os_user
+}
+
 output "ssh_host_public_key" {
   description = "Shared SSH host public key deployed to all nodes. Add to known_hosts with: ssh-keygen -R <nlb-ip> && terraform output -raw ssh_host_public_key | ssh-keyscan -f - >> ~/.ssh/known_hosts  (or simply ssh-keyscan <nlb-ip> >> ~/.ssh/known_hosts after apply)."
   value       = tls_private_key.ssh_host_key.public_key_openssh

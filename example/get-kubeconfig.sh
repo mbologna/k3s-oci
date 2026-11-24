@@ -13,6 +13,8 @@
 set -euo pipefail
 
 SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_rsa}"
+# Login user: ubuntu on Ubuntu nodes, sles on openSUSE (the module's ssh_user output).
+SSH_USER="${SSH_USER:-$(tofu output -raw ssh_user 2>/dev/null || echo ubuntu)}"
 KUBECONFIG_OUT="${KUBECONFIG_OUT:-$HOME/.kube/clusters/config_oci_k3s}"
 CONTEXT_NAME="${CONTEXT_NAME:-k3s-oci}"
 
@@ -51,7 +53,7 @@ if [ -n "$BASTION_OCID" ]; then
     -o UserKnownHostsFile=/dev/null
     -o IdentitiesOnly=yes
     -o "ProxyCommand=ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -W %h:22 -p 22 $BASTION_ENDPOINT")
-  SSH_TARGET="ubuntu@${SERVER_IP}"
+  SSH_TARGET="${SSH_USER}@${SERVER_IP}"
 else
   # ── direct mode (expose_ssh = true, NLB forwards port 22 to all nodes) ────
   # The NLB SSH listener may route to the standalone worker which does not
@@ -68,8 +70,8 @@ else
     -o UserKnownHostsFile=/dev/null
     -o IdentitiesOnly=yes
     -o ConnectTimeout=10
-    -o "ProxyCommand=ssh ${NLB_OPTS[*]} -W %h:%p ubuntu@${NLB_IP}")
-  SSH_TARGET="ubuntu@${SERVER_IP}"
+    -o "ProxyCommand=ssh ${NLB_OPTS[*]} -W %h:%p ${SSH_USER}@${NLB_IP}")
+  SSH_TARGET="${SSH_USER}@${SERVER_IP}"
 fi
 
 echo "Fetching kubeconfig..."
