@@ -519,7 +519,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Controlled by `enable_oci_logging` variable (default: `true`).
 - Creates: `oci_logging_log_group`, `oci_logging_log`, `oci_logging_unified_agent_configuration`.
 - The dynamic group from `iam.tf` is referenced for the agent config.
-- The `Custom Logs Monitoring` plugin is enabled in `locals.tf` `agent_plugins`.
+- The `Custom Logs Monitoring` plugin is enabled in `locals.tf` `agent_plugins` only with `enable_oci_logging`. It runs on A1 (checked on Ubuntu A1 nodes, 2026-11): Oracle's docs note saying otherwise is outdated. Cloud Guard Workload Protection and Run Command are disabled; enable only plugins the module uses (each is a 20-25 MiB process).
 - Ships `/var/log/k3s-cloud-init.log` to OCI Logging (10 GB/month free).
 - `oci_log_group_id` output provides the OCID for use with `oci logging` CLI.
 

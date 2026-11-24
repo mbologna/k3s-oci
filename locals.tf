@@ -35,11 +35,17 @@ locals {
     (var.unique_tag_key) = var.unique_tag_value
   }
 
-  # Shared OCI agent plugin configuration applied to all compute instances
+  # Shared OCI agent plugin configuration applied to all compute instances. Only
+  # what the module uses runs: each plugin is a process of 20-25 MiB on 6 GB
+  # nodes whose control plane is short of memory. Custom Logs ships the logs of
+  # enable_oci_logging; Cloud Guard Workload Protection and Run Command, which
+  # Oracle turns on by default, serve nothing the module does.
   agent_plugins = [
     { name = "Vulnerability Scanning", desired_state = "DISABLED" },
     { name = "Compute Instance Monitoring", desired_state = "ENABLED" },
-    { name = "Custom Logs Monitoring", desired_state = "ENABLED" },
+    { name = "Custom Logs Monitoring", desired_state = var.enable_oci_logging ? "ENABLED" : "DISABLED" },
+    { name = "Cloud Guard Workload Protection", desired_state = "DISABLED" },
+    { name = "Compute Instance Run Command", desired_state = "DISABLED" },
     { name = "Bastion", desired_state = var.enable_bastion ? "ENABLED" : "DISABLED" },
   ]
 
