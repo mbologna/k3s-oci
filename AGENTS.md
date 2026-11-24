@@ -501,9 +501,13 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
   `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
   removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
-- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the eight
-  vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `k3s_token`, `k3s_url`,
+- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the nine
+  vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `flannel_backend`, `k3s_token`, `k3s_url`,
   `kube_api_port`, `vault_secret_id_k3s_token`, `ssh_host_key_private_b64`, `ssh_host_key_public`). The server templatefile call uses `merge(local.k3s_common_cloud_init_vars, {...server-only...})`; the agent call passes the local directly.
+- **Flannel backend**: `flannel_backend` (`vxlan` default, or `wireguard-native`) goes in the server's
+  drop-in (agents take it from the server). With WireGuard there is no VXLAN forwarding table, so
+  `setup_flannel_fdb_fix()` is skipped on both node types. Tested with k3s v1.36 in containers
+  (cross-node pod traffic and DNS over `flannel-wg`); not yet on OCI.
 - **Flannel interface resolution**: `resolve_flannel_params()` in `common.sh` sets `LOCAL_IP` and
   `FLANNEL_IFACE` (exported) when `K3S_SUBNET` is not `default_route_table`. Called by both
   `install_k3s_server()` and `install_k3s_agent()`; server adds `--advertise-address` too.

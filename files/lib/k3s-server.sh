@@ -411,6 +411,10 @@ install_k3s_server() {
       printf 'node-ip: "%s"\nadvertise-address: "%s"\nflannel-iface: "%s"\n' \
         "${LOCAL_IP}" "${LOCAL_IP}" "${FLANNEL_IFACE}"
     fi
+    # Cluster-wide: agents take the backend from the server.
+    if [[ "${FLANNEL_BACKEND:-vxlan}" != "vxlan" ]]; then
+      printf 'flannel-backend: "%s"\n' "${FLANNEL_BACKEND}"
+    fi
     cat <<'K3SEOF'
 disable+:
   - traefik
@@ -594,7 +598,10 @@ setup_k3s_memory_protection k3s
 resolve_k3s_token
 
 install_k3s_server
-setup_flannel_fdb_fix
+# The FDB self-heal only applies to VXLAN; WireGuard has no forwarding table.
+if [[ "${FLANNEL_BACKEND:-vxlan}" == "vxlan" ]]; then
+  setup_flannel_fdb_fix
+fi
 
 # Install etcd snapshot upload cron on ALL server nodes (not just the first).
 # The cron runs every 6h: 'k3s etcd-snapshot save' + upload to OCI Object Storage.

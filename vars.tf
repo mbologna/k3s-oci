@@ -279,6 +279,17 @@ variable "k3s_subnet" {
   default     = "default_route_table"
 }
 
+variable "flannel_backend" {
+  type        = string
+  description = "Pod network backend. \"vxlan\" (k3s's default) or \"wireguard-native\": WireGuard between nodes encrypts pod traffic inside the VCN and has no VXLAN forwarding table, so the flannel-fdb-fix timer is not installed. Read at install time: switching an existing cluster needs a rebuild. The VCN's security list already allows the UDP it needs (51820)."
+  default     = "vxlan"
+
+  validation {
+    condition     = contains(["vxlan", "wireguard-native"], var.flannel_backend)
+    error_message = "flannel_backend must be \"vxlan\" or \"wireguard-native\"."
+  }
+}
+
 variable "k3s_extra_server_args" {
   type        = list(string)
   description = "Extra arguments appended to the k3s server install command; they take precedence over the module's k3s config drop-in (/etc/rancher/k3s/config.yaml.d/10-k3s-oci.yaml). Useful for etcd tuning on resource-constrained nodes (e.g. ['--etcd-arg=election-timeout=5000', '--etcd-arg=heartbeat-interval=1000'])."

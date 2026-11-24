@@ -80,8 +80,9 @@ locals {
   # Shared cloud-init vars passed to both server and agent template files.
   # Server-specific vars are merged on top in data.tf.
   k3s_common_cloud_init_vars = {
-    k3s_version = local.k3s_version
-    k3s_subnet  = var.k3s_subnet
+    k3s_version     = local.k3s_version
+    k3s_subnet      = var.k3s_subnet
+    flannel_backend = var.flannel_backend
     # Blanked when vault is enabled so the cluster join token is NOT embedded in
     # plaintext instance user-data (readable via IMDS and the GetInstance API by any
     # principal with read instance-family in the compartment). Cloud-init fetches it
