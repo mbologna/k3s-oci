@@ -198,6 +198,53 @@ locals {
 # with all comments exceeds this. Comments are preserved in source files (git).
 locals {
   _sc = "(?m)^[ \\t]*#[^!][^\\n]*"
+
+  # OS bootstrap (bootstrap() and configure_unattended_upgrades()), by var.os_family.
+  os_bootstrap_file = {
+    ubuntu   = "bootstrap-ubuntu.sh"
+    opensuse = "bootstrap-opensuse.sh"
+  }[var.os_family]
+
+  # Image-based OSes install packages into a new snapshot and reboot into it before
+  # anything else runs: files/lib/two-phase.sh persists the script and runs it again
+  # after the reboot, two-phase-done.sh retires it. No OS family needs it yet.
+  two_phase = false
+
+  # Node scripts, in order: rendered vars header, OS bootstrap, shared helpers, entry
+  # point. The empty lists leave the scripts of one-phase OSes exactly as they were.
+  _server_script_files = concat(
+    [local.os_bootstrap_file],
+    local.two_phase ? ["two-phase.sh"] : [],
+    [
+      "common.sh",
+      "k3s-secrets.sh",
+      "k3s-cert-manager.sh",
+      "k3s-external-secrets.sh",
+      "k3s-argocd.sh",
+      "k3s-bootstrap.sh",
+      "k3s-server.sh",
+    ],
+    local.two_phase ? ["two-phase-done.sh"] : [],
+  )
+  _worker_script_files = concat(
+    [local.os_bootstrap_file],
+    local.two_phase ? ["two-phase.sh"] : [],
+    ["common.sh", "k3s-agent.sh"],
+    local.two_phase ? ["two-phase-done.sh"] : [],
+  )
+
+  k3s_server_script = join("\n", concat(
+    [templatefile("${path.module}/files/server-vars.sh.tpl", local.k3s_server_cloud_init_vars)],
+    [for f in local._server_script_files : replace(file("${path.module}/files/lib/${f}"), "/${local._sc}/", "")],
+  ))
+  k3s_worker_script = join("\n", concat(
+    [templatefile("${path.module}/files/agent-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
+      trace_enabled  = var.trace_enabled
+      os_user        = local.os_user
+      ssh_public_key = local.ssh_public_key
+    }))],
+    [for f in local._worker_script_files : replace(file("${path.module}/files/lib/${f}"), "/${local._sc}/", "")],
+  ))
 }
 
 data "cloudinit_config" "k3s_server" {
@@ -206,17 +253,7 @@ data "cloudinit_config" "k3s_server" {
 
   part {
     content_type = "text/x-shellscript"
-    content = join("\n", [
-      templatefile("${path.module}/files/server-vars.sh.tpl", local.k3s_server_cloud_init_vars),
-      replace(var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/common.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-secrets.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-cert-manager.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-external-secrets.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-argocd.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-bootstrap.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-server.sh"), "/${local._sc}/", ""),
-    ])
+    content      = local.k3s_server_script
   }
 }
 
@@ -226,16 +263,7 @@ data "cloudinit_config" "k3s_worker" {
 
   part {
     content_type = "text/x-shellscript"
-    content = join("\n", [
-      templatefile("${path.module}/files/agent-vars.sh.tpl", merge(local.k3s_common_cloud_init_vars, {
-        trace_enabled  = var.trace_enabled
-        os_user        = local.os_user
-        ssh_public_key = local.ssh_public_key
-      })),
-      replace(var.os_family == "opensuse" ? file("${path.module}/files/lib/bootstrap-opensuse.sh") : file("${path.module}/files/lib/bootstrap-ubuntu.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/common.sh"), "/${local._sc}/", ""),
-      replace(file("${path.module}/files/lib/k3s-agent.sh"), "/${local._sc}/", ""),
-    ])
+    content      = local.k3s_worker_script
   }
 }
 
