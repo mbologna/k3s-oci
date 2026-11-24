@@ -201,13 +201,19 @@ EOF
 # Always installed on server nodes (required for first-server election via
 # instance_principal auth). Installed on agent nodes only when Vault is enabled.
 
+# Pinned (installer script and CLI release), so every node runs the release
+# Renovate last bumped instead of whatever oci-cli's master and PyPI serve that
+# day.
+# renovate: datasource=github-releases depName=oracle/oci-cli
+OCI_CLI_VERSION="v3.96.3"
+
 install_oci_cli() {
   if /root/bin/oci --version &>/dev/null 2>&1; then
     echo "OCI CLI already installed, skipping."
     return 0
   fi
-  bash -c "$(curl -sfL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
-    -- --accept-all-defaults
+  bash -c "$(curl -sfL "https://raw.githubusercontent.com/oracle/oci-cli/${OCI_CLI_VERSION}/scripts/install/install.sh")" \
+    -- --accept-all-defaults --oci-cli-version "${OCI_CLI_VERSION#v}"
   # Suppress announcements so they never pollute stdout of subsequent oci commands
   # (announcements on stdout break pipes to jq / base64). Use python3 to set the
   # key idempotently in [OCI_CLI_SETTINGS] rather than blindly appending.
@@ -227,12 +233,33 @@ RCEOF
 
 # -- Helm ----------------------------------------------------------------------
 
+# A pinned release tarball, checked against its published SHA-256, instead of
+# piping helm's get-helm-3 script from main. Helm 3: Helm 4 renames flags the
+# bootstrap uses (--atomic); renovate.json holds it below 4.
+# renovate: datasource=github-releases depName=helm/helm
+HELM_VERSION="v3.22.1"
+
 install_helm() {
   command -v helm &>/dev/null && return 0
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash || {
+  local arch tarball tmp
+  case "$(uname -m)" in
+    aarch64 | arm64) arch=arm64 ;;
+    x86_64) arch=amd64 ;;
+    *) echo "ERROR: Helm install: unsupported architecture $(uname -m)."; return 1 ;;
+  esac
+  tarball="helm-${HELM_VERSION}-linux-${arch}.tar.gz"
+  tmp=$(mktemp -d)
+  if curl -fsSL -o "${tmp}/${tarball}" "https://get.helm.sh/${tarball}" \
+    && curl -fsSL -o "${tmp}/${tarball}.sha256sum" "https://get.helm.sh/${tarball}.sha256sum" \
+    && (cd "${tmp}" && sha256sum -c "${tarball}.sha256sum") \
+    && tar -xzf "${tmp}/${tarball}" -C "${tmp}" \
+    && install -m 0755 "${tmp}/linux-${arch}/helm" /usr/local/bin/helm; then
+    rm -rf "${tmp}"
+  else
+    rm -rf "${tmp}"
     echo "ERROR: Helm install failed."
     return 1
-  }
+  fi
 }
 
 # -- Network helpers -----------------------------------------------------------
