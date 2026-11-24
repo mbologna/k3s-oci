@@ -107,11 +107,11 @@ locals {
   # Optional integrations (Cloudflare, MySQL, DockerHub)
   _server_optional_vars = {
     # Cloudflare: plaintext only when vault is disabled; vault secret ID used otherwise.
-    cloudflare_api_token       = var.enable_vault ? "" : coalesce(var.cloudflare_api_token, "")
+    cloudflare_api_token       = !var.enable_vault && var.cloudflare_api_token != null ? var.cloudflare_api_token : ""
     cloudflare_zone_id         = var.cloudflare_zone_id != null ? var.cloudflare_zone_id : ""
     external_dns_domain_filter = var.external_dns_domain_filter != null ? var.external_dns_domain_filter : ""
     vault_secret_id_cloudflare = var.enable_vault && var.cloudflare_api_token != null ? oci_vault_secret.cloudflare_api_token[0].id : ""
-    oci_region                 = coalesce(var.region, "")
+    oci_region                 = var.region != null ? var.region : ""
     mysql_endpoint             = var.enable_mysql ? "${oci_mysql_mysql_db_system.k3s[0].endpoints[0].hostname}:${oci_mysql_mysql_db_system.k3s[0].endpoints[0].port}" : ""
     mysql_admin_username       = var.enable_mysql ? var.mysql_admin_username : ""
     mysql_admin_password       = var.enable_mysql ? random_password.mysql_admin_password[0].result : ""
@@ -161,7 +161,7 @@ locals {
     k3s_secrets_encryption          = var.k3s_secrets_encryption # gitleaks:allow (a bool flag, not a secret)
     k3s_secrets_encryption_provider = var.k3s_secrets_encryption_provider
     # Custom cluster CA (user-created Vault secret), seeded before --cluster-init
-    k3s_ca_vault_secret_id = coalesce(var.k3s_ca_vault_secret_id, "")
+    k3s_ca_vault_secret_id = var.k3s_ca_vault_secret_id != null ? var.k3s_ca_vault_secret_id : "" # gitleaks:allow (a secret's OCID, not a secret)
   }
 
   # Debug
