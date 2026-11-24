@@ -15,7 +15,9 @@
 #        kubectl create namespace backup-monitor
 #        kubectl -n backup-monitor create secret generic backup-monitor-apprise \
 #          --from-literal=url='http://apprise.apprise.svc.cluster.local:8000/notify/<key>'
-#      Several space-separated URLs are tried in order until one delivers.
+#      Several space-separated URLs are tried in order, each retried once,
+#      until one delivers. They must be Apprise API notify URLs; a plain
+#      Apprise service URL (slack://, tgram://...) is not accepted.
 #
 #   2. In gitops/backup-monitor/backup-monitor.yaml, replace my-k3s with your
 #      cluster_name (CLUSTER_NAME, ETCD_BUCKET, ETCD_PREFIX). If the Apprise
