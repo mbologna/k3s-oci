@@ -160,3 +160,10 @@ check "etcd_snapshots_requires_object_storage" {
     error_message = "enable_etcd_snapshots = true requires enable_object_storage_state = true (the state bucket is used for etcd snapshot uploads via OCI CLI instance_principal)."
   }
 }
+
+check "external_secrets_user_requires_external_secrets" {
+  assert {
+    condition     = !var.create_external_secrets_user || (var.enable_external_secrets && var.enable_vault && var.region != null)
+    error_message = "create_external_secrets_user = true requires enable_external_secrets = true, enable_vault = true and region set (the service user reads the module vault, and its ClusterSecretStore needs the region)."
+  }
+}

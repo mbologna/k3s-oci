@@ -36,7 +36,7 @@ do not introduce resources that incur cost.
 | E2.1.Micro | 2 | 0 (bastion uses OCI Bastion Service, not a VM) |
 | NAT Gateway | 1 per VCN | 1 |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | 2 versioned buckets — Terraform state (`enable_object_storage_state`) + Longhorn PVC backups (`enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | 2–9 secrets (`enable_vault = true`) — see the OCI Vault section for the full list |
+| Vault (shared) | Software keys + 150 secrets | 2–10 secrets (`enable_vault = true`) — see the OCI Vault section for the full list |
 | Volume backups | 5 total | 2 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
 | Budgets | Free | 1 tenancy-wide monthly budget + 3 alert rules (`budget_alert_email`, opt-in) |
@@ -56,14 +56,14 @@ moved.tf         — moved{} blocks for in-flight resource renames; cleared afte
 network.tf       — VCN, subnets, IGW, NAT GW, route tables
 security.tf      — Security Lists
 nsg.tf           — Network Security Groups
-iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, read secret-bundles of the boot secrets — or secret-family for an instance_principal ESO store — state-bucket objects); Longhorn backup service user/group/policy (create_longhorn_backup_user)
+iam.tf           — Dynamic Group (compartment-scoped — tag matching breaks instance_principal) and Policy (log-content, read secret-bundles of the boot secrets — or secret-family for an instance_principal ESO store — state-bucket objects); Longhorn backup service user/group/policy (create_longhorn_backup_user); External Secrets service user/group/policy/API key (create_external_secrets_user)
 logging.tf       — OCI Log Group, Log, Unified Agent Configuration (enabled via enable_oci_logging)
 compute.tf       — Instance pool (servers), pool (workers), standalone extra worker
 lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
 budget.tf        — Tenancy-wide monthly OCI budget with 50%/100% actual and 100% forecast email alerts (budget_alert_email, opt-in)
-vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key) + 2–9 cluster secrets (full list in the OCI Vault section)
+vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key) + 2–10 cluster secrets (full list in the OCI Vault section)
 objectstorage.tf — Versioned buckets: <cluster>-terraform-state (etcd snapshots + leader lock, NOT tofu state; enable_object_storage_state) and <cluster>-longhorn-backup (enable_longhorn_backup), each with a noncurrent-version lifecycle rule
 bastion.tf       — OCI Bastion Service (managed, no VM; enable_bastion)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
@@ -356,8 +356,8 @@ Set `KEEP_BUCKETS=true` to leave the `${CLUSTER_NAME}-terraform-state` and `${CL
 buckets (etcd snapshots, Longhorn backups) in place. You need them to restore a rebuilt cluster. Run
 `tofu state rm` on them before `tofu destroy`, and re-import them afterwards: bucket ID
 `n/<namespace>/b/<name>`, lifecycle policy ID `n/<namespace>/b/<name>/l`.
-The clean script also deletes the `${CLUSTER_NAME}-longhorn-backup` IAM user (with its keys) and group
-(`create_longhorn_backup_user`); set `TENANCY_OCID` when `COMPARTMENT_OCID` is not the tenancy root.
+The clean script also deletes the `${CLUSTER_NAME}-longhorn-backup` and `${CLUSTER_NAME}-external-secrets` IAM users (with their keys) and groups
+(`create_longhorn_backup_user`, `create_external_secrets_user`); set `TENANCY_OCID` when `COMPARTMENT_OCID` is not the tenancy root.
 
 Set `KEEP_VAULT=true` to leave the `${CLUSTER_NAME}-vault` vault and its secrets untouched (recommended:
 the vault has `prevent_destroy`, and a deleted vault blocks the quota for 7+ days). Re-import it into
@@ -406,7 +406,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Do not add `pkill containerd-shim` (or any shim-killing `ExecStopPost`) to the k3s unit.**
   k3s uses `KillMode=process` so pods survive a k3s restart; killing the shims turns every
   k3s restart (including a leader-election-lost exit) into a restart of every pod on the node.
-- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–9 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
+- **Vault uses `DEFAULT` type and `SOFTWARE` protection only** — `VIRTUAL_PRIVATE` vault type and `HSM` protection mode are NOT Always Free. `vault_type = "DEFAULT"` (shared vault) + `protection_mode = "SOFTWARE"` are entirely free. The 150-secret limit covers the 2–10 cluster secrets many times over. Never change the vault type or protection mode without verifying cost.
 - **Vault and key have `prevent_destroy = true`** — OCI DEFAULT vaults have a low per-tenancy limit and take a minimum of 7 days to fully delete (the `PENDING_DELETION` state counts against quota). `prevent_destroy` keeps the vault alive across `tofu destroy`/`tofu apply` cycles. If you genuinely need to delete the vault, remove the `lifecycle` block or run `tofu state rm` first.
 - **Do not add an nginx stream proxy** back. The OCI NLB routes directly to Traefik's NodePorts
   (`is_preserve_source = true` preserves real client IPs transparently). An extra nginx hop
@@ -534,7 +534,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Controlled by `enable_vault` variable (default: `true`).
 - Uses `vault_type = "DEFAULT"` (shared vault, free). `VIRTUAL_PRIVATE` vaults cost money — never use that type.
 - Key uses `protection_mode = "SOFTWARE"` (free). HSM-protected keys are NOT free.
-- Stores 2–9 secrets, all named `${cluster_name}-<suffix>` (same table as the README's "OCI Vault secrets"):
+- Stores 2–10 secrets, all named `${cluster_name}-<suffix>` (same table as the README's "OCI Vault secrets"):
   | Suffix | Created when |
   |---|---|
   | `k3s-token`, `longhorn-ui-password` | always (`oci_vault_secret.cluster` for_each) |
@@ -543,6 +543,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
   | `cloudflare-api-token` | `cloudflare_api_token != null` |
   | `tailscale-oauth-client-id`, `tailscale-client-secret` | `enable_tailscale = true` |
   | `longhorn-backup-secret-key` | Terraform owns the key (`create_longhorn_backup_user` or `user_ocid`) |
+  | `external-secrets-api-key` | `create_external_secrets_user = true` (the service user's API private key, PEM) |
 - Cloud-init fetches secrets at boot via `oci secrets secret-bundle get-secret-bundle` with `OCI_CLI_AUTH=instance_principal`.
 - When `enable_vault = false`, the plaintext values are exported by `server-vars.sh.tpl` / `agent-vars.sh.tpl` as `K3S_TOKEN_PLAIN`, `LONGHORN_UI_PASSWORD_PLAIN`, `DOCKERHUB_PASSWORD`; the lib scripts use them as fallback.
 - With `enable_vault = true` the IAM policy grants `read secret-bundles` only on the secrets cloud-init fetches (`local.boot_vault_secret_ids` in `iam.tf`: the module's boot secrets plus `k3s_ca_vault_secret_id`, matched by `target.secret.id`). A new secret that cloud-init fetches **must be added to that list**, or nodes get `NotAuthorizedOrNotFound` at boot. The broad `read secret-family` is granted only when `enable_external_secrets && external_secrets_instance_principal`.
@@ -617,6 +618,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 - Installs External Secrets Operator and creates a `ClusterSecretStore` backed by OCI Vault using
   instance_principal auth — no credentials to rotate.
 - The store authenticates as the nodes, so with `external_secrets_instance_principal = true` (default) the policy grants `read secret-family` on the whole compartment. Callers that replace the store with a user-principal (API key) one set it to `false`, and nodes fall back to reading only their boot secrets.
+- `create_external_secrets_user = true` does that replacement in the module: a `${cluster_name}-external-secrets` user (API keys only) in a group whose policy allows `read secret-family ... where target.vault.id = '<module vault>'`, an RSA API key (`tls_private_key` + `oci_identity_api_key`), and its PEM in Vault as `${cluster_name}-external-secrets-api-key` (in `local.boot_vault_secret_ids`). `create_eso_user_store()` in `k3s-external-secrets.sh` writes it into `Secret/oci-api-key` (keys `privateKey`, `fingerprint`) in `external-secrets` and points the `oci-vault` store's `auth` at the user. The nodes then get only their boot secrets, whatever `external_secrets_instance_principal` says. The user can read every secret of the module's vault (the module's own too) but nothing else.
 - See `gitops/external-secrets/` for the ClusterSecretStore template and example ExternalSecret CRs.
 - Users create `ExternalSecret` resources referencing Vault secret OCIDs; the operator syncs them
   into Kubernetes Secrets automatically and rotates on the configured refresh interval.
@@ -707,6 +709,7 @@ before any OCI API call is made:
 - `enable_tailscale = true` requires `enable_vault = true` and both `tailscale_oauth_client_id` and `tailscale_oauth_client_secret` set
 - `k3s_ca_vault_secret_id` requires `enable_vault = true`
 - `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
+- `create_external_secrets_user = true` requires `enable_external_secrets = true`, `enable_vault = true` and `region != null`
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
 - `os_family = "opensuse"`: the resolved or pinned image should be the `opensuse_leap_version` release (warns after a Renovate bump until the new release is imported)
 

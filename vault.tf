@@ -1,6 +1,6 @@
 # ── OCI Vault (software-protected keys — Always Free) ─────────────────────────
 # Always Free: all software-protected master encryption key versions + 150 secrets.
-# Stores every cluster secret (2 always + up to 7 optional, see the README's
+# Stores every cluster secret (2 always + up to 8 optional, see the README's
 # "OCI Vault secrets" table) as Vault secrets fetched by cloud-init via OCI CLI
 # instance_principal auth at boot. This removes plaintext secrets from user-data.
 
@@ -216,6 +216,28 @@ resource "oci_vault_secret" "longhorn_backup_secret_key" {
   secret_content {
     content_type = "BASE64"
     content      = base64encode(oci_identity_customer_secret_key.longhorn_backup[0].key)
+  }
+
+  freeform_tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [key_id]
+  }
+}
+
+# External Secrets service user's API private key: cloud-init fetches it at boot
+# and writes the oci-api-key Secret the ClusterSecretStore reads.
+resource "oci_vault_secret" "external_secrets_api_key" {
+  count          = local.create_external_secrets_user ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.k3s[0].id
+  key_id         = oci_kms_key.k3s[0].id
+  secret_name    = "${var.cluster_name}-external-secrets-api-key"
+  description    = "API private key (PEM) of the ${var.cluster_name}-external-secrets service user"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(tls_private_key.external_secrets[0].private_key_pem)
   }
 
   freeform_tags = local.common_tags

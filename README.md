@@ -23,7 +23,7 @@ A Terraform/OpenTofu module that builds a [k3s](https://k3s.io) cluster on the [
 - **Rebuild without data loss** (`just teardown-keep-data`): destroys the cluster but keeps the Vault and both buckets, then re-imports them so the next apply reuses them
 - **MySQL HeatWave** (`enable_mysql = false`): opt-in Always Free MySQL DB in the private subnet; credentials pre-created as a Kubernetes Secret
 - **External DNS** (`enable_external_dns = false`): automatic Cloudflare DNS records for Ingress hosts (see [Deploying a web application](#deploying-a-web-application))
-- **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate. This lets the nodes read every secret in the compartment; swap in an API-key store and set `external_secrets_instance_principal = false` to scope them to their boot secrets
+- **External Secrets** (`enable_external_secrets = false`): sync OCI Vault secrets into Kubernetes Secrets via instance_principal; no credentials to rotate. This lets the nodes read every secret in the compartment; `create_external_secrets_user = true` makes the store use a vault-scoped service user instead, so the nodes keep only their boot secrets
 
 ## Architecture
 
@@ -626,7 +626,7 @@ older than 13 hours. Setup steps are in its `application-template.yaml`.
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: etcd snapshots + leader lock, and Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |
-| Vault (shared) | Software keys + 150 secrets | **2-9 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
+| Vault (shared) | Software keys + 150 secrets | **2-10 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
 | Budgets | Free | **1 budget** on the tenancy, emails at 50% and 100% spent and 100% forecast (`budget_alert_email`, opt-in) |
@@ -646,7 +646,8 @@ The budget lives in the root compartment, so the user running `tofu apply` needs
 With `enable_vault = true` every cluster secret below lives in the Vault and nodes fetch it
 at boot (instance_principal); with `enable_vault = false` it is passed in user-data instead.
 The nodes' IAM policy covers only these boot secrets (plus `k3s_ca_vault_secret_id`), unless an
-instance_principal External Secrets store needs the whole compartment (see `external_secrets_instance_principal`).
+instance_principal External Secrets store needs the whole compartment (see `external_secrets_instance_principal`;
+`create_external_secrets_user = true` avoids that with a service user that reads only this vault).
 
 | Secret name | Created when |
 |---|---|
@@ -659,6 +660,7 @@ instance_principal External Secrets store needs the whole compartment (see `exte
 | `<cluster>-tailscale-oauth-client-id` | `enable_tailscale = true` |
 | `<cluster>-tailscale-client-secret` | `enable_tailscale = true` |
 | `<cluster>-longhorn-backup-secret-key` | `create_longhorn_backup_user = true` or `user_ocid` set |
+| `<cluster>-external-secrets-api-key` | `create_external_secrets_user = true` |
 
 `k3s_ca_vault_secret_id` points at a secret you create yourself (not module-managed); see
 [Stable cluster CA across rebuilds](#stable-cluster-ca-across-rebuilds).

@@ -641,7 +641,7 @@ variable "mysql_admin_username" {
 
 variable "enable_vault" {
   type        = bool
-  description = "Store cluster secrets in OCI Vault (Always Free: software keys + 150 secrets): k3s_token and longhorn_ui_password always, plus dockerhub/gitops/cloudflare/tailscale/longhorn-backup credentials when those are set (2-9 secrets, see README). Nodes fetch them via OCI CLI instance_principal at boot, so plaintext values are removed from cloud-init user-data."
+  description = "Store cluster secrets in OCI Vault (Always Free: software keys + 150 secrets): k3s_token and longhorn_ui_password always, plus dockerhub/gitops/cloudflare/tailscale/longhorn-backup/external-secrets credentials when those are set (2-10 secrets, see README). Nodes fetch them via OCI CLI instance_principal at boot, so plaintext values are removed from cloud-init user-data."
   default     = true
 }
 
@@ -684,6 +684,20 @@ variable "external_secrets_instance_principal" {
   type        = bool
   description = "Whether the External Secrets ClusterSecretStore authenticates as the nodes (instance_principal, the bootstrap default). While true (and enable_external_secrets = true) the dynamic group may read every secret in the compartment, because the store syncs arbitrary secrets. Set false once you replace the store with a user-principal (API key) one: the nodes may then read only the secrets cloud-init fetches at boot."
   default     = true
+}
+
+variable "create_external_secrets_user" {
+  type        = bool
+  description = <<-EOT
+    Create a dedicated IAM service user, group and policy (all named <cluster_name>-external-secrets)
+    that can only read the secrets of the module's vault, plus an API key for it. Cloud-init then
+    creates the oci-vault ClusterSecretStore with that user's key (user principal) instead of the
+    nodes' instance principal, so the nodes keep reading only their boot secrets whatever
+    external_secrets_instance_principal says. The private key is stored in Vault as
+    <cluster_name>-external-secrets-api-key, never in user-data. Requires enable_external_secrets = true,
+    enable_vault = true, region set, and permission to manage IAM users/groups in the tenancy.
+  EOT
+  default     = false
 }
 
 # region is defined in the # ── OCI Identity ── section above.

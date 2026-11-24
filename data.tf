@@ -89,6 +89,12 @@ locals {
     longhorn_ui_password              = var.enable_vault ? "" : random_password.longhorn_ui_password.result
     vault_secret_id_longhorn_password = var.enable_vault ? try(oci_vault_secret.cluster["longhorn_ui_password"].id, "") : ""
     vault_ocid                        = var.enable_vault ? oci_kms_vault.k3s[0].id : ""
+    # External Secrets service user (create_external_secrets_user): IDs only; the
+    # private key is fetched from Vault at boot.
+    eso_user_ocid               = local.create_external_secrets_user ? oci_identity_user.external_secrets[0].id : ""
+    eso_api_key_fingerprint     = local.create_external_secrets_user ? oci_identity_api_key.external_secrets[0].fingerprint : ""
+    eso_tenancy_ocid            = local.create_external_secrets_user ? var.tenancy_ocid : ""
+    vault_secret_id_eso_api_key = local.create_external_secrets_user ? oci_vault_secret.external_secrets_api_key[0].id : ""
   }
 
   # Feature flags

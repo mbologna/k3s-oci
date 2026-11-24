@@ -107,6 +107,10 @@ locals {
   create_longhorn_backup_user = var.enable_longhorn_backup && var.create_longhorn_backup_user
   longhorn_backup_automated   = var.enable_longhorn_backup && (var.create_longhorn_backup_user || var.user_ocid != null)
 
+  # External Secrets as a vault-scoped service user (user principal). Implies the nodes'
+  # narrow grant: external_secrets_instance_principal is ignored when this is on.
+  create_external_secrets_user = var.enable_external_secrets && var.enable_vault && var.create_external_secrets_user
+
   # ── kubeconfig hint strings (used by output.tf) ───────────────────────────
 
   _kubeconfig_hint_bastion = templatefile("${path.module}/files/kubeconfig-hint-bastion.tpl", {
