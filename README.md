@@ -531,7 +531,7 @@ To set it up:
    | `PLAN_BACKEND_OVERRIDE` | your `example/backend_override.tf`; the job overrides its `profile` with its own |
    | `PLAN_TFVARS` | your `example/terraform.tfvars` followed by any `*.auto.tfvars`, the inputs the deployment was applied with; set it again after changing them (`cat terraform.tfvars *.auto.tfvars \| gh secret set PLAN_TFVARS`). If your tfvars point at the SSH key with `public_key_path` (the default, `~/.ssh/id_ed25519.pub`), append `public_key = "<that key>"`: the runner has no such file, and the key must be the one the deployment was built with, or the plan shows the instances changing |
 
-4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request with a non-empty plan can't merge.
+4. Add `Plan / tofu plan (example)` to the `main` ruleset's required checks, so a pull request whose plan changes resources can't merge (a plan that only changes root outputs passes).
 
 In this repository the job is a required check, so Terraform provider updates automerge once their plan is empty. On a fork, set it up before relying on that: without its secrets it reports a notice and succeeds, so a provider update would automerge unplanned.
 
