@@ -34,13 +34,16 @@ spec:
                     matchExpressions:
                       - key: node-role.kubernetes.io/control-plane
                         operator: DoesNotExist
+          # Measured on a 40-app cluster: controller ~35 MiB, cainjector 40-70 MiB
+          # (it caches every Secret and CRD it injects into), webhook ~10 MiB.
+          # The old 64Mi limits left cainjector no headroom.
           # Controller — issues certificates, manages ACME challenges
           resources:
             requests:
               cpu: 10m
-              memory: 32Mi
-            limits:
               memory: 64Mi
+            limits:
+              memory: 128Mi
           # Webhook — validates and mutates cert-manager CRs; must be available for API calls
           webhook:
             affinity:
@@ -56,7 +59,19 @@ spec:
                 cpu: 10m
                 memory: 32Mi
               limits:
-                memory: 64Mi
+                memory: 128Mi
+            # The API server calls the webhook on every cert-manager write; the
+            # chart's 1 s probe timeouts restart it on a busy 1-OCPU node.
+            livenessProbe:
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 8
+            readinessProbe:
+              initialDelaySeconds: 5
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 6
           # cainjector — injects CA bundles into webhook configurations
           cainjector:
             affinity:
@@ -70,9 +85,9 @@ spec:
             resources:
               requests:
                 cpu: 10m
-                memory: 32Mi
-              limits:
                 memory: 64Mi
+              limits:
+                memory: 256Mi
           # startupapicheck — one-shot init job that verifies the API is ready
           startupapicheck:
             resources:
