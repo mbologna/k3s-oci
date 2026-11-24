@@ -105,6 +105,13 @@
         "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then plans warn and a rebuild boots the newest image already imported; afterwards the next full rebuild boots the new release without `os_image_id` (unless you pin it). Running nodes and pool replacements keep their image."
       ],
       "groupName": "opensuse"
+    },
+    {
+      "description": "Cloud-init installs Helm 3 (files/lib/common.sh): Helm 4 renames flags the bootstrap passes, such as --atomic. Move to 4 by hand, together with the helm calls.",
+      "matchDepNames": [
+        "helm/helm"
+      ],
+      "allowedVersions": "<4"
     }
   ],
   "customDatasources": {
@@ -195,6 +202,16 @@
       ],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\s*\\n\\s+image:\\s*[^:]+:(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Tool versions pinned in files/lib/common.sh (OCI CLI, Helm): an *_VERSION=\"...\" assignment with the renovate comment on the line above.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)files/lib/common\\.sh$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\s*\\n[A-Z_]+_VERSION=\"(?<currentValue>[^\"]+)\""
       ]
     }
   ]
