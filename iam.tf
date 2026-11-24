@@ -27,7 +27,8 @@ resource "oci_identity_dynamic_group" "k3s" {
 }
 
 locals {
-  vault_read_all_secrets = var.enable_external_secrets && var.external_secrets_instance_principal
+  # The store authenticates as the nodes only while it isn't a service user's.
+  vault_read_all_secrets = var.enable_external_secrets && var.external_secrets_instance_principal && !local.create_external_secrets_user
 
   # Every secret cloud-init passes to fetch_from_vault (files/lib/common.sh).
   boot_vault_secret_ids = compact(concat(
@@ -37,6 +38,7 @@ locals {
     oci_vault_secret.dockerhub_password[*].id,
     oci_vault_secret.cloudflare_api_token[*].id,
     oci_vault_secret.longhorn_backup_secret_key[*].id,
+    oci_vault_secret.external_secrets_api_key[*].id,
     [coalesce(var.k3s_ca_vault_secret_id, "")],
   ))
 }
@@ -130,4 +132,72 @@ resource "oci_identity_policy" "longhorn_backup" {
   ]
 
   freeform_tags = local.common_tags
+}
+
+# ── External Secrets service user (create_external_secrets_user) ───────────────
+# The oci-vault ClusterSecretStore authenticates with this user's API key instead
+# of the nodes' instance principal. The key lives in the cluster, so the user can
+# do nothing but read the module vault's secrets; the nodes keep their boot-only
+# grant. The user can read every secret in that vault, the module's own included,
+# which is no more than an instance-principal store could.
+resource "oci_identity_user" "external_secrets" {
+  count          = local.create_external_secrets_user ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.cluster_name}-external-secrets"
+  description    = "External Secrets for k3s cluster '${var.cluster_name}' (reads ${var.cluster_name}-vault secrets only)"
+
+  freeform_tags = local.common_tags
+}
+
+# API keys only: no console password, auth tokens, S3 or SMTP credentials.
+resource "oci_identity_user_capabilities_management" "external_secrets" {
+  count                        = local.create_external_secrets_user ? 1 : 0
+  user_id                      = oci_identity_user.external_secrets[0].id
+  can_use_api_keys             = true
+  can_use_auth_tokens          = false
+  can_use_console_password     = false
+  can_use_customer_secret_keys = false
+  can_use_smtp_credentials     = false
+}
+
+resource "oci_identity_group" "external_secrets" {
+  count          = local.create_external_secrets_user ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.cluster_name}-external-secrets"
+  description    = "Readers of ${var.cluster_name}-vault secrets (External Secrets)"
+
+  freeform_tags = local.common_tags
+}
+
+resource "oci_identity_user_group_membership" "external_secrets" {
+  count    = local.create_external_secrets_user ? 1 : 0
+  group_id = oci_identity_group.external_secrets[0].id
+  user_id  = oci_identity_user.external_secrets[0].id
+}
+
+resource "oci_identity_policy" "external_secrets" {
+  count          = local.create_external_secrets_user ? 1 : 0
+  compartment_id = var.compartment_ocid
+  name           = "${var.cluster_name}-external-secrets"
+  description    = "External Secrets service user: ${var.cluster_name}-vault secrets only"
+
+  statements = [
+    "allow group ${oci_identity_group.external_secrets[0].name} to read secret-family in compartment id ${var.compartment_ocid} where target.vault.id = '${oci_kms_vault.k3s[0].id}'",
+  ]
+
+  freeform_tags = local.common_tags
+}
+
+# OCI API keys are RSA. The private half is in the state (like every module
+# secret) and in Vault for cloud-init; the public half is uploaded to the user.
+resource "tls_private_key" "external_secrets" {
+  count     = local.create_external_secrets_user ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "oci_identity_api_key" "external_secrets" {
+  count     = local.create_external_secrets_user ? 1 : 0
+  user_id   = oci_identity_user.external_secrets[0].id
+  key_value = tls_private_key.external_secrets[0].public_key_pem
 }

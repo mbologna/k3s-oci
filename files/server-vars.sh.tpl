@@ -71,6 +71,11 @@ export EXTERNAL_DNS_DOMAIN_FILTER="${external_dns_domain_filter}"
 # Vault secret ID for the Cloudflare token (empty when enable_vault=false or token not set)
 export VAULT_SECRET_ID_CLOUDFLARE="${vault_secret_id_cloudflare}"
 export VAULT_OCID="${vault_ocid}"
+# External Secrets service user (create_external_secrets_user; empty otherwise)
+export ESO_USER_OCID="${eso_user_ocid}"
+export ESO_API_KEY_FINGERPRINT="${eso_api_key_fingerprint}"
+export ESO_TENANCY_OCID="${eso_tenancy_ocid}"
+export VAULT_SECRET_ID_ESO_API_KEY="${vault_secret_id_eso_api_key}"
 export OCI_REGION="${oci_region}"
 export DOCKERHUB_USERNAME="${dockerhub_username}"
 export DOCKERHUB_PASSWORD="${dockerhub_password}"
