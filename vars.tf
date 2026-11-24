@@ -482,6 +482,12 @@ variable "gitops_path" {
   default     = "gitops/apps"
 }
 
+variable "gitops_optional_path" {
+  type        = string
+  description = "Path within gitops_repo_url holding the opt-in components cloud-init wraps in an Argo CD Application (external-secrets.yaml when enable_external_secrets = true). Set to \"\" when your gitops repo manages these components itself: cloud-init still installs them, but creates no wrapper Application."
+  default     = "gitops/optional"
+}
+
 # ── Backup ────────────────────────────────────────────────────────────────────
 
 variable "enable_backup" {

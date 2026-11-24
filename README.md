@@ -433,6 +433,13 @@ This repo is designed to be forked. To add your own apps on top of the built-in 
 > Prefer the HTTPS token if your git host throttles SSH per source IP. ArgoCD is a heavy SSH client, every Application opens its own `git ls-remote`, and the resulting connection bursts can trip such limits and stall GitOps entirely, with apps stuck reporting `sync.revision` as `HEAD` rather than a SHA. Codeberg does this; GitHub and GitLab generally do not.
 >
 > For repos with a non-standard directory layout, set `gitops_path` (default: `gitops/apps`).
+>
+> With `enable_external_secrets = true`, cloud-init also creates an `optional-external-secrets` Application that reads
+> `external-secrets.yaml` from `gitops_optional_path` (default: `gitops/optional`) in the same repo. If your repo
+> manages ESO itself, set `gitops_optional_path = ""`: cloud-init still installs ESO but creates no wrapper.
+>
+> Repos that wrap Helm charts in kustomize (`helmCharts:` in a `kustomization.yaml`) work out of the box: Argo CD
+> starts with `kustomize.buildOptions: --enable-helm`.
 
 ## Automatic updates & reboots (unattended-upgrades + kured)
 

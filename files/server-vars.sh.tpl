@@ -26,6 +26,7 @@ export AVAILABILITY_DOMAIN="${availability_domain}"
 export CLUSTER_NAME="${cluster_name}"
 export GITOPS_REPO_URL="${gitops_repo_url}"
 export GITOPS_PATH="${gitops_path}"
+export GITOPS_OPTIONAL_PATH="${gitops_optional_path}"
 
 # -- Feature flags -------------------------------------------------------------
 export EXPOSE_KUBEAPI="${expose_kubeapi ? "true" : "false"}"

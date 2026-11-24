@@ -19,6 +19,10 @@ spec:
           params:
             server.insecure: true
           cm:
+            # Lets kustomization.yaml files use helmCharts (consumer repos wrap
+            # charts to patch what their values don't expose). Set at bootstrap
+            # too: without it the first render fails and Argo CD caches the error.
+            kustomize.buildOptions: --enable-helm
             # Traefik serves the module's Ingresses from NodePorts behind the OCI
             # NLB and publishes no load-balancer address in their status
             # (gitops/apps/traefik.yaml), so Argo CD's built-in check would leave
