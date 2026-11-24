@@ -75,6 +75,17 @@ SystemMaxFileSize=100M
 JEOF
   systemctl restart systemd-journald
 
+  # Ubuntu kernels from 7.0.0-41 combine apparmor_restrict_unprivileged_unconfined=1
+  # (the 26.04 default) with runc's change into a stacked AppArmor label, which
+  # containerd's profile doesn't accept as a signal peer: containers can no longer
+  # signal their own threads (.NET and bun apps crashed). Set before k3s starts any
+  # container. Remove once k3s ships a containerd with the fix
+  # (containerd/containerd#14485). A kernel without the key just logs an error.
+  cat > /etc/sysctl.d/91-k3s-apparmor.conf << 'AAEOF'
+kernel.apparmor_restrict_unprivileged_unconfined=0
+AAEOF
+  sysctl -p /etc/sysctl.d/91-k3s-apparmor.conf || true
+
   setup_shared_ssh_host_key
 }
 
@@ -210,6 +221,28 @@ OnCalendar=*-*-* 01:00:00 UTC
 RandomizedDelaySec=1800
 Persistent=true
 TIMEREOF
+
+  # apt-daily.service (apt-get update) is Type=oneshot, so its start timeout is
+  # infinite. An update hung in its HTTP fetch stayed "activating" for 26 days on a
+  # node: the timers never fired again, the lists lock stayed held and patching
+  # silently stopped, which looks like "no reboot needed" to kured. Cap it so the
+  # next run starts fresh. apt-daily-upgrade (dpkg) is not capped: killing dpkg
+  # mid-install is worse than waiting.
+  mkdir -p /etc/systemd/system/apt-daily.service.d
+  cat > /etc/systemd/system/apt-daily.service.d/timeout.conf << 'ADEOF'
+[Service]
+TimeoutStartSec=1h
+ADEOF
+
+  # unattended-upgrade-shutdown holds a logind delay lock until logind signals a
+  # shutdown, and the subscription is lost when logind restarts (needrestart
+  # restarts it after a systemd upgrade). A kured reboot then waited the full
+  # InhibitDelayMaxSec on the orphaned lock. PartOf restarts it with logind.
+  mkdir -p /etc/systemd/system/unattended-upgrades.service.d
+  cat > /etc/systemd/system/unattended-upgrades.service.d/partof-logind.conf << 'UUEOF'
+[Unit]
+PartOf=systemd-logind.service
+UUEOF
 
   systemctl daemon-reload
   systemctl restart apt-daily.timer apt-daily-upgrade.timer
