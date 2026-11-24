@@ -39,6 +39,7 @@ do not introduce resources that incur cost.
 | Vault (shared) | Software keys + 150 secrets | 2–9 secrets (`enable_vault = true`) — see the OCI Vault section for the full list |
 | Volume backups | 5 total | 2 — one per node, weekly, 1-week retention (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone, 50 GB | 1 DB system in private subnet (`enable_mysql = false`, opt-in) |
+| Budgets | Free | 1 tenancy-wide monthly budget + 3 alert rules (`budget_alert_email`, opt-in) |
 
 **Never add resources that exceed this budget.** If a change requires more OCPUs, storage,
 or additional paid resources, flag it explicitly instead of implementing it.
@@ -61,6 +62,7 @@ compute.tf       — Instance pool (servers), pool (workers), standalone extra w
 lb.tf            — Internal Flexible LB (kubeapi endpoint for agents; TCP health check)
 nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listeners use for_each over nlb_web_protocols local
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
+budget.tf        — Tenancy-wide monthly OCI budget with 50%/100% actual and 100% forecast email alerts (budget_alert_email, opt-in)
 vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key) + 2–9 cluster secrets (full list in the OCI Vault section)
 objectstorage.tf — Versioned buckets: <cluster>-terraform-state (etcd snapshots + leader lock, NOT tofu state; enable_object_storage_state) and <cluster>-longhorn-backup (enable_longhorn_backup), each with a noncurrent-version lifecycle rule
 bastion.tf       — OCI Bastion Service (managed, no VM; enable_bastion)
@@ -95,7 +97,7 @@ gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml 
 gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
-example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/)
+example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/; backend_override.tf.example for a module-external state bucket)
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
 scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)

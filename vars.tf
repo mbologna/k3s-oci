@@ -496,6 +496,30 @@ variable "enable_backup" {
   default     = true
 }
 
+# ── Budget alert ──────────────────────────────────────────────────────────────
+
+variable "budget_alert_email" {
+  type        = string
+  description = "Email address(es), comma-separated, that OCI Budgets notifies when the tenancy's monthly spend reaches 50% and 100% of budget_amount, and when the forecast reaches 100%. Null (default) creates no budget. Budgets are free; they alert, they do not cap spending. Needs 'manage usage-budgets in tenancy' for the user running tofu."
+  default     = null
+
+  validation {
+    condition     = var.budget_alert_email == null || alltrue([for e in split(",", var.budget_alert_email) : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", trimspace(e)))])
+    error_message = "budget_alert_email must be null or a comma-separated list of email addresses."
+  }
+}
+
+variable "budget_amount" {
+  type        = number
+  description = "Monthly budget in the tenancy's billing currency. An Always Free deployment costs nothing, so any spend means something outside the free allowance; the default 1 alerts on the first unit spent."
+  default     = 1
+
+  validation {
+    condition     = var.budget_amount > 0
+    error_message = "budget_amount must be greater than 0."
+  }
+}
+
 # ── Object Storage ────────────────────────────────────────────────────────────
 
 variable "enable_object_storage_state" {
