@@ -427,7 +427,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 
 ### Traefik (ingress)
 
-- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`--disable traefik` in `k3s-server.sh`) so the version is pinned and Renovate-managed. ServiceLB is disabled too (`--disable servicelb`): a `type: LoadBalancer` Service without a `loadBalancerClass` (e.g. `tailscale`) stays Pending; reach in-cluster services through Traefik's NodePorts.
+- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`disable: traefik` in the k3s config drop-in, `k3s-server.sh`) so the version is pinned and Renovate-managed. ServiceLB is disabled too (`servicelb`): a `type: LoadBalancer` Service without a `loadBalancerClass` (e.g. `tailscale`) stays Pending; reach in-cluster services through Traefik's NodePorts.
 - **DaemonSet** (one pod per node): every NLB backend serves ingress locally, no cross-node hop, no single-pod SPOF. Updates surge (maxUnavailable 0, maxSurge 1), so a node keeps serving while its new pod starts.
 - `priorityClassName: system-cluster-critical`, like kured and Longhorn's instance managers.
 - No PDB: Kubernetes PDBs don't apply to DaemonSet pods; kured drains with `--ignore-daemonsets`.
@@ -466,6 +466,13 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Do NOT place the template in `gitops/apps/` as-is — it contains `changeme@example.com`.
 
 ### Cloud-init structure (`files/`)
+- **k3s settings live in a config drop-in**, `/etc/rancher/k3s/config.yaml.d/10-k3s-oci.yaml`,
+  written by `write_k3s_config()` (`common.sh`) from `install_k3s_server()` / `install_k3s_agent()`.
+  The installer's command line keeps only the join mode (`--cluster-init` / `--server`) and
+  `k3s_extra_server_args`. List keys use `key+:` so they add to a consumer's
+  `/etc/rancher/k3s/config.yaml` (config management: TLS SANs, `resolv-conf`) instead of replacing
+  it; a consumer overrides a module value with a drop-in that sorts after `10-k3s-oci.yaml`. Add new
+  k3s settings to the drop-in, not as installer flags.
 - **Separation of concerns**: `server-vars.sh.tpl` and `agent-vars.sh.tpl` are the ONLY files
   with Terraform `${var}` interpolation. All `files/lib/*.sh` are pure bash.
 - **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), bootstrap-{ubuntu,opensuse}.sh, file(lib/common.sh), ...])` to
