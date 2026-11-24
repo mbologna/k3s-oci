@@ -8,7 +8,10 @@ name: Commits
 "on":
   pull_request:
 
+# contents: the shared commits workflow asks for contents: read, and GitHub
+# starts no run whose called job asks for more than the caller grants.
 permissions:
+  contents: read
   pull-requests: read
 
 jobs:
