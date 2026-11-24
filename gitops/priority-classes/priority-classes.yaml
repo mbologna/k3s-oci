@@ -17,6 +17,12 @@
 # elsewhere hangs on, above worker-pinned on purpose: cert-manager (without it
 # no certificate renews). kured, Longhorn and Traefik use the built-in
 # system-cluster-critical.
+#
+# alerting: the opt-in alert CronJobs (gitops/node-cordon-alert/,
+# gitops/backup-monitor/). Above worker-pinned, so a worker-pinned job can't
+# preempt them off the worker and silence the alert about its own trouble;
+# preemptionPolicy Never, so they only queue ahead while Pending and never
+# evict anything themselves.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
@@ -34,3 +40,12 @@ value: 10000
 globalDefault: false
 preemptionPolicy: PreemptLowerPriority
 description: "Cluster plumbing that is not system-*: cert-manager"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: alerting
+value: 5000
+globalDefault: false
+preemptionPolicy: Never
+description: "Alert CronJobs: never preempted by worker-pinned pods, never preempt others"

@@ -537,6 +537,11 @@ and follow the `longhorn_backup_setup` output (or `just setup-longhorn-backup`).
 underneath Longhorn corrupts the incremental chain. Backups of deleted volumes are never pruned automatically.
 Delete them in the Longhorn UI.
 
+Nothing reports a backup that stopped running unless you enable `gitops/backup-monitor/`: a daily
+CronJob that alerts through an [Apprise API](https://github.com/caronc/apprise-api) server when the
+BackupTarget is unavailable, a volume has no backup in 36 hours, or the newest etcd snapshot upload is
+older than 13 hours. Setup steps are in its `application-template.yaml`.
+
 ## Always Free budget
 
 | Resource | Free allowance | This module |

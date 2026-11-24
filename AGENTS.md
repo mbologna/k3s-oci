@@ -87,8 +87,9 @@ gitops/optional/             — Opt-in Applications outside the App of Apps (ex
 gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
 gitops/pdbs/                 — PodDisruptionBudgets for ArgoCD / cert-manager (pdbs.yaml App)
 gitops/coredns/              — HPA pinning k3s's CoreDNS at 2 replicas, one per node (coredns.yaml App)
-gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager) and worker-pinned (jobs required on the worker); priority-classes.yaml App, sync wave -2
+gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager), alerting (the opt-in alert CronJobs) and worker-pinned (jobs required on the worker); priority-classes.yaml App, sync wave -2
 gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays cordoned 25+ min (application-template.yaml; needs a webhook Secret)
+gitops/backup-monitor/       — Opt-in daily CronJob: Apprise alert when Longhorn backups or etcd snapshot uploads are stale (application-template.yaml; needs an Apprise URL Secret; reads the snapshots as the node, so its namespace alone may reach instance metadata)
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
 gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
 gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml for the optional-feature namespaces (managed by network-policies.yaml App)

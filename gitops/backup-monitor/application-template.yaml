@@ -1,0 +1,61 @@
+# ArgoCD Application for backup-monitor (opt-in)
+#
+# Once a day, alerts when the cluster's off-cluster backups are stale: the
+# Longhorn BackupTarget is unavailable, a volume has no completed backup in
+# the last 36 hours, or the newest etcd snapshot upload in Object Storage is
+# older than 13 hours. Silent when everything is fine; an error in the check
+# itself alerts too, so a broken monitor is not silent.
+# Code: https://github.com/mbologna/backup-monitor
+#
+# REQUIRED before activating:
+#   1. An Apprise API server (https://github.com/caronc/apprise-api) to send
+#      the notifications through. Create the Secret with its notify URL (it
+#      often embeds a key, so it is not in git; or sync it with an
+#      ExternalSecret from OCI Vault):
+#        kubectl create namespace backup-monitor
+#        kubectl -n backup-monitor create secret generic backup-monitor-apprise \
+#          --from-literal=url='http://apprise.apprise.svc.cluster.local:8000/notify/<key>'
+#      Several space-separated URLs are tried in order until one delivers.
+#
+#   2. In gitops/backup-monitor/backup-monitor.yaml, replace my-k3s with your
+#      cluster_name (CLUSTER_NAME, ETCD_BUCKET, ETCD_PREFIX). If the Apprise
+#      server listens on a port other than 80, 443 or 8000, add it to
+#      allow-api-oci-and-apprise in network-policies.yaml.
+#
+#   3. Copy this file to gitops/apps/:
+#        cp gitops/backup-monitor/application-template.yaml gitops/apps/backup-monitor.yaml
+#
+# Needs enable_longhorn_backup and enable_etcd_snapshots (the module defaults).
+# The etcd check signs in as the node (instance principal): the dynamic
+# group's `manage objects` on <cluster_name>-terraform-state already covers
+# listing the snapshots, so no OCI credentials are stored in the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backup-monitor
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mbologna/k3s-oci.git
+    targetRevision: HEAD
+    path: gitops/backup-monitor
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backup-monitor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The namespace is in the kustomization (with its Pod Security label), and
+      # step 1 may have created it already.
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

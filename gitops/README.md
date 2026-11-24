@@ -51,8 +51,9 @@ gitops/
 │   └── traefik.yaml                  # traefik namespace (NodePort ingress + backend egress)
 ├── pdbs/                             # PodDisruptionBudgets
 │   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
-├── priority-classes/                 # PriorityClasses: platform-critical, worker-pinned
+├── priority-classes/                 # PriorityClasses: platform-critical, alerting, worker-pinned
 ├── node-cordon-alert/                # Opt-in: webhook alert when a node stays cordoned (copy application-template.yaml to apps/)
+├── backup-monitor/                   # Opt-in: Apprise alert when Longhorn backups or etcd snapshots are stale (copy application-template.yaml to apps/)
 ├── system-upgrade/                   # system-upgrade-controller (remote manifests via kustomize) + k3s upgrade Plans
 │   ├── kustomization.yaml
 │   └── plans.yaml

@@ -1,0 +1,80 @@
+---
+# No ingress. Egress to DNS, the API server, OCI (Object Storage and the auth
+# service) and the Apprise server, plus the instance metadata endpoint.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: backup-monitor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: backup-monitor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# The API server (443 on the kubernetes Service, 6443 after DNAT to the node),
+# the OCI APIs (443) and the Apprise server (80/443, or 8000 in-cluster),
+# anywhere but the link-local range.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-oci-and-apprise
+  namespace: backup-monitor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+---
+# The instance metadata endpoint, which every other policy in this repo blocks:
+# a pod that reaches it gets the node's instance-principal identity. The etcd
+# check needs exactly that to list the snapshots, which is why backup-monitor
+# has a namespace of its own, holding nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-instance-metadata-egress
+  namespace: backup-monitor
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: backup-monitor
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
