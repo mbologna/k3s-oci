@@ -486,7 +486,8 @@ oci os bucket create -c <compartment_ocid> --name <cluster_name>-tofu-state \
 ```
 
 Then point the S3 backend at it from a gitignored `backend_override.tf` next to your module call
-(`*_override.tf` is already in this repo's `.gitignore`):
+(`*_override.tf` is already in this repo's `.gitignore`); `example/backend_override.tf.example` is a
+copy to start from:
 
 ```hcl
 terraform {

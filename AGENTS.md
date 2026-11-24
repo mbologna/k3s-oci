@@ -97,7 +97,7 @@ gitops/network-policies/     — Default-deny NetworkPolicies + namespaces.yaml 
 gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
 gitops/external-secrets/     — ClusterSecretStore template + example ExternalSecret CRs (enable_external_secrets)
-example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/)
+example/         — Example module usage (+ get-kubeconfig.sh, ssh-node.sh — run from example/; backend_override.tf.example for a module-external state bucket)
 scripts/clean-oci-resources.sh   — delete every OCI resource of a cluster (KEEP_VAULT / KEEP_BUCKETS)
 scripts/teardown-keep-data.sh    — destroy but keep vault + buckets, re-import them
 scripts/setup-longhorn-backup.sh — manual Longhorn backup wiring (when Terraform does not own the key)
