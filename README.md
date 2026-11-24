@@ -551,6 +551,17 @@ Delete them in the Longhorn UI.
 | Vault (shared) | Software keys + 150 secrets | **2-9 secrets** (`enable_vault = true`), see [OCI Vault secrets](#oci-vault-secrets) |
 | Volume backups | 5 total | **2** (one per node, weekly, 1-week retention) (`enable_backup = true`) |
 | MySQL HeatWave | 1 standalone DB, 50 GB | **1 DB system** in private subnet (`enable_mysql = false`, opt-in) |
+| Budgets | Free | **1 budget** on the tenancy, emails at 50% and 100% spent and 100% forecast (`budget_alert_email`, opt-in) |
+
+### Spend alert
+
+An Always Free deployment costs nothing, so any spend means something left the free allowance (a
+Pay As You Go tenancy over the 10 GB Object Storage limit, a resized shape, a leftover resource).
+Set `budget_alert_email` and the module creates an OCI budget on the whole tenancy, `budget_amount`
+(default 1, in the tenancy's billing currency) per month, with email alerts at 50% and 100% of actual
+spend and at 100% of the month's forecast. Budgets are free and only alert; they never stop anything.
+The budget lives in the root compartment, so the user running `tofu apply` needs
+`manage usage-budgets in tenancy`.
 
 ### OCI Vault secrets
 

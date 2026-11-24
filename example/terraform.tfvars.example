@@ -87,6 +87,7 @@ enable_bastion = false             # Not needed when expose_ssh=true (avoids lin
 enable_mysql         = true           # Always Free MySQL HeatWave DB system (MySQL.Free, 50 GB, private subnet)
 # mysql_admin_username = "admin"        # MySQL admin username (password auto-generated)
 # mysql_shape          = "MySQL.Free"   # Do not change — MySQL.Free is the Always Free shape
+# budget_alert_email   = "you@example.com" # Monthly OCI budget (default 1 unit): email at 50%/100% spent and 100% forecast
 
 # ── Hostnames (set to create Traefik Ingresses + cert-manager TLS certs) ───────
 # If not set, sslip.io hostnames are auto-derived from the NLB IP (e.g. argocd.<nlb-ip>.sslip.io).

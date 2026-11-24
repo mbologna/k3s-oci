@@ -104,6 +104,11 @@ variable "enable_oci_logging" {
   default = false
 }
 
+variable "budget_alert_email" {
+  type    = string
+  default = null
+}
+
 variable "enable_mysql" {
   type    = bool
   default = false
@@ -420,6 +425,7 @@ module "k3s_cluster" {
   enable_longhorn_backup              = var.enable_longhorn_backup
   create_longhorn_backup_user         = var.create_longhorn_backup_user
   enable_mysql                        = var.enable_mysql
+  budget_alert_email                  = var.budget_alert_email
   mysql_admin_username                = var.mysql_admin_username
   mysql_shape                         = var.mysql_shape
   github_ssh_keys_username            = var.github_ssh_keys_username
