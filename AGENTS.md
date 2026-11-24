@@ -93,7 +93,7 @@ gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager
 gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays cordoned 25+ min (application-template.yaml; needs a webhook Secret)
 gitops/backup-monitor/       — Opt-in daily CronJob: Apprise alert when Longhorn backups or etcd snapshot uploads are stale (application-template.yaml; needs an Apprise URL Secret; reads the snapshots as the node, so its namespace alone may reach instance metadata)
 gitops/system-upgrade/       — system-upgrade-controller (remote release manifests via kustomize) + k3s upgrade Plans
-gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass
+gitops/tailscale-operator/   — Opt-in Tailscale operator: Application template, OAuth ExternalSecret, ProxyClass, NetworkPolicies, opt-in HA ProxyGroups
 gitops/network-policies/     — Default-deny NetworkPolicies, namespaces.yaml (optional-feature namespaces + Pod Security labels) and token-less default ServiceAccounts (managed by network-policies.yaml App)
 gitops/longhorn/             — Longhorn supplementary config: ingress template (Ingress + basicAuth Middleware), backup-target.yaml (BackupTarget CR steps + weekly RecurringJob template), taint-toleration template (worker NoSchedule)
 gitops/cert-manager/         — ClusterIssuer templates + ArgoCD Application template (see adoption notes)
@@ -524,9 +524,9 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ### Tailscale operator (`enable_tailscale`)
 - Controlled by `enable_tailscale` variable (default: `false`). Requires `enable_vault = true`.
 - Stores two Vault secrets: `${cluster_name}-tailscale-oauth-client-id` and `${cluster_name}-tailscale-client-secret` (sic — not `-oauth-client-secret`).
-- Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth — scope `Devices → Write (devices:core:write)`, allowed tag `tag:k8s-operator`. Scopes cannot be changed after creation.
-- `tailscale_vault_secret_names` output shows the generated secret names; reference these in `platform/<cluster>/tailscale-operator/oauth-secret.yaml` ExternalSecret.
-- The Tailscale operator Helm chart + RBAC is NOT bootstrapped by cloud-init — it is deployed by ArgoCD using the manifests in the consumer repo (`clusters/<cluster>/tailscale-operator.yaml`).
+- Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth — scope `Devices → Write (devices:core:write)` (plus `Services → Write` for the HA ProxyGroups), tagged `tag:k8s-operator` and owning `tag:k8s`. Scopes cannot be changed after creation. The operator's `defaultTags` must be a tag the client owns (`tag:k8s`), never the client's own tag: `tag:k8s-operator` crash-loops a fresh operator.
+- `tailscale_vault_secret_names` output shows the generated secret names; reference these in the `gitops/tailscale-operator/oauth-secret.yaml` ExternalSecret.
+- The Tailscale operator is NOT bootstrapped by cloud-init — Argo CD deploys it once `gitops/tailscale-operator/application-template.yaml` is copied to `gitops/apps/` (or the consumer repo's equivalent). The template renders the directory with its `kustomization.yaml`; `proxygroup.yaml` (two proxies, one per node, required anti-affinity, so a node reboot keeps Tailscale Services up) is listed there commented out.
 - Using Tailscale LoadBalancer Services: add `loadBalancerClass: tailscale` + `tailscale.com/hostname: <name>` annotation; the operator creates a proxy pod and registers `<name>.<tailnet>.ts.net`.
 - **Tailscale VIP IPs are dynamic** — the IP assigned to a Tailscale LoadBalancer Service changes on every cluster rebuild (new proxy pod, new Tailscale identity). Consumer repos must not hardcode these IPs in DNS or config. Instead, read the IP after deploy (`kubectl get svc -o jsonpath='{.status.loadBalancer.ingress[*].ip}'`) and update DNS records programmatically as a post-deploy step.
 

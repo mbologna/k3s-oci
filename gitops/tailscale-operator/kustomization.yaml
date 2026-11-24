@@ -4,3 +4,7 @@ kind: Kustomization
 resources:
   - oauth-secret.yaml
   - proxyclass.yaml
+  - network-policies.yaml
+  # HA ingress/egress proxies, one per node: see the file for the OAuth scope
+  # and tailnet policy it needs.
+  # - proxygroup.yaml

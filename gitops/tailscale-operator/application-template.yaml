@@ -11,7 +11,7 @@
 #        tailscale_oauth_client_secret = "tskey-client-...secret"
 #      Terraform stores the credentials in OCI Vault as:
 #        <cluster_name>-tailscale-oauth-client-id
-#        <cluster_name>-tailscale-oauth-client-secret
+#        <cluster_name>-tailscale-client-secret
 #      Verify with: terraform output tailscale_vault_secret_names
 #
 #   2. Edit gitops/tailscale-operator/oauth-secret.yaml:
@@ -24,8 +24,14 @@
 #
 # Pre-requisite: create an OAuth client in the Tailscale admin console:
 #   https://login.tailscale.com/admin/settings/oauth
-#   Required scope: Devices → Write (devices:core:write)
-#   Allowed tag: tag:k8s-operator (must exist in ACL tagOwners)
+#   Required scope: Devices → Write (devices:core:write); add Services → Write
+#   for the HA ProxyGroups in proxygroup.yaml.
+#   Tag the client tag:k8s-operator and let it own tag:k8s:
+#     "tagOwners": {"tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"]}
+#   The operator registers itself with defaultTags (tag:k8s below): a client may
+#   mint keys only for tags it owns, never for its own tag, so defaultTags
+#   tag:k8s-operator crash-loops a fresh operator ("requested tags are invalid
+#   or not permitted").
 #   NOTE: OAuth client scopes cannot be changed after creation.
 #
 # See: https://tailscale.com/kb/1236/kubernetes-operator
@@ -50,7 +56,7 @@ spec:
             # TODO: replace with <cluster_name>-k8s-operator
             hostname: my-k3s-k8s-operator
             defaultTags:
-              - "tag:k8s-operator"
+              - "tag:k8s"
             # The chart reads resources and affinity under operatorConfig (an
             # operatorDeployment key is not a chart value: the operator ran
             # with no requests or limits). It prefers the worker, like the
@@ -75,11 +81,11 @@ spec:
           oauth:
             clientId: ""
             clientSecret: ""
+    # Rendered with kustomization.yaml, which lists the manifests (not this
+    # template). A directory source would also try to apply kustomization.yaml.
     - repoURL: https://github.com/mbologna/k3s-oci.git
       targetRevision: HEAD
       path: gitops/tailscale-operator
-      directory:
-        exclude: 'application-template.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: tailscale
@@ -87,6 +93,19 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        # The proxy pods run privileged (tun device, sysctls); warn/audit still
+        # report what exceeds baseline.
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/warn: baseline
+        pod-security.kubernetes.io/audit: baseline
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

@@ -776,7 +776,8 @@ variable "enable_tailscale" {
     tailscale-operator ExternalSecret can sync them into the cluster without
     committing secrets to git. Requires enable_vault = true.
     Pre-requisite: create an OAuth client at https://login.tailscale.com/admin/settings/oauth
-    with scope Devices → Write (devices:core:write) and allowed tag tag:k8s-operator.
+    with scope Devices → Write (devices:core:write), tagged tag:k8s-operator and owning
+    tag:k8s (the operator's defaultTags; see gitops/tailscale-operator/application-template.yaml).
   EOT
   default     = false
 }
