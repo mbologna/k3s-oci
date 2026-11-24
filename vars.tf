@@ -109,18 +109,23 @@ variable "my_public_ip_cidr" {
 
 variable "os_family" {
   type        = string
-  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses the OCI-native Ubuntu LTS release in ubuntu_version and auto-resolves its latest image. \"opensuse\" uses the openSUSE Leap release in opensuse_leap_version (Minimal VM, or Immutable Mode with opensuse_variant = \"immutable\"), imported as a custom image with scripts/import-opensuse-aarch64.sh and auto-resolved like Ubuntu."
+  description = "OS distribution for cluster nodes. \"ubuntu\" (default) uses the OCI-native Ubuntu LTS release in ubuntu_version and auto-resolves its latest image. \"opensuse\" uses the openSUSE Leap release in opensuse_leap_version (Minimal VM, or Immutable Mode with opensuse_variant = \"immutable\"), imported as a custom image with scripts/import-opensuse-aarch64.sh and auto-resolved like Ubuntu. \"fcos\" uses Fedora CoreOS (major release in fcos_version, imported with scripts/import-fcos-aarch64.sh), whose OS updates are a cluster operation as on OpenShift (fcos_os_version for new nodes, the fcos-os system-upgrade-controller Plan for running ones); it requires enable_object_storage_state and region (the node script is fetched from the state bucket)."
   default     = "ubuntu"
 
   validation {
-    condition     = contains(["ubuntu", "opensuse"], var.os_family)
-    error_message = "os_family must be \"ubuntu\" or \"opensuse\"."
+    condition     = contains(["ubuntu", "opensuse", "fcos"], var.os_family)
+    error_message = "os_family must be \"ubuntu\", \"opensuse\" or \"fcos\"."
+  }
+
+  validation {
+    condition     = var.os_family != "fcos" || (var.enable_object_storage_state && var.region != null)
+    error_message = "os_family = \"fcos\" requires enable_object_storage_state = true and region: Ignition fetches the node script from the state bucket (OCI's 32,000-byte user_data limit is too small for it)."
   }
 }
 
 variable "os_image_id" {
   type        = string
-  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest aarch64 image of ubuntu_version is resolved automatically. If null and os_family = \"opensuse\", the newest image imported by scripts/import-opensuse-aarch64.sh for opensuse_leap_version and opensuse_variant is resolved automatically (see opensuse_image_compartment_ocid)."
+  description = "OCID of the OS image for A1.Flex nodes. If null and os_family = \"ubuntu\", the latest aarch64 image of ubuntu_version is resolved automatically. If null and os_family = \"opensuse\", the newest image imported by scripts/import-opensuse-aarch64.sh for opensuse_leap_version and opensuse_variant is resolved automatically (see opensuse_image_compartment_ocid). If null and os_family = \"fcos\", the newest image imported by scripts/import-fcos-aarch64.sh for fcos_version is (see fcos_image_compartment_ocid)."
   default     = null
 
   validation {
@@ -172,6 +177,41 @@ variable "opensuse_image_compartment_ocid" {
   validation {
     condition     = var.opensuse_image_compartment_ocid == null || can(regex("^ocid1\\.(tenancy|compartment)\\.", var.opensuse_image_compartment_ocid))
     error_message = "opensuse_image_compartment_ocid must be a tenancy or compartment OCID, or null."
+  }
+}
+
+variable "fcos_version" {
+  type        = string
+  description = "Fedora CoreOS major release for os_family = \"fcos\" (the stable stream's current release when Renovate bumps it). The newest imported image of this release is used; until it is imported (scripts/import-fcos-aarch64.sh) the newest imported image of any release is, and plans warn. It only picks the boot image: new nodes then pivot to fcos_os_version."
+  # renovate: datasource=custom.fedora-coreos depName=fedora-coreos
+  default = "45"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.fcos_version))
+    error_message = "fcos_version must be a Fedora major release such as \"45\"."
+  }
+}
+
+variable "fcos_os_version" {
+  type        = string
+  description = "Fedora CoreOS release new os_family = \"fcos\" nodes pivot to during their first boot, before k3s starts (OpenShift's firstboot pivot), stepping along FCOS's update graph from the imported image. Keep it equal to the version of the fcos-os Plan (gitops/fcos-os/plan.yaml), which rolls the release out to running nodes; Renovate bumps both in one PR."
+  # renovate: datasource=custom.fedora-coreos-release depName=fedora-coreos-release
+  default = "45.20261030.3.1"
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]{8}\\.[0-9]+\\.[0-9]+$", var.fcos_os_version))
+    error_message = "fcos_os_version must be a Fedora CoreOS release such as \"45.20261030.3.1\"."
+  }
+}
+
+variable "fcos_image_compartment_ocid" {
+  type        = string
+  description = "Compartment searched for imported Fedora CoreOS images when os_family = \"fcos\" and os_image_id is null. Null means the tenancy root, the import script's default (--compartment-id)."
+  default     = null
+
+  validation {
+    condition     = var.fcos_image_compartment_ocid == null || can(regex("^ocid1\\.(tenancy|compartment)\\.", var.fcos_image_compartment_ocid))
+    error_message = "fcos_image_compartment_ocid must be a tenancy or compartment OCID, or null."
   }
 }
 

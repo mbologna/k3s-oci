@@ -59,7 +59,7 @@ resource "oci_core_instance_configuration" "k3s_server" {
 
       metadata = {
         ssh_authorized_keys = local.ssh_public_key
-        user_data           = data.cloudinit_config.k3s_server.rendered
+        user_data           = local.k3s_server_user_data
       }
 
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-server" })
@@ -163,7 +163,7 @@ resource "oci_core_instance_configuration" "k3s_worker" {
 
       metadata = {
         ssh_authorized_keys = local.ssh_public_key
-        user_data           = data.cloudinit_config.k3s_worker.rendered
+        user_data           = local.k3s_worker_user_data
       }
 
       freeform_tags = merge(local.common_tags, { k3s-instance-type = "k3s-worker" })
@@ -265,7 +265,7 @@ resource "oci_core_instance" "k3s_standalone_worker" {
 
   metadata = {
     ssh_authorized_keys = local.ssh_public_key
-    user_data           = data.cloudinit_config.k3s_worker.rendered
+    user_data           = local.k3s_worker_user_data
   }
 
   lifecycle {

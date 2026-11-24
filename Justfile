@@ -100,6 +100,7 @@ shellcheck:
         files/lib/bootstrap-ubuntu.sh \
         files/lib/bootstrap-opensuse.sh \
         files/lib/bootstrap-opensuse-immutable.sh \
+        files/lib/bootstrap-fcos.sh \
         files/lib/two-phase.sh \
         files/lib/two-phase-done.sh \
         files/lib/common.sh \
@@ -110,9 +111,11 @@ shellcheck:
         files/lib/k3s-external-secrets.sh \
         files/lib/k3s-argocd.sh \
         files/lib/k3s-agent.sh \
+        files/lib/k3s-fcos-os.sh \
         scripts/clean-oci-resources.sh \
         scripts/teardown-keep-data.sh \
         scripts/import-opensuse-aarch64.sh \
+        scripts/import-fcos-aarch64.sh \
         scripts/setup-longhorn-backup.sh \
         scripts/k3s-ca-export.sh \
         scripts/pre-teardown-backup.sh \

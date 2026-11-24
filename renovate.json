@@ -63,11 +63,13 @@
       "description": "OS releases (vars.tf ubuntu_version / opensuse_leap_version, and the import script's LEAP_VERSION): Ubuntu from endoflife.date, openSUSE Leap from openSUSE's own release API (custom.opensuse-leap). They reach nodes only on the next full rebuild: the instance configurations ignore image changes (compute.tf ignore_changes), so running nodes and pool replacements keep their image and the PR's plan is empty. feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
       "matchDatasources": [
         "endoflife-date",
-        "custom.opensuse-leap"
+        "custom.opensuse-leap",
+        "custom.fedora-coreos"
       ],
       "matchDepNames": [
         "ubuntu",
-        "opensuse-leap"
+        "opensuse-leap",
+        "fedora-coreos"
       ],
       "commitMessagePrefix": "feat(os):",
       "automerge": true,
@@ -107,6 +109,35 @@
       "groupName": "opensuse"
     },
     {
+      "description": "Fedora CoreOS (custom.fedora-coreos): the major of the stable stream's current aarch64 build, the boot image new nodes start from. The stream metadata carries no release dates, so timestamp-optional (as for openSUSE Leap); the stable stream is the gate. Until scripts/import-fcos-aarch64.sh imports the new release, plans warn (checks.tf) and new nodes boot the newest imported image; either way they pivot to fcos_os_version before k3s starts.",
+      "matchDatasources": [
+        "custom.fedora-coreos"
+      ],
+      "matchDepNames": [
+        "fedora-coreos"
+      ],
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "prBodyNotes": [
+        "New Fedora CoreOS major release: run `scripts/import-fcos-aarch64.sh` after merging. This only picks the boot image: new nodes pivot to `fcos_os_version` during their first boot, and the fcos-os Plan updates running ones."
+      ]
+    },
+    {
+      "description": "Fedora CoreOS release the cluster runs (custom.fedora-coreos-release): fcos_os_version in vars.tf and the fcos-os Plan's version move together. Merging rolls the release out to FCOS clusters (the Plan, in its Tue-Thu window, one drained node at a time, along the update graph), as an OpenShift upgrade carries the OS image; the stable stream, a release every two weeks after its time in testing, is the gate. The stream metadata has no release dates, hence timestamp-optional.",
+      "matchDatasources": [
+        "custom.fedora-coreos-release"
+      ],
+      "matchDepNames": [
+        "fedora-coreos-release"
+      ],
+      "versioning": "loose",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "groupName": "fedora-coreos-release",
+      "automerge": true,
+      "prBodyNotes": [
+        "New Fedora CoreOS release: once merged, the fcos-os Plan updates the FCOS nodes in its next window (Tue-Thu 02:15-04:15 UTC), one drained node at a time; new nodes pivot to it during their first boot."
+      ]
+    },
+    {
       "description": "Cloud-init installs Helm 3 (files/lib/common.sh): Helm 4 renames flags the bootstrap passes, such as --atomic. Move to 4 by hand, together with the helm calls.",
       "matchDepNames": [
         "helm/helm"
@@ -115,6 +146,20 @@
     }
   ],
   "customDatasources": {
+    "fedora-coreos-release": {
+      "description": "Fedora CoreOS release the cluster runs (vars.tf fcos_os_version, gitops/fcos-os/plan.yaml version): the stable stream's current release.",
+      "defaultRegistryUrlTemplate": "https://builds.coreos.fedoraproject.org/streams/stable.json",
+      "transformTemplates": [
+        "{\"homepage\": \"https://fedoraproject.org/coreos/release-notes/\", \"releases\": [{\"version\": architectures.aarch64.artifacts.oraclecloud.release}]}"
+      ]
+    },
+    "fedora-coreos": {
+      "description": "Fedora CoreOS major release (vars.tf fcos_version) from the stable stream's metadata: the major of the aarch64 oraclecloud artifact, the image scripts/import-fcos-aarch64.sh imports.",
+      "defaultRegistryUrlTemplate": "https://builds.coreos.fedoraproject.org/streams/stable.json",
+      "transformTemplates": [
+        "{\"homepage\": \"https://fedoraproject.org/coreos/\", \"releases\": [{\"version\": $substringBefore(architectures.aarch64.artifacts.oraclecloud.release, \".\")}]}"
+      ]
+    },
     "opensuse-leap": {
       "description": "openSUSE Leap releases from openSUSE's distributions API (also behind get.opensuse.org), released ones only: state Stable or EOL.",
       "defaultRegistryUrlTemplate": "https://get.opensuse.org/api/v0/distributions.json",
@@ -124,6 +169,17 @@
     }
   },
   "customManagers": [
+    {
+      "description": "Fedora CoreOS release of the fcos-os upgrade Plan (gitops/fcos-os/plan.yaml), renovate comment on the line above version:. Same depName as fcos_os_version in vars.tf, so one PR moves both.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/fcos-os/plan\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+version:\\s+\"(?<currentValue>[^\"]+)\""
+      ],
+      "versioningTemplate": "loose"
+    },
     {
       "description": "openSUSE Leap release imported by scripts/import-opensuse-aarch64.sh (LEAP_VERSION, renovate comment on the line above). Same depName as opensuse_leap_version in vars.tf, so a bump updates both in one PR.",
       "customType": "regex",

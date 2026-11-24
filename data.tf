@@ -203,12 +203,13 @@ locals {
   os_bootstrap_file = {
     ubuntu   = "bootstrap-ubuntu.sh"
     opensuse = var.opensuse_variant == "immutable" ? "bootstrap-opensuse-immutable.sh" : "bootstrap-opensuse.sh"
+    fcos     = "bootstrap-fcos.sh"
   }[var.os_family]
 
   # Image-based OSes install packages into a new snapshot and reboot into it before
   # anything else runs: files/lib/two-phase.sh persists the script and runs it again
   # after the reboot, two-phase-done.sh retires it.
-  two_phase = var.os_family == "opensuse" && var.opensuse_variant == "immutable"
+  two_phase = var.os_family == "fcos" || (var.os_family == "opensuse" && var.opensuse_variant == "immutable")
 
   # Node scripts, in order: rendered vars header, OS bootstrap, shared helpers, entry
   # point. The empty lists leave the scripts of one-phase OSes exactly as they were.
@@ -224,6 +225,8 @@ locals {
       "k3s-bootstrap.sh",
       "k3s-server.sh",
     ],
+    # FCOS OS updates are an upgrade Plan, an Argo CD app the first server adds.
+    var.os_family == "fcos" ? ["k3s-fcos-os.sh"] : [],
     local.two_phase ? ["two-phase-done.sh"] : [],
   )
   _worker_script_files = concat(
@@ -267,6 +270,67 @@ data "cloudinit_config" "k3s_worker" {
   }
 }
 
+
+# ── Fedora CoreOS: Ignition instead of cloud-init ─────────────────────────────
+# FCOS reads only Ignition, from user_data, as base64 of plain JSON (its OCI provider
+# does not gunzip). The server script inlined there would be base64 twice and exceed
+# OCI's 32,000-byte metadata limit, so Ignition fetches it from the state bucket
+# through a read-only pre-authenticated request (objectstorage.tf), and runs it from
+# the same unit two-phase.sh installs (keep the two unit texts in step).
+
+locals {
+  _fcos_bootstrap_unit = <<-EOT
+    [Unit]
+    Description=k3s-oci node bootstrap (runs until it completes once)
+    Wants=network-online.target
+    After=network-online.target
+    ConditionPathExists=!/var/lib/k3s-oci/done
+
+    [Service]
+    Type=oneshot
+    Environment=HOME=/root
+    WorkingDirectory=/root
+    ExecStart=/usr/bin/bash /var/lib/k3s-oci/bootstrap.sh
+    TimeoutStartSec=infinity
+
+    [Install]
+    WantedBy=multi-user.target
+  EOT
+
+  fcos_ignition = {
+    for role in ["server", "worker"] : role => base64encode(jsonencode({
+      ignition = { version = "3.4.0" }
+      storage = {
+        directories = [{ path = "/var/lib/k3s-oci", mode = 448 }]
+        files = [
+          {
+            path     = "/var/lib/k3s-oci/bootstrap.sh"
+            mode     = 448
+            contents = { source = oci_objectstorage_preauthrequest.fcos_script[role].full_path }
+          },
+          {
+            # The release new nodes pivot to before k3s starts (bootstrap-fcos.sh).
+            path     = "/etc/k3s-oci/fcos-os-version"
+            mode     = 420
+            contents = { source = "data:,${var.fcos_os_version}" }
+          },
+        ]
+      }
+      systemd = {
+        units = [
+          { name = "k3s-oci-bootstrap.service", enabled = true, contents = local._fcos_bootstrap_unit },
+          # OS updates are a cluster operation (the fcos-os Plan), as on OpenShift.
+          { name = "zincati.service", mask = true },
+        ]
+      }
+    })) if var.os_family == "fcos"
+  }
+
+  # What the instance configurations and the standalone worker get as user_data.
+  # (lookup: HCL evaluates both branches, and fcos_ignition is empty for other OSes.)
+  k3s_server_user_data = var.os_family == "fcos" ? lookup(local.fcos_ignition, "server", "") : data.cloudinit_config.k3s_server.rendered
+  k3s_worker_user_data = var.os_family == "fcos" ? lookup(local.fcos_ignition, "worker", "") : data.cloudinit_config.k3s_worker.rendered
+}
 
 data "oci_core_instance_pool_instances" "k3s_servers" {
   depends_on       = [oci_core_instance_pool.k3s_servers]
@@ -334,5 +398,33 @@ data "oci_core_images" "opensuse" {
 # Pinned openSUSE image, read so checks.tf can compare its release with opensuse_leap_version.
 data "oci_core_image" "opensuse" {
   count    = var.os_family == "opensuse" && var.os_image_id != null ? 1 : 0
+  image_id = var.os_image_id
+}
+
+# ── k3s node image (Fedora CoreOS aarch64 custom import) ──────────────────────
+# Auto-resolved when os_family = "fcos" and os_image_id is not set: every image that
+# scripts/import-fcos-aarch64.sh imported (operating system "Fedora CoreOS", version
+# the Fedora major). locals.tf picks the newest one of fcos_version, falling back to
+# the newest of any release (checks.tf warns).
+data "oci_core_images" "fcos" {
+  count            = var.os_family == "fcos" && var.os_image_id == null ? 1 : 0
+  compartment_id   = coalesce(var.fcos_image_compartment_ocid, var.tenancy_ocid)
+  operating_system = "Fedora CoreOS"
+  shape            = var.compute_shape
+  state            = "AVAILABLE"
+  sort_by          = "TIMECREATED"
+  sort_order       = "DESC"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.images) > 0
+      error_message = "No imported Fedora CoreOS image found for shape ${var.compute_shape} in compartment ${coalesce(var.fcos_image_compartment_ocid, var.tenancy_ocid)}. Run scripts/import-fcos-aarch64.sh, or set os_image_id."
+    }
+  }
+}
+
+# Pinned Fedora CoreOS image, read so checks.tf can compare its release with fcos_version.
+data "oci_core_image" "fcos" {
+  count    = var.os_family == "fcos" && var.os_image_id != null ? 1 : 0
   image_id = var.os_image_id
 }

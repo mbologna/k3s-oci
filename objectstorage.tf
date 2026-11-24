@@ -81,3 +81,37 @@ resource "oci_identity_customer_secret_key" "longhorn_backup" {
   # The capability must be in place before OCI accepts the key.
   depends_on = [oci_identity_user_capabilities_management.longhorn_backup]
 }
+
+# ── Fedora CoreOS node scripts ────────────────────────────────────────────────
+# Ignition fetches the node script from here (data.tf explains why it cannot be
+# inlined). The object keeps its name when the script changes, so a pool replacement
+# whose frozen Ignition config still points at the URL boots the current script.
+# The script holds what cloud-init user-data holds on other OSes (the shared SSH host
+# key; the plaintext secrets when enable_vault = false): the URL is as sensitive as
+# user_data, and both live in the instance metadata.
+resource "oci_objectstorage_object" "fcos_script" {
+  for_each     = var.os_family == "fcos" ? toset(["server", "worker"]) : toset([])
+  namespace    = data.oci_objectstorage_namespace.k3s[0].namespace
+  bucket       = oci_objectstorage_bucket.terraform_state[0].name
+  object       = "k3s-oci/fcos-${each.key}.sh"
+  content_type = "text/x-shellscript"
+  content      = each.key == "server" ? local.k3s_server_script : local.k3s_worker_script
+}
+
+resource "oci_objectstorage_preauthrequest" "fcos_script" {
+  for_each     = oci_objectstorage_object.fcos_script
+  namespace    = each.value.namespace
+  bucket       = each.value.bucket
+  name         = "${var.cluster_name}-fcos-${each.key}-script"
+  access_type  = "ObjectRead"
+  object_name  = each.value.object
+  time_expires = "2100-01-01T00:00:00Z"
+
+  lifecycle {
+    # Every node that boots, pool replacements included, fetches through this URL: it
+    # must outlive the cluster, and a new one would not reach the frozen Ignition
+    # configs (compute.tf ignores instance_details). OCI may also return the time in
+    # another format.
+    ignore_changes = [time_expires]
+  }
+}

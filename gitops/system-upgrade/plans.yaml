@@ -32,6 +32,11 @@
 # Narrow 'days' to match kured's rebootDays if you would rather not restart k3s
 # on other nights; k3s patch releases often carry security fixes.
 #
+# exclusive: system-upgrade-controller never runs jobs of two exclusive Plans on the
+# same node at once, so a k3s upgrade and an OS update of a Fedora CoreOS node
+# (gitops/fcos-os/plan.yaml, also exclusive) don't overlap there; across nodes the
+# windows keep them apart. The agent Plan already waits for the server Plan.
+#
 # cordon, no drain: restarting k3s leaves running containers up (k3s keeps the
 # containerd shims, and the installer's unit uses KillMode=process), so an
 # upgrade needs nothing moved. Draining made it worse: on a cluster built from
@@ -46,6 +51,7 @@ metadata:
   namespace: system-upgrade
 spec:
   concurrency: 1
+  exclusive: true
   channel: https://update.k3s.io/v1-release/channels/stable
   nodeSelector:
     matchLabels:
@@ -67,6 +73,7 @@ metadata:
   namespace: system-upgrade
 spec:
   concurrency: 1
+  exclusive: true
   channel: https://update.k3s.io/v1-release/channels/stable
   nodeSelector:
     matchExpressions:

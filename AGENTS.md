@@ -16,14 +16,14 @@ do not introduce resources that incur cost.
 |---|---|
 | IaC | Terraform ≥ 1.9 / OpenTofu ≥ 1.9 |
 | Cloud | Oracle Cloud Infrastructure (OCI) |
-| OS | Ubuntu LTS (aarch64, `var.ubuntu_version`) — default. openSUSE Leap (aarch64, `var.opensuse_leap_version`) via `var.os_family = "opensuse"`: Minimal VM, or Immutable Mode with `var.opensuse_variant = "immutable"` |
+| OS | Ubuntu LTS (aarch64, `var.ubuntu_version`) — default. openSUSE Leap (aarch64, `var.opensuse_leap_version`) via `var.os_family = "opensuse"`: Minimal VM, or Immutable Mode with `var.opensuse_variant = "immutable"`. Fedora CoreOS (aarch64, `var.fcos_version`) via `var.os_family = "fcos"` |
 | Kubernetes | k3s (latest resolved at plan time) |
 | Ingress | Traefik (Kubernetes Ingress + Traefik Middlewares; since v2.0.0, Envoy Gateway before) |
 | Logging | OCI Unified Logging (optional) |
 | Storage | Longhorn |
 | GitOps | ArgoCD (Image Updater opt-in: `gitops/optional/`) |
 | TLS | cert-manager (Let's Encrypt) |
-| Reboots | kured + unattended-upgrades |
+| Reboots | kured + unattended-upgrades (Fedora CoreOS: the fcos-os system-upgrade-controller Plan, OpenShift-style) |
 
 ## Always Free budget — hard constraints
 
@@ -64,7 +64,7 @@ nlb.tf           — Public Network LB (HTTP/HTTPS ingress); backend sets/listen
 backup.tf        — Custom weekly backup policy + assignments for all node boot volumes (enable_backup)
 budget.tf        — Tenancy-wide monthly OCI budget with 50%/100% actual and 100% forecast email alerts (budget_alert_email, opt-in)
 vault.tf         — OCI Vault (DEFAULT type, SOFTWARE key) + 2–10 cluster secrets (full list in the OCI Vault section)
-objectstorage.tf — Versioned buckets: <cluster>-terraform-state (etcd snapshots + leader lock, NOT tofu state; enable_object_storage_state) and <cluster>-longhorn-backup (enable_longhorn_backup), each with a noncurrent-version lifecycle rule
+objectstorage.tf — Versioned buckets: <cluster>-terraform-state (etcd snapshots + leader lock + the Fedora CoreOS node scripts behind read-only PARs, NOT tofu state; enable_object_storage_state) and <cluster>-longhorn-backup (enable_longhorn_backup), each with a noncurrent-version lifecycle rule
 bastion.tf       — OCI Bastion Service (managed, no VM; enable_bastion)
 mysql.tf         — MySQL HeatWave DB system in private subnet (enable_mysql)
 output.tf        — Outputs (IPs, k3s_token, longhorn_ui_credentials, argocd_initial_password_hint, oci_log_group_id, terraform_state_backend, mysql_endpoint, vault_id, tailscale_vault_secret_names)
@@ -76,6 +76,7 @@ files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shar
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
 files/lib/bootstrap-opensuse-immutable.sh — pure bash: openSUSE Leap Immutable bootstrap (opensuse_variant = "immutable"): leap_immutable_install() (phase 1: transactional-update), bootstrap(), configure_unattended_upgrades() (/usr/local/sbin/tu-patch-with-sentinel, kured sentinel)
+files/lib/bootstrap-fcos.sh      — pure bash: Fedora CoreOS bootstrap (os_family = "fcos"): install_fcos_update_tool() (/usr/local/sbin/k3s-oci-fcos-update: one hop along the update graph per reboot), fcos_install() (phase 1: first hop + rpm-ostree install k3s-selinux python3 cronie), fcos_converge_os() (remaining hops before k3s), bootstrap() (node label k3s-oci.io/os=fcos, Longhorn iscsid SELinux module)
 files/lib/two-phase.sh           — pure bash: two_phase_begin() — image-based OSes: persist the script, k3s-oci-bootstrap.service, stage packages, reboot, run again (local.two_phase); two_phase_k3s_selinux() — INSTALL_K3S_SKIP_SELINUX_RPM + restorecon drop-in for the k3s binary
 files/lib/two-phase-done.sh      — pure bash: appended after the entry point for two-phase OSes; retires k3s-oci-bootstrap.service
 files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point
@@ -87,8 +88,10 @@ files/lib/k3s-argocd.sh           — pure bash: install_argocd(), create_docker
                                     create_optional_apps(), create_external_dns_app(), configure_app_ingress(),
                                     configure_argocd_ingress(), configure_longhorn_ingress()
 files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry point
+files/lib/k3s-fcos-os.sh          — pure bash: Fedora CoreOS servers only, after k3s-server.sh: the first server adds the optional-fcos-os app
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
-gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only; argocd-image-updater.yaml, copy to gitops/apps/ to install)
+gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only; argocd-image-updater.yaml, copy to gitops/apps/ to install; fcos-os.yaml, wrapped by cloud-init on Fedora CoreOS clusters)
+gitops/fcos-os/              — Fedora CoreOS OS updates: the fcos-os Plan (pinned release, Tue-Thu window, concurrency 1, drain, exclusive), added by cloud-init on FCOS clusters (gitops/optional/fcos-os.yaml)
 gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
 gitops/coredns/              — HPA pinning k3s's CoreDNS at 2 replicas, one per node (coredns.yaml App)
 gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager), alerting (the opt-in alert CronJobs) and worker-pinned (jobs required on the worker); priority-classes.yaml App, sync wave -2
@@ -109,6 +112,7 @@ scripts/pre-teardown-backup.sh   — fresh etcd snapshot upload + Longhorn backu
 scripts/longhorn-restore.sh      — after a rebuild, restore each Longhorn PVC from its newest backup via the Longhorn API
 scripts/validate-gitops.sh       — kubeconform over gitops/ (each file, plus each kustomize build); CI job `gitops manifests`
 scripts/check-bootstrap-chart-versions.sh — vars.tf bootstrap chart defaults (argo-cd, cert-manager, ESO) must equal the gitops targetRevisions
+scripts/import-fcos-aarch64.sh   — import the current Fedora CoreOS aarch64 oraclecloud image (--stream, default stable) as a custom image, OS "Fedora CoreOS", version = major
 scripts/import-opensuse-aarch64.sh — import the openSUSE Leap aarch64 image (--variant minimal|immutable) as a custom image (LEAP_VERSION default Renovate-bumped with opensuse_leap_version)
 Justfile         — Common operation recipes: just apply, just kubeconfig, just ssh worker, just teardown-keep-data, just fmt, just validate
 SECURITY.md      — supported versions + vulnerability reporting
@@ -148,7 +152,7 @@ renovate.json    — Automated dependency updates
   exported by the prepended template header, plus two documented inline `SC2097,SC2098`
   suppressions on the `K3S_URL="" sh -s -` installer calls in `k3s-server.sh` / `k3s-agent.sh`.
 - `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`; the file lists are `local._server_script_files` / `local._worker_script_files`.
-- Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`, and with `var.opensuse_variant = "immutable"` (Leap Immutable Mode, the successor of the discontinued Leap Micro) in `files/lib/bootstrap-opensuse-immutable.sh`, a two-phase OS: it stages packages with `transactional-update`, reboots once, and calls `two_phase_k3s_selinux` because k3s-selinux is already in the snapshot: `INSTALL_K3S_SKIP_SELINUX_RPM=true` (otherwise the k3s installer stages it again and skips starting k3s) plus a `restorecon` drop-in, since that flag also skips the installer's `chcon` of the binary. Its updates go through `tu-patch-with-sentinel` (`transactional-update --continue --drop-if-no-change run zypper patch`), which writes the same kured sentinels as Leap Minimal; the image's `transactional-update.timer` and `rebootmgr` stay disabled. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` (Renovate bumps them).
+- Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`, and with `var.opensuse_variant = "immutable"` (Leap Immutable Mode, the successor of the discontinued Leap Micro) in `files/lib/bootstrap-opensuse-immutable.sh`, a two-phase OS: it stages packages with `transactional-update`, reboots once, and calls `two_phase_k3s_selinux` because k3s-selinux is already in the snapshot: `INSTALL_K3S_SKIP_SELINUX_RPM=true` (otherwise the k3s installer stages it again and skips starting k3s) plus a `restorecon` drop-in, since that flag also skips the installer's `chcon` of the binary. Its updates go through `tu-patch-with-sentinel` (`transactional-update --continue --drop-if-no-change run zypper patch`), which writes the same kured sentinels as Leap Minimal; the image's `transactional-update.timer` and `rebootmgr` stay disabled. Fedora CoreOS (`var.os_family = "fcos"`, `files/lib/bootstrap-fcos.sh`) reads only Ignition: `data.tf` renders a small Ignition config (`local.fcos_ignition`) that fetches the same assembled bash script from the state bucket through a read-only pre-authenticated request (`objectstorage.tf`; inlined, the script would exceed OCI's 32,000-byte metadata limit) and runs it from the two-phase unit; it needs `enable_object_storage_state` and `region` (`os_family` validation). It layers k3s-selinux, python3 and cronie with rpm-ostree. OS updates follow OpenShift's Machine Config Operator, not Zincati (masked by Ignition): new nodes pivot to `fcos_os_version` before k3s starts, and the `fcos-os` Plan (`gitops/fcos-os/`, added by `k3s-fcos-os.sh`) rolls the release pinned in git out to running nodes, drained, one at a time, in kured's window. It never overlaps a k3s upgrade: `exclusive` (with the k3s Plans) keeps their jobs apart on a node — system-upgrade-controller implements it as a per-node pod anti-affinity, not cluster-wide — and the disjoint windows (k3s 23:00-23:59, fcos-os 02:15-04:15) keep them apart across nodes; keep the windows disjoint. Both use `k3s-oci-fcos-update`, which walks FCOS's OCI update graph (`updates.coreos.fedoraproject.org/v1/graph?...&oci=true`): keep barrier releases as hops, never rebase straight across them. SSH keys for `core` come from Afterburn. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` / `fcos_version` (Renovate bumps them).
 - Standalone scripts (`scripts/`, `example/*.sh`, `gitops/update-repo-url.sh`) start with `set -euo pipefail`.
   The bootstrap files (`common.sh`, `bootstrap-*.sh`) set it for the assembled cloud-init script; the other
   `files/lib/*.sh` files only define functions and inherit it — do not add it there.
@@ -229,6 +233,7 @@ shellcheck --severity=warning \
   files/lib/bootstrap-ubuntu.sh \
   files/lib/bootstrap-opensuse.sh \
   files/lib/bootstrap-opensuse-immutable.sh \
+  files/lib/bootstrap-fcos.sh \
   files/lib/two-phase.sh \
   files/lib/two-phase-done.sh \
   files/lib/k3s-server.sh \
@@ -238,9 +243,11 @@ shellcheck --severity=warning \
   files/lib/k3s-external-secrets.sh \
   files/lib/k3s-argocd.sh \
   files/lib/k3s-agent.sh \
+  files/lib/k3s-fcos-os.sh \
   scripts/clean-oci-resources.sh \
   scripts/teardown-keep-data.sh \
   scripts/import-opensuse-aarch64.sh \
+  scripts/import-fcos-aarch64.sh \
   scripts/setup-longhorn-backup.sh \
   scripts/k3s-ca-export.sh \
   scripts/pre-teardown-backup.sh \
@@ -306,7 +313,10 @@ Plain SemVer: `vX.Y.Z` tags, each a GitHub release that consumers pin as
   one `k3s` PR per update: patches automerge, a minor only from its x.y.3 release and then
   automerges after the 14-day gate (`matchNewValue` disables x.y.0-x.y.2), majors wait for a
   person. Keep the `k3s-io/k3s` versioning rule (`+k3sN` builds) and `separateMultipleMinor`.
-- OS releases: `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
+- OS releases: `fcos_version` (`datasource=custom.fedora-coreos`, the major of the stable stream's aarch64
+  oraclecloud build; `feat(os):`, automerge, `timestamp-optional`) only picks the image new nodes boot.
+  `fcos_os_version` and the `fcos-os` Plan's `version` (`datasource=custom.fedora-coreos-release`, one
+  grouped PR, automerge) are the release FCOS nodes run: merging rolls it out. `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
   `scripts/import-opensuse-aarch64.sh` use `datasource=endoflife-date depName=ubuntu` and
   `datasource=custom.opensuse-leap depName=opensuse-leap` (openSUSE's distributions API, Stable/EOL
   releases only; endoflife.date lagged on Leap 16.1). The PRs are `feat(os):` and automerge. Ubuntu: endoflife.date reports a cycle's
@@ -394,7 +404,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 ## What NOT to do
 
 - Do not add paid OCI resources (compute shapes other than A1.Flex, extra NLBs, etc.)
-- Do not add Oracle Linux support — Ubuntu LTS (default) and openSUSE Leap (via `var.os_family`) are the two supported OS families
+- Do not add Oracle Linux support — Ubuntu LTS (default), openSUSE Leap (Minimal or Immutable) and Fedora CoreOS (via `var.os_family`) are the supported OS families
 - Do not remove `lifecycle { prevent_destroy = true }` from the Vault or its key
 - Do not hardcode secrets, OCIDs, or credentials anywhere
 - Do not remove the `# renovate:` comments on version variables
@@ -599,6 +609,14 @@ from Vault at boot. The following three values remain in plaintext user-data by 
   `manage objects` `where target.bucket.name='<cluster>-longhorn-backup'` and whose capabilities
   allow nothing but Customer Secret Keys. If you use `user_ocid` instead, point it at such a user, never at an admin.
 
+### Fedora CoreOS node script behind a pre-authenticated request (accepted constraint)
+- With `os_family = "fcos"` the assembled node script (what user-data holds on other OSes: the shared
+  SSH host key, and the plaintext secrets when `enable_vault = false`) is an object in the state bucket,
+  readable by anyone holding its PAR URL. The URL is in the Ignition user_data, so it reaches exactly the
+  principals that can already read user_data. The PAR never expires (`ignore_changes = [time_expires]`):
+  pool replacements boot from the frozen Ignition config. Revoke it by deleting the PAR if the URL leaks;
+  `tofu apply` recreates it, and the new URL only reaches newly created instance configurations.
+
 ### Boot Volume Backups (`backup.tf`)
 - Controlled by `enable_backup` variable (default: `true`).
 - Creates a custom `oci_core_volume_backup_policy` with weekly full backups, 1-week retention.
@@ -608,7 +626,7 @@ from Vault at boot. The following three values remain in plaintext user-data by 
 
 ### Object Storage Buckets (`objectstorage.tf`)
 - `data.oci_objectstorage_namespace.k3s` is created when **either** `enable_object_storage_state` or `enable_longhorn_backup` is true — both buckets share it.
-- **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. Despite the name it holds etcd snapshots and the leader lock. **Do not recommend storing Terraform state in it**: nodes have `manage objects` on it, the state contains every cluster secret, and destroy/clean delete it. The README documents a separate, module-external state bucket configured via a gitignored `backend_override.tf`.
+- **Terraform state bucket** (`enable_object_storage_state = true`): versioned, `NoPublicAccess`, name `${cluster_name}-terraform-state`. Despite the name it holds etcd snapshots and the leader lock (and, with `os_family = "fcos"`, the node scripts `k3s-oci/fcos-{server,worker}.sh` behind read-only pre-authenticated requests that never expire: frozen Ignition configs of pool replacements still use them). **Do not recommend storing Terraform state in it**: nodes have `manage objects` on it, the state contains every cluster secret, and destroy/clean delete it. The README documents a separate, module-external state bucket configured via a gitignored `backend_override.tf`.
 - **Longhorn backup bucket** (`enable_longhorn_backup = true`): versioned, `NoPublicAccess`, name `${cluster_name}-longhorn-backup`. With `create_longhorn_backup_user = true` (resources in `iam.tf`: user, capabilities, group, membership, policy — all `${cluster_name}-longhorn-backup`) cloud-init wires everything: `longhorn-backup-secret` with `AWS_ENDPOINTS`, the `backuptargets.longhorn.io/default` CR, and the `daily-backup` RecurringJob (`longhorn_backup_schedule`, `longhorn_backup_retain`) via SSA (no snapshot-cleanup job: it fails on detached volumes, and Longhorn cleans up its own snapshots) (`setup_longhorn_backup_target()` in `k3s-secrets.sh`). Otherwise the `longhorn_backup_setup` output prints the three manual steps (Customer Secret Key → `longhorn-backup-secret` with `AWS_ENDPOINTS` → patch the `backuptargets.longhorn.io/default` CR). Longhorn ≥ 1.8 has no `backup-target` Setting — always use the BackupTarget CR. Nodes need no IAM grant on this bucket (Longhorn authenticates with the Customer Secret Key).
 - Both buckets share the Always Free Object Storage allowance — 20 GB on Free Tier accounts, but only **10 GB once the tenancy is upgraded to Pay As You Go**. Both buckets have a lifecycle rule purging noncurrent versions after 2 days; without it, pruned etcd snapshots kept being billed. Longhorn backup bucket uses no versioning for actual backup blobs (Longhorn manages its own retention), but the bucket resource has versioning enabled for accidental-delete protection.
 - Users need OCI Customer Secret Keys (S3 credentials) to use either bucket. Keys inherit all rights of their user, so keys placed in the cluster must belong to a bucket-scoped service user.
@@ -735,6 +753,7 @@ before any OCI API call is made:
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
 - `enable_oci_logging` needs `os_family = "ubuntu"`: custom images have no Oracle Cloud Agent (`oci_logging_needs_platform_image`, a warning)
 - node metadata (user_data + SSH keys) must stay within OCI's 32,000-byte limit (`user_data_within_oci_limit`)
+- `os_family = "fcos"`: the resolved or pinned image should be the `fcos_version` release (`fcos_image_matches_version`, warns after a Renovate bump until the import)
 - `os_family = "opensuse"`: the resolved or pinned image should be the `opensuse_leap_version` release (warns after a Renovate bump until the new release is imported)
 
 These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
@@ -749,6 +768,8 @@ The following variables have explicit format validation to prevent late-apply OC
 - `os_image_id`: must start with `ocid1.image.` if set
 - `oci_core_vcn_dns_label`, `public_subnet_dns_label`, `private_subnet_dns_label`: `^[a-zA-Z0-9]{1,15}$` — OCI DNS label limits (no hyphens, max 15 chars)
 - `boot_volume_size_in_gbs`: must be `>= 50` (OCI hard minimum)
+- `os_family`: `ubuntu|opensuse|fcos`; `fcos` also requires `enable_object_storage_state` and `region` (a cross-variable validation, hard error)
+- `opensuse_variant`: `minimal|immutable`; `fcos_version`: `^[0-9]+$`; `fcos_image_compartment_ocid`: tenancy or compartment OCID, or null
 - `k3s_server_pool_size`: must be odd positive integer (etcd quorum; Always Free only fits 1)
 - `standalone_worker_fault_domain`: `FAULT-DOMAIN-[1-3]` or null
 - `ubuntu_version`: `^[0-9]{2}\.04$` (LTS only); `opensuse_leap_version`: `^[0-9]+\.[0-9]+$`

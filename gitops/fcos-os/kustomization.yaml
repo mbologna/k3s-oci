@@ -1,0 +1,10 @@
+---
+# Fedora CoreOS OS updates (os_family = "fcos"), modelled on OpenShift's Machine
+# Config Operator: the release is pinned here (plan.yaml, OpenShift's osImageURL) and
+# system-upgrade-controller rolls it out one drained node at a time. Added by
+# cloud-init on FCOS clusters only (files/lib/k3s-fcos-os.sh, gitops/optional/fcos-os.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - plan.yaml
