@@ -327,6 +327,25 @@ Middlewares (BasicAuth, rate limits, IP allowlists, headers) are Traefik `Middle
 > described above; External DNS creates the records, then cert-manager issues the certificate.
 > `enable_dns01_challenge = true` switches to DNS-01 (wildcard certificates, no inbound port 80).
 
+### DNS: lower ndots for Alpine (musl) images
+
+Pods inherit the node's search domains (the OCI VCN's, plus any a node adds, e.g. Tailscale's)
+after the cluster ones. With Kubernetes' default `ndots:5`, an external name such as `github.com`
+is first tried against every search domain, and musl gives up when one of those lookups errors
+(`EAI_AGAIN`, "DNS server returned general failure") instead of trying the next. Set
+`ndots:1` on such workloads, and write in-cluster names fully qualified
+(`kubernetes.default.svc.cluster.local`): musl does not apply the search list to a dotted name.
+
+```yaml
+spec:
+  template:
+    spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+```
+
 ### Resilience: spread replicas across nodes
 
 Run `replicas ≥ 2` with `topologySpreadConstraints` on `kubernetes.io/hostname` so losing one node never takes all replicas down. Traefik already runs on both nodes, so ingress survives a single-node drain or failure. See [gitops/README.md](gitops/README.md#resilience-spread-replicas-across-nodes) for the snippet and a matching PodDisruptionBudget.
@@ -342,6 +361,40 @@ kubectl apply -n argocd -f gitops/apps/app-of-apps.yaml
 ```
 
 ArgoCD will then continuously reconcile every manifest under `gitops/apps/`.
+
+### Keeping the Argo CD UI off the internet
+
+By default cloud-init publishes the Argo CD UI on an sslip.io hostname behind the NLB. To reach it only
+over your tailnet, set `argocd_hostname = ""` (no public route), deploy the Tailscale operator
+(`gitops/tailscale-operator/`), and add a Service like this to your gitops repo. The Longhorn UI works
+the same way (selector `app: longhorn-ui`, port 8000); leave `longhorn_hostname` unset.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-tailnet
+  namespace: argocd
+  annotations:
+    tailscale.com/hostname: argocd   # http://argocd.<tailnet>.ts.net
+    # tailscale.com/proxy-group: ingress-ha   # with the HA ProxyGroups
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app.kubernetes.io/instance: argocd
+    app.kubernetes.io/name: argocd-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+```
+
+Plain HTTP is fine inside WireGuard (`server.insecure` is already on). CLI:
+`argocd login argocd.<tailnet>.ts.net --plaintext --grpc-web`. The tailscale namespace's
+NetworkPolicies let the proxy out; the UI's namespace must let it in: add a
+`kubernetes.io/metadata.name: tailscale` namespace selector next to Traefik's in `allow-traefik-ingress`
+(`gitops/network-policies/argocd.yaml`, `longhorn-system.yaml`).
 
 ### Adding your own applications
 
@@ -546,7 +599,7 @@ Delete them in the Longhorn UI.
 | A1.Flex compute | 2 OCPUs / 12 GB / 2 instances | 1 server + 1 worker = **2 OCPUs / 12 GB** |
 | Block storage | 200 GB | 2 × 100 GB = **200 GB** (boot volume IOPS scale with size, the full allowance goes to etcd/image/Longhorn IO) |
 | Network Load Balancer | 1 NLB | **1** (public, HTTP/HTTPS) |
-| Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi) |
+| Flexible Load Balancer | 1 × 10 Mbps | **1** (private, kubeapi). Tenancies created before December 2020 may be billed for it: check the cost report after the first apply |
 | E2.1.Micro instances | 2 | **0** (bastion uses OCI Bastion Service, managed, no VM) |
 | NAT Gateway | 1 per VCN | **1** (outbound-only for private nodes) |
 | Object Storage | 20 GB (Free Tier) / 10 GB (Pay As You Go) | **2 versioned buckets**: etcd snapshots + leader lock, and Longhorn PVC backups (`enable_object_storage_state`, `enable_longhorn_backup`) |

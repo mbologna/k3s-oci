@@ -719,7 +719,7 @@ variable "argocd_chart_version" {
 
 variable "external_secrets_chart_version" {
   type        = string
-  description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/apps/external-secrets.yaml targetRevision. Managed by Renovate."
+  description = "External Secrets Operator Helm chart version used for the bootstrap install. Must match gitops/optional/external-secrets.yaml targetRevision. Managed by Renovate."
   # renovate: datasource=helm depName=external-secrets registryUrl=https://charts.external-secrets.io
   default = "2.14.0"
 
