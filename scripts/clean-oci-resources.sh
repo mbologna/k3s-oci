@@ -315,17 +315,20 @@ done
 
 # 9. IAM (dynamic group, policies, Longhorn backup service user + group)
 log "9. IAM..."
-for DG_ID in $(oci iam dynamic-group list --compartment-id "$COMPARTMENT" \
-  --query "data[?contains(name, '${CLUSTER}') || contains(name, 'k3s')].id" \
-  --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+# Match the module's freeform tag, not the name: a name filter also caught IAM
+# resources the module never created (e.g. a CI plan user's policy whose name
+# contained "k3s"). The dynamic group lives in the tenancy root, the policies in
+# the cluster's compartment.
+IAM_TAG_QUERY="data[?\"freeform-tags\".\"k3s-cluster-name\"=='${CLUSTER}'].id"
+for DG_ID in $(oci iam dynamic-group list --compartment-id "$TENANCY" --all \
+  --query "$IAM_TAG_QUERY" --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
   DG_NAME=$(oci iam dynamic-group get --dynamic-group-id "$DG_ID" \
     --query 'data.name' --raw-output 2>/dev/null || echo "unknown")
   log "  Deleting dynamic group $DG_NAME ($DG_ID)..."
   oci iam dynamic-group delete --dynamic-group-id "$DG_ID" --force 2>/dev/null || true
 done
-for POLICY_ID in $(oci iam policy list --compartment-id "$COMPARTMENT" \
-  --query "data[?contains(name, '${CLUSTER}') || contains(name, 'k3s')].id" \
-  --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
+for POLICY_ID in $(oci iam policy list --compartment-id "$COMPARTMENT" --all \
+  --query "$IAM_TAG_QUERY" --raw-output 2>/dev/null | jq -r '.[]' 2>/dev/null); do
   POLICY_NAME=$(oci iam policy get --policy-id "$POLICY_ID" \
     --query 'data.name' --raw-output 2>/dev/null || echo "unknown")
   log "  Deleting policy $POLICY_NAME ($POLICY_ID)..."
