@@ -87,7 +87,6 @@ files/lib/k3s-agent.sh            — pure bash: k3s agent install, main entry p
 gitops/apps/                 — ArgoCD Application manifests (App of Apps pattern)
 gitops/optional/             — Opt-in Applications outside the App of Apps (external-secrets.yaml, wrapped by cloud-init; external-dns.yaml, reference only; argocd-image-updater.yaml, copy to gitops/apps/ to install)
 gitops/argocd/               — ArgoCD supplementary config (BackendTrafficPolicy rate limit), managed by argocd-config.yaml
-gitops/pdbs/                 — PodDisruptionBudgets for ArgoCD / cert-manager (pdbs.yaml App)
 gitops/coredns/              — HPA pinning k3s's CoreDNS at 2 replicas, one per node (coredns.yaml App)
 gitops/priority-classes/     — PriorityClasses platform-critical (cert-manager), alerting (the opt-in alert CronJobs) and worker-pinned (jobs required on the worker); priority-classes.yaml App, sync wave -2
 gitops/node-cordon-alert/    — Opt-in CronJob: webhook alert when a node stays cordoned 25+ min (application-template.yaml; needs a webhook Secret)

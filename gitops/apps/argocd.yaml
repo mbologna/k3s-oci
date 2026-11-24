@@ -56,11 +56,17 @@ spec:
         #
         # Two argocd-server replicas, one per node (required anti-affinity), so a
         # node reboot or drain leaves the UI, API and webhooks up. A drained
-        # replica waits Pending while the other serves, and the PDB in
-        # gitops/pdbs/ evicts one at a time. With one replica per node there is no
-        # node for a surge pod, so updates replace one replica at a time.
+        # replica waits Pending while the other serves, and the chart's PDB
+        # evicts one at a time. With one replica per node there is no node for a
+        # surge pod, so updates replace one replica at a time. The other Argo CD
+        # parts run one replica, where a maxUnavailable: 1 PDB never blocks
+        # anything, so they have none.
         server:
           replicas: 2
+          pdb:
+            enabled: true
+            maxUnavailable: 1
+            unhealthyPodEvictionPolicy: AlwaysAllow
           deploymentStrategy:
             type: RollingUpdate
             rollingUpdate:

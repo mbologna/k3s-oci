@@ -16,7 +16,6 @@ gitops/
 │   ├── kured.yaml                    # kured Helm release
 │   ├── longhorn.yaml                 # Longhorn Helm release
 │   ├── network-policies.yaml         # NetworkPolicies for all namespaces
-│   ├── pdbs.yaml                     # PodDisruptionBudgets for core components
 │   ├── priority-classes.yaml         # PriorityClasses (gitops/priority-classes/)
 │   ├── system-upgrade-controller.yaml # system-upgrade-controller for k3s upgrades
 │   └── traefik.yaml                  # Traefik Helm release: ingress, HTTP→HTTPS redirect, TLS options
@@ -49,8 +48,6 @@ gitops/
 │   ├── longhorn-system.yaml          # longhorn-system namespace
 │   ├── system-upgrade.yaml           # system-upgrade namespace
 │   └── traefik.yaml                  # traefik namespace (NodePort ingress + backend egress)
-├── pdbs/                             # PodDisruptionBudgets
-│   └── pod-disruption-budgets.yaml   # ArgoCD, cert-manager PDBs
 ├── priority-classes/                 # PriorityClasses: platform-critical, alerting, worker-pinned
 ├── node-cordon-alert/                # Opt-in: webhook alert when a node stays cordoned (copy application-template.yaml to apps/)
 ├── backup-monitor/                   # Opt-in: Apprise alert when Longhorn backups or etcd snapshots are stale (copy application-template.yaml to apps/)
@@ -101,7 +98,6 @@ Cloud-init bootstraps what ArgoCD cannot self-manage at first start:
 | external-dns Helm | ArgoCD, Application created by cloud-init (`create_external_dns_app()`) | Needs runtime domain/zone filters; `optional/external-dns.yaml` is a reference |
 | ESO Helm (adoption) | ArgoCD (`optional/external-secrets.yaml` via the `optional-external-secrets` wrapper) | Only when `enable_external_secrets = true` |
 | All `gitops/network-policies/` resources | ArgoCD (`apps/network-policies.yaml`) | Pure Kubernetes manifests |
-| All `gitops/pdbs/` resources | ArgoCD (`apps/pdbs.yaml`) | Pure Kubernetes manifests |
 | `gitops/coredns/` HPA | ArgoCD (`apps/coredns.yaml`) | Pure Kubernetes manifests |
 | `gitops/priority-classes/` | ArgoCD (`apps/priority-classes.yaml`) | Pure Kubernetes manifests |
 | descheduler Helm | ArgoCD (`apps/descheduler.yaml`) | Helm chart, no runtime variables |
