@@ -729,7 +729,7 @@ Do not remove these checks.
 ### Variable validations
 The following variables have explicit format validation to prevent late-apply OCI API failures:
 - `cluster_name`: `^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$` — OCI resource name limits; used as prefix in all display names
-- `availability_domain`: `^[^:]+:[A-Z0-9]+-AD-[1-3]$` — OCI format requirement
+- `availability_domain`: `^[^:]+:[A-Z0-9-]+-AD-[1-3]$` — OCI format requirement (region names may contain hyphens: `EU-FRANKFURT-1-AD-1`)
 - `my_public_ip_cidr`: must be a valid CIDR
 - `certmanager_email_address`: must be a valid email, not the placeholder
 - `os_image_id`: must start with `ocid1.image.` if set

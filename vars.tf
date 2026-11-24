@@ -15,7 +15,7 @@ variable "availability_domain" {
   description = "Availability domain name, e.g. 'Uocm:EU-FRANKFURT-1-AD-1'"
 
   validation {
-    condition     = can(regex("^[^:]+:[A-Z0-9]+-AD-[1-3]$", var.availability_domain))
+    condition     = can(regex("^[^:]+:[A-Z0-9-]+-AD-[1-3]$", var.availability_domain))
     error_message = "availability_domain must match the pattern 'Namespace:REGION-AD-N' (e.g. 'Uocm:EU-FRANKFURT-1-AD-1')."
   }
 }
