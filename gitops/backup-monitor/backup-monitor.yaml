@@ -1,0 +1,120 @@
+---
+# Daily freshness check of the off-cluster backups (see application-template.yaml):
+#   - Longhorn: the "default" BackupTarget must be available, and every volume
+#     older than MAX_BACKUP_AGE_HOURS must have a Completed backup newer than
+#     that (cloud-init's daily-backup RecurringJob, longhorn_backup_schedule).
+#   - etcd: the newest object under ETCD_PREFIX in ETCD_BUCKET must be newer
+#     than MAX_ETCD_AGE_HOURS (uploads every 6 h at the default
+#     etcd_snapshot_upload_hours; 13 h tolerates one missed upload).
+#
+# Needs the Secret backup-monitor-apprise (key: url) in this namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-monitor
+  namespace: backup-monitor
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-monitor
+  namespace: longhorn-system
+rules:
+  - apiGroups: ["longhorn.io"]
+    resources: ["backups", "backuptargets", "volumes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-monitor
+  namespace: longhorn-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-monitor
+subjects:
+  - kind: ServiceAccount
+    name: backup-monitor
+    namespace: backup-monitor
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-monitor
+  namespace: backup-monitor
+  labels:
+    app.kubernetes.io/name: backup-monitor
+spec:
+  # 14:00 UTC: a missed 00:30 UTC daily backup alerts the same day, because by
+  # then the last good one (the day before) is past MAX_BACKUP_AGE_HOURS (36).
+  # Move it if you change longhorn_backup_schedule.
+  schedule: "0 14 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # One attempt: a stale backup alerts once per day, not once per retry.
+      backoffLimit: 0
+      # A hung OCI or API call must not hold the Forbid slot and silently skip
+      # every later day.
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-monitor
+        spec:
+          restartPolicy: Never
+          serviceAccountName: backup-monitor
+          priorityClassName: alerting
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: check
+              # renovate: datasource=docker depName=ghcr.io/mbologna/backup-monitor
+              image: ghcr.io/mbologna/backup-monitor:1.1.2
+              env:
+                # Set these three to your cluster_name.
+                - name: CLUSTER_NAME
+                  value: my-k3s
+                - name: ETCD_BUCKET
+                  value: my-k3s-terraform-state
+                - name: ETCD_PREFIX
+                  value: etcd-snapshots/my-k3s/
+                - name: MAX_BACKUP_AGE_HOURS
+                  value: "36"
+                - name: MAX_ETCD_AGE_HOURS
+                  value: "13"
+                - name: APPRISE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-monitor-apprise
+                      key: url
+                # The OCI SDK writes under $HOME; the root filesystem is read-only.
+                - name: HOME
+                  value: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

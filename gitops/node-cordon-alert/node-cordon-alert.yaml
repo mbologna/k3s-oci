@@ -61,6 +61,7 @@ spec:
         spec:
           restartPolicy: Never
           serviceAccountName: node-cordon-alert
+          priorityClassName: alerting
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
