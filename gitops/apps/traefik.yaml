@@ -4,8 +4,9 @@ metadata:
   name: traefik
   namespace: argocd
   annotations:
-    # Wave 1: Traefik and its CRDs (Middleware, TLSOption, IngressRoute) exist
-    # before the wave-2 apps whose manifests use them.
+    # Wave 1: after Longhorn (-1) and the wave-0 apps. An app in an earlier wave
+    # that uses Traefik's CRDs (argocd-config's Middleware) carries
+    # SkipDryRunOnMissingResource and converges on a retry once they exist.
     argocd.argoproj.io/sync-wave: "1"
   finalizers:
     - resources-finalizer.argocd.argoproj.io

@@ -23,8 +23,10 @@ locals {
   os_user = var.os_family == "opensuse" ? "sles" : "ubuntu"
 
   # Applied to every OCI resource for consistent identification and cost tracking.
-  # `clustername` (no hyphens) is used in the IAM dynamic group matching_rule because
-  # OCI's rule language does not reliably support hyphenated freeform tag key names.
+  # `clustername` duplicates `k3s-cluster-name` without hyphens, which OCI's rule
+  # languages handle unreliably in tag keys. The IAM dynamic group does not match on
+  # tags (pool instances' freeform tags are not indexed, see iam.tf);
+  # scripts/clean-oci-resources.sh selects IAM resources by `k3s-cluster-name`.
   common_tags = {
     provisioner          = "terraform"
     environment          = var.environment
