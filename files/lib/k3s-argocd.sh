@@ -222,11 +222,17 @@ EOF
   echo "optional-${app_name} ArgoCD Application created."
 }
 
+# if, not `[[ ]] && ...`: a false test as the function's last command makes it
+# return 1, and set -e then aborts run_bootstrap before the Ingresses and the
+# Longhorn backup target.
 create_optional_apps() {
-  [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]] && create_external_dns_app
+  if [[ "${ENABLE_EXTERNAL_DNS}" == "true" ]]; then
+    create_external_dns_app
+  fi
 
-  [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]] && \
+  if [[ "${ENABLE_EXTERNAL_SECRETS}" == "true" ]]; then
     create_optional_app "external-secrets" "external-secrets.yaml" "ServerSideApply=true"
+  fi
 }
 
 # -- External DNS ArgoCD Application -------------------------------------------
