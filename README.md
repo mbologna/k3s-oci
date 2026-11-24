@@ -146,12 +146,17 @@ Every `--cluster-init` normally generates a new cluster CA, so kubeconfigs store
 in OCI Vault and set `k3s_ca_vault_secret_id` (requires `enable_vault = true`):
 
 ```bash
-# on a running server: export the current CA, so existing kubeconfigs keep working
-sudo tar -czf - -C /var/lib/rancher/k3s/server/tls \
-  server-ca.crt server-ca.key client-ca.crt client-ca.key | base64 -w0 > k3s-ca.b64
-# create a Vault secret whose value is the content of k3s-ca.b64, then:
+# export the running cluster's CA (through Bastion or the NLB, like just ssh), so existing
+# kubeconfigs keep working, and store it as the Vault secret <cluster_name>-k3s-ca:
+CLUSTER_NAME=mycluster VAULT=true just k3s-ca-export
+# it prints the line to add to terraform.tfvars:
 #   k3s_ca_vault_secret_id = "<secret OCID>"
 ```
+
+`scripts/k3s-ca-export.sh` also leaves the bundle in `./<cluster_name>-k3s-ca.b64` (mode 600): it
+holds the CA private keys, so keep it somewhere safe or delete it. By hand, the bundle is
+`sudo tar -czf - -C /var/lib/rancher/k3s/server/tls server-ca.crt server-ca.key client-ca.crt client-ca.key | base64 -w0`
+on the server, and the Vault secret's value is that base64 text.
 
 The first server extracts the four files before `--cluster-init`. k3s reuses existing CA files
 instead of generating them, so the cluster keeps the same CA. If the secret is set but cannot
@@ -801,7 +806,8 @@ tofu destroy
 > ```bash
 > COMPARTMENT_OCID=ocid1.tenancy.oc1..xxx CLUSTER_NAME=mycluster just teardown-keep-data
 > # TF_DIR=path/to/root-module, CLEAN_CMD="bash my-wrapper.sh" optional;
-> # IMPORT_ONLY=true resumes after a failed re-import
+> # IMPORT_ONLY=true resumes after a failed re-import;
+> # PRE_BACKUP=true first takes a fresh etcd snapshot and Longhorn backups (just pre-teardown-backup)
 > just apply
 > ```
 >
@@ -819,8 +825,10 @@ tofu destroy
   `etcd_snapshot_retention` uploads, about 30 hours at the default retention of 5 and 6 hours between uploads.
   If you might need the old cluster's state later, copy its snapshots outside that prefix first
   (e.g. `oci os object copy` to `etcd-archive/`; it counts against the Object Storage allowance).
-- **Longhorn backups** are not pruned by the new cluster. Restore PVCs from the Longhorn UI
-  (**Backup → select → Restore**) or with a `Volume` that has `spec.fromBackup` set.
+- **Longhorn backups** are not pruned by the new cluster. Once Argo CD has synced the apps,
+  `just longhorn-restore` restores every Longhorn PVC from its newest backup (it skips volumes
+  newer than their backup, so it never rolls a live volume back) and rebinds the PVC; pods using
+  it restart. By hand: the Longhorn UI (**Backup → select → Restore**), or a `Volume` with `spec.fromBackup` set.
 
 ## NLB IP stability
 

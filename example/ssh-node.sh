@@ -11,6 +11,9 @@
 #   ./ssh-node.sh                  # SSH into the server (default)
 #   ./ssh-node.sh worker           # SSH into the standalone worker
 #   ./ssh-node.sh 10.0.1.82        # SSH into a specific private IP
+#   ./ssh-node.sh server sudo k3s etcd-snapshot ls   # run a command instead
+#
+# Progress messages go to stderr, so a command's stdout can be piped or captured.
 #
 # Override SSH key:  SSH_KEY_PATH=~/.ssh/id_ed25519 ./ssh-node.sh
 set -euo pipefail
@@ -18,6 +21,7 @@ set -euo pipefail
 SSH_KEY="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 
 TARGET="${1:-server}"
+shift || true
 case "$TARGET" in
   server)  NODE_IP=$(tofu output -json k3s_servers_private_ips | jq -r '.[0]') ;;
   worker)  NODE_IP=$(tofu output -raw k3s_standalone_worker_private_ip) ;;
@@ -33,17 +37,17 @@ BASTION_OCID=$(tofu output -raw bastion_ocid 2>/dev/null || true)
 if [ -z "$BASTION_OCID" ]; then
   # ── direct mode: the NLB forwards port 22 to any node; -W hops to the target ──
   if [ "$(tofu output -raw ssh_command 2>/dev/null || true)" = "" ]; then
-    echo "❌ Neither enable_bastion nor expose_ssh is set in terraform.tfvars"
+    echo "❌ Neither enable_bastion nor expose_ssh is set in terraform.tfvars" >&2
     exit 1
   fi
   NLB_IP=$(tofu output -json public_nlb_ip | jq -r '.[0]')
-  echo "🖥️  Connecting to ${NODE_IP} via NLB ${NLB_IP}:22..."
+  echo "🖥️  Connecting to ${NODE_IP} via NLB ${NLB_IP}:22..." >&2
   exec ssh "${SSH_BASE_OPTS[@]}" \
     -o "ProxyCommand=ssh ${SSH_BASE_OPTS[*]} -o ConnectTimeout=10 -W %h:%p ubuntu@${NLB_IP}" \
-    ubuntu@"$NODE_IP"
+    ubuntu@"$NODE_IP" "$@"
 fi
 
-echo "🔐 Creating OCI Bastion port-forwarding session to ${NODE_IP}:22..."
+echo "🔐 Creating OCI Bastion port-forwarding session to ${NODE_IP}:22..." >&2
 SESSION_OCID=$(oci bastion session create-port-forwarding \
   --bastion-id "$BASTION_OCID" \
   --ssh-public-key-file "${SSH_KEY}.pub" \
@@ -52,27 +56,26 @@ SESSION_OCID=$(oci bastion session create-port-forwarding \
   --session-ttl 3600 \
   --query 'data.id' --raw-output)
 
-echo -n "⏳ Waiting for session to become ACTIVE..."
+echo -n "⏳ Waiting for session to become ACTIVE..." >&2
 while true; do
   STATE=$(oci bastion session get --session-id "$SESSION_OCID" \
     --query 'data."lifecycle-state"' --raw-output 2>/dev/null || echo "UNKNOWN")
   [ "$STATE" = "ACTIVE" ] && break
-  echo -n "."
+  echo -n "." >&2
   sleep 5
 done
-echo " ✓"
+echo " ✓" >&2
 
 BASTION_ENDPOINT=$(oci bastion session get --session-id "$SESSION_OCID" \
   --query 'data."ssh-metadata".command' --raw-output \
   | grep -oE 'ocid1\.bastionsession\.[^ ]+@host\.bastion\.[^ ]+')
 
-echo "🖥️  Connecting to ${NODE_IP}..."
-echo "   (session TTL: 1 hour — type 'exit' to close)"
-echo ""
+echo "🖥️  Connecting to ${NODE_IP}..." >&2
+[ "$#" -gt 0 ] || { echo "   (session TTL: 1 hour — type 'exit' to close)"; echo ""; } >&2
 # ProxyCommand with -W (stdio forward) avoids the background-tunnel race condition:
 # nc -z would succeed as soon as SSH binds the local port, before the bastion
 # connection is actually established. -W makes the outer SSH wait for the full
 # end-to-end connection before handing over the interactive session.
 ssh "${SSH_BASE_OPTS[@]}" \
   -o "ProxyCommand=ssh ${SSH_BASE_OPTS[*]} -W %h:22 -p 22 $BASTION_ENDPOINT" \
-  ubuntu@"$NODE_IP"
+  ubuntu@"$NODE_IP" "$@"

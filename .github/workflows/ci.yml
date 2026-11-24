@@ -52,6 +52,9 @@ jobs:
         scripts/teardown-keep-data.sh
         scripts/import-opensuse-aarch64.sh
         scripts/setup-longhorn-backup.sh
+        scripts/k3s-ca-export.sh
+        scripts/pre-teardown-backup.sh
+        scripts/longhorn-restore.sh
         gitops/update-repo-url.sh
         example/get-kubeconfig.sh
         example/ssh-node.sh
