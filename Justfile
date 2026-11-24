@@ -99,6 +99,8 @@ shellcheck:
     shellcheck --severity=warning \
         files/lib/bootstrap-ubuntu.sh \
         files/lib/bootstrap-opensuse.sh \
+        files/lib/two-phase.sh \
+        files/lib/two-phase-done.sh \
         files/lib/common.sh \
         files/lib/k3s-server.sh \
         files/lib/k3s-bootstrap.sh \

@@ -21,6 +21,19 @@ check "opensuse_image_matches_leap_version" {
   }
 }
 
+# OCI rejects an instance whose metadata (user_data plus ssh_authorized_keys) is over
+# 32,000 bytes. Comment stripping in data.tf keeps the scripts under it; this warns
+# before a change to the scripts or an extra OS layer pushes them past it.
+check "user_data_within_oci_limit" {
+  assert {
+    condition = alltrue([
+      for ud in [data.cloudinit_config.k3s_server.rendered, data.cloudinit_config.k3s_worker.rendered] :
+      length(ud) + length(local.ssh_public_key) <= 32000
+    ])
+    error_message = "Node metadata exceeds OCI's 32,000-byte limit (server user_data ${length(data.cloudinit_config.k3s_server.rendered)} bytes, worker ${length(data.cloudinit_config.k3s_worker.rendered)} bytes, SSH keys ${length(local.ssh_public_key)} bytes): new instances would fail to launch. Shorten the scripts in files/lib/ or the SSH key list."
+  }
+}
+
 check "external_secrets_requires_vault" {
   assert {
     condition     = !var.enable_external_secrets || var.enable_vault

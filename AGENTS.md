@@ -75,6 +75,8 @@ files/kubeconfig-hint-no-bastion.tpl  — kubeconfig retrieval instructions when
 files/lib/common.sh               — pure bash: OS-agnostic helpers: setup_shared_ssh_host_key(), configure_longhorn_prereqs() (iscsid timeout, multipathd blacklist), setup_k3s_memory_protection() (MemoryLow/GOMEMLIMIT drop-in, fwupd masked), setup_flannel_fdb_fix(), install_oci_cli(), install_helm(), resolve_flannel_params()
 files/lib/bootstrap-ubuntu.sh    — pure bash: Ubuntu bootstrap: wait_apt_lock(), bootstrap(), configure_unattended_upgrades() (apt, unattended-upgrades, needrestart)
 files/lib/bootstrap-opensuse.sh  — pure bash: openSUSE bootstrap: bootstrap(), configure_unattended_upgrades() (zypper, /usr/local/sbin/zypper-patch-with-sentinel, kured sentinel)
+files/lib/two-phase.sh           — pure bash: two_phase_begin() — image-based OSes: persist the script, k3s-oci-bootstrap.service, stage packages, reboot, run again (local.two_phase); two_phase_k3s_selinux() — INSTALL_K3S_SKIP_SELINUX_RPM + restorecon drop-in for the k3s binary
+files/lib/two-phase-done.sh      — pure bash: appended after the entry point for two-phase OSes; retires k3s-oci-bootstrap.service
 files/lib/k3s-server.sh           — pure bash: first-server election, custom CA seeding (seed_custom_ca), k3s install, main entry point
 files/lib/k3s-bootstrap.sh        — pure bash: orchestrator — run_bootstrap()
 files/lib/k3s-secrets.sh          — pure bash: pre_create_secrets() — Longhorn, MySQL, Cloudflare secrets
@@ -144,7 +146,7 @@ renovate.json    — Automated dependency updates
   ShellCheck runs on these files without workarounds: `# shellcheck disable=SC2154` covers vars
   exported by the prepended template header, plus two documented inline `SC2097,SC2098`
   suppressions on the `K3S_URL="" sh -s -` installer calls in `k3s-server.sh` / `k3s-agent.sh`.
-- `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`.
+- `data.tf` assembles the final script with `join("\n", [templatefile(...), file(...), ...])`; the file lists are `local._server_script_files` / `local._worker_script_files`.
 - Ubuntu LTS is the default OS (`var.os_family = "ubuntu"`, release in `var.ubuntu_version`, default 26.04); 24.04 is no longer supported. openSUSE Leap is supported via `var.os_family = "opensuse"` — its bootstrap is in `files/lib/bootstrap-opensuse.sh`. Do not add Oracle Linux support. Do not hardcode OS release numbers in code or prose: use `ubuntu_version` / `opensuse_leap_version` (Renovate bumps them).
 - Standalone scripts (`scripts/`, `example/*.sh`, `gitops/update-repo-url.sh`) start with `set -euo pipefail`.
   The bootstrap files (`common.sh`, `bootstrap-*.sh`) set it for the assembled cloud-init script; the other
@@ -163,7 +165,7 @@ ArgoCD apps depend on):
    - Create a new `k3s-<component>.sh` file for completely new concerns
 4. Call it from `run_bootstrap()` in `files/lib/k3s-bootstrap.sh`.
 5. Add the version variable to the `templatefile()` vars map in `data.tf`.
-6. If you created a new `k3s-<component>.sh`, add it to the `file(...)` list in `data.cloudinit_config.k3s_server` in `data.tf` — **before** `k3s-bootstrap.sh` so its functions are defined when the orchestrator calls them.
+6. If you created a new `k3s-<component>.sh`, add it to `local._server_script_files` in `data.tf` — **before** `k3s-bootstrap.sh` so its functions are defined when the orchestrator calls them.
 
 If the component is fully managed by ArgoCD (Helm chart from gitops/apps/):
 1. Add an ArgoCD `Application` manifest to `gitops/apps/` with the chart version pinned
@@ -225,6 +227,8 @@ shellcheck --severity=warning \
   files/lib/common.sh \
   files/lib/bootstrap-ubuntu.sh \
   files/lib/bootstrap-opensuse.sh \
+  files/lib/two-phase.sh \
+  files/lib/two-phase-done.sh \
   files/lib/k3s-server.sh \
   files/lib/k3s-bootstrap.sh \
   files/lib/k3s-secrets.sh \
@@ -476,8 +480,14 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Separation of concerns**: `server-vars.sh.tpl` and `agent-vars.sh.tpl` are the ONLY files
   with Terraform `${var}` interpolation. All `files/lib/*.sh` are pure bash.
 - **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), bootstrap-{ubuntu,opensuse}.sh, file(lib/common.sh), ...])` to
-  produce a single cloud-init script. The OS-specific bootstrap file is selected by `var.os_family`. The rendered vars header is prepended, making all
+  produce a single cloud-init script. The OS-specific bootstrap file is selected by `var.os_family` (`local.os_bootstrap_file`). The rendered vars header is prepended, making all
   `export KEY="value"` statements available to the lib scripts at runtime.
+- **Two-phase boot** (`local.two_phase`, image-based OSes only): `two-phase.sh` follows the OS bootstrap and
+  `two-phase-done.sh` the entry point. The OS's `bootstrap()` calls `two_phase_begin <install_fn>` first: on the
+  first boot it copies the script to `/var/lib/k3s-oci/bootstrap.sh`, enables `k3s-oci-bootstrap.service`, stages
+  the packages and reboots; the unit then runs the script again, and `two-phase-done.sh` disables it once the
+  script completes. One-phase OSes get neither file, so their scripts are unchanged. Keep OS-specific code out
+  of the shared files: a change there changes every OS's user-data.
 - **Bootstrap script split**: `k3s-bootstrap.sh` is a ~60-line orchestrator. Concerns live in
   focused sub-scripts (all pure bash, concatenated in order before `k3s-bootstrap.sh` in `data.tf`):
   - `k3s-secrets.sh` — `pre_create_secrets()`: Longhorn, MySQL, Cloudflare
@@ -721,6 +731,7 @@ before any OCI API call is made:
 - `create_longhorn_backup_user = true` requires `enable_longhorn_backup = true`, and is mutually exclusive with `user_ocid`
 - `create_external_secrets_user = true` requires `enable_external_secrets = true`, `enable_vault = true` and `region != null`
 - automatic Longhorn backup wiring (`create_longhorn_backup_user` or `user_ocid`) requires `region != null`
+- node metadata (user_data + SSH keys) must stay within OCI's 32,000-byte limit (`user_data_within_oci_limit`)
 - `os_family = "opensuse"`: the resolved or pinned image should be the `opensuse_leap_version` release (warns after a Renovate bump until the new release is imported)
 
 These produce a clear error message (not a cryptic apply-time failure) when the combination is invalid.
