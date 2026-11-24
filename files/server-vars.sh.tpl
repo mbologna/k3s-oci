@@ -17,6 +17,7 @@ export TRACE="${trace_enabled ? "true" : "false"}"
 # -- Cluster identity ----------------------------------------------------------
 export K3S_VERSION="${k3s_version}"
 export K3S_SUBNET="${k3s_subnet}"
+export FLANNEL_BACKEND="${flannel_backend}"
 export K3S_URL="${k3s_url}"
 export KUBE_API_PORT="${kube_api_port}"
 export K3S_TLS_SAN="${k3s_tls_san}"
@@ -117,6 +118,7 @@ export SSH_HOST_KEY_PUBLIC="${ssh_host_key_public}"
 # -- Extra k3s server args (space-separated, appended to install command) ------
 export K3S_EXTRA_SERVER_ARGS="${k3s_extra_server_args}"
 export K3S_SECRETS_ENCRYPTION="${k3s_secrets_encryption ? "true" : "false"}"
+export K3S_SECRETS_ENCRYPTION_PROVIDER="${k3s_secrets_encryption_provider}"
 
 # -- Custom cluster CA: Vault secret with a base64 tar.gz of server/tls CA files --
 export K3S_CA_VAULT_SECRET_ID="${k3s_ca_vault_secret_id}"

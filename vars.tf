@@ -279,16 +279,38 @@ variable "k3s_subnet" {
   default     = "default_route_table"
 }
 
+variable "flannel_backend" {
+  type        = string
+  description = "Pod network backend. \"vxlan\" (k3s's default) or \"wireguard-native\": WireGuard between nodes encrypts pod traffic inside the VCN and has no VXLAN forwarding table, so the flannel-fdb-fix timer is not installed. Read at install time: switching an existing cluster needs a rebuild. The VCN's security list already allows the UDP it needs (51820)."
+  default     = "vxlan"
+
+  validation {
+    condition     = contains(["vxlan", "wireguard-native"], var.flannel_backend)
+    error_message = "flannel_backend must be \"vxlan\" or \"wireguard-native\"."
+  }
+}
+
 variable "k3s_extra_server_args" {
   type        = list(string)
-  description = "Extra arguments appended to the k3s server install command. Useful for etcd tuning on resource-constrained nodes (e.g. ['--etcd-arg=election-timeout=5000', '--etcd-arg=heartbeat-interval=1000'])."
+  description = "Extra arguments appended to the k3s server install command; they take precedence over the module's k3s config drop-in (/etc/rancher/k3s/config.yaml.d/10-k3s-oci.yaml). Useful for etcd tuning on resource-constrained nodes (e.g. ['--etcd-arg=election-timeout=5000', '--etcd-arg=heartbeat-interval=1000'])."
   default     = []
 }
 
 variable "k3s_secrets_encryption" {
   type        = bool
-  description = "Start k3s servers with --secrets-encryption, so Secrets are AES-CBC encrypted in etcd and in the etcd snapshots uploaded to Object Storage. Applies at install time only. A cluster started without it needs `k3s secrets-encrypt enable`, a restart with the flag, `k3s secrets-encrypt rotate-keys` and a second restart (https://docs.k3s.io/cli/secrets-encrypt). Never turn it off on an encrypted cluster: its data can't be read without the flag."
+  description = "Start k3s servers with secrets encryption, so Secrets are encrypted in etcd and in the etcd snapshots uploaded to Object Storage (cipher: k3s_secrets_encryption_provider). Applies at install time only. A cluster started without it needs `k3s secrets-encrypt enable`, a restart with the flag, `k3s secrets-encrypt rotate-keys` and a second restart (https://docs.k3s.io/cli/secrets-encrypt). Never turn it off on an encrypted cluster: its data can't be read without the flag."
   default     = true
+}
+
+variable "k3s_secrets_encryption_provider" {
+  type        = string
+  description = "Cipher for k3s secrets encryption on a new cluster: \"secretbox\" (XSalsa20-Poly1305, which Kubernetes recommends over AES-CBC) or \"aescbc\" (k3s's own default). Read only when a cluster is first created: a server restored from an etcd snapshot keeps the snapshot's cipher, and so does a running cluster. k3s marks the flag experimental."
+  default     = "secretbox"
+
+  validation {
+    condition     = contains(["secretbox", "aescbc"], var.k3s_secrets_encryption_provider)
+    error_message = "k3s_secrets_encryption_provider must be \"secretbox\" or \"aescbc\"."
+  }
 }
 
 variable "k3s_ca_vault_secret_id" {

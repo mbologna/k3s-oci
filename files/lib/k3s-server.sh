@@ -345,84 +345,106 @@ verify_custom_ca() {
 }
 
 install_k3s_server() {
-  # Pin node identity to the OCI instance's own display name instead of letting
-  # k3s default to `hostname` at first start. Without this, any later OS hostname
-  # change (e.g. a config-management tool that renames hosts to match its own
-  # inventory) is invisible to the *running* k3s process — it keeps using its
-  # cached identity until some unrelated future restart, at which point it
-  # re-registers under the new hostname as a SEPARATE Node object, orphaning the
-  # old one (and, for a server, desyncing etcd's own member-name bookkeeping from
-  # the Node object k3s uses to decide whether it's a voter — a single-node
-  # cluster's control plane going through this is a full-outage-shaped bug, not a
-  # cosmetic one). Pinning here means the OS hostname can change freely and k3s's
-  # identity never moves — it only changes when this VM is genuinely replaced.
-  local install_params=("--tls-san" "${K3S_TLS_SAN}" "--node-name" "${SELF_INSTANCE_NAME}")
-
   resolve_flannel_params
-  if [[ -n "${LOCAL_IP:-}" ]]; then
-    install_params+=("--node-ip" "${LOCAL_IP}" "--advertise-address" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
-  fi
 
-  # Always disable k3s's bundled Traefik: the module installs Traefik's upstream
-  # chart through ArgoCD (gitops/apps/traefik.yaml), pinned and Renovate-managed.
-  # Disable local-path-provisioner too: Longhorn is the default StorageClass, and
-  # two classes annotated is-default-class makes PVCs without storageClassName
-  # land on whichever the admission plugin picks (node-local, no replicas).
-  # Disable ServiceLB (klipper-lb): the OCI NLB reaches Traefik's NodePorts, and
-  # Tailscale LoadBalancer Services carry their own loadBalancerClass. Left on, it
-  # only takes host ports: when Traefik's Service fell back to LoadBalancer, its
-  # svclb pods held 80/443 on every node.
-  install_params+=("--disable" "traefik" "--disable" "local-storage" "--disable" "servicelb")
-
+  # The settings below go in the module's k3s config drop-in (write_k3s_config in
+  # common.sh); only the join mode and k3s_extra_server_args stay on the command
+  # line, where they take precedence over config files.
+  #
+  # disable: k3s's bundled Traefik (the module installs Traefik's upstream chart
+  # through ArgoCD, gitops/apps/traefik.yaml, pinned and Renovate-managed);
+  # local-path-provisioner (Longhorn is the default StorageClass, and two classes
+  # annotated is-default-class make PVCs without storageClassName land on
+  # whichever the admission plugin picks: node-local, no replicas); ServiceLB
+  # (klipper-lb: the OCI NLB reaches Traefik's NodePorts, and Tailscale
+  # LoadBalancer Services carry their own loadBalancerClass. Left on, it only
+  # takes host ports: when Traefik's Service fell back to LoadBalancer, its svclb
+  # pods held 80/443 on every node).
+  #
   # Kubelet image GC: start pruning at 70% disk instead of 85%. Images, etcd and
   # Longhorn replicas share the single boot volume; letting images fill it to 85%
   # costs both capacity and IOPS that etcd needs.
-  install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
-
-  # Tell the scheduler what the host itself uses. Measured on a 1 OCPU / 6 GB
-  # A1.Flex server: k3s.service holds ~2.4 GiB and peaks near 2.9 GiB (k3s server
-  # ~1.6 GiB, containerd, and every pod's containerd-shim, ~14 MiB each, which
-  # stay in k3s's cgroup because k3s keeps them across restarts), plus ~0.6 GiB
-  # of other host services. With the old 2 GiB the kubelet let pods grow into
-  # memory the host was using; after a k3s upgrade the kernel dropped etcd's
-  # page cache, fsyncs took 8 s and k3s lost its lease in a loop. The kubelet
-  # caps all pods together at what is left (the kubepods cgroup).
-  install_params+=("--kubelet-arg=system-reserved=cpu=150m,memory=3Gi")
+  #
+  # system-reserved tells the scheduler what the host itself uses. Measured on a
+  # 1 OCPU / 6 GB A1.Flex server: k3s.service holds ~2.4 GiB and peaks near
+  # 2.9 GiB (k3s server ~1.6 GiB, containerd, and every pod's containerd-shim,
+  # ~14 MiB each, which stay in k3s's cgroup because k3s keeps them across
+  # restarts), plus ~0.6 GiB of other host services. With the old 2 GiB the
+  # kubelet let pods grow into memory the host was using; after a k3s upgrade the
+  # kernel dropped etcd's page cache, fsyncs took 8 s and k3s lost its lease in a
+  # loop. The kubelet caps all pods together at what is left (the kubepods cgroup).
   # k3s sets only disk eviction signals, so without memory.available the kubelet
   # never evicts for memory and leaves it all to the kernel. The disk values are
   # k3s's own, repeated because the flag replaces the whole list.
-  install_params+=("--kubelet-arg=eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%")
-  install_params+=("--kubelet-arg=eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%")
-
+  #
   # k3s's built-in etcd snapshot schedule defaults to "0 */12 * * *", the same
   # minute as the 6-hourly upload cron (setup_etcd_snapshot_upload), so one of
   # the two failed with "snapshot save already in progress". Offset it.
-  install_params+=("--etcd-snapshot-schedule-cron" "15 */12 * * *")
-
-  # Disable leader election for embedded kube-controller-manager, kube-scheduler,
+  #
+  # Leader election off for the embedded kube-controller-manager, kube-scheduler
   # and cloud-controller-manager. With embedded etcd on a single 1-OCPU server, a
   # few seconds of disk-latency stall (etcd slow fdatasync) makes their lease
-  # renewals time out, and a lost lease is fatal to the whole k3s process. These
-  # components don't need leader election on a single-server cluster because there
-  # is only one candidate. NOTE: re-enable leader election if scaling to HA (>1 server).
-  install_params+=("--kube-controller-arg=leader-elect=false")
-  install_params+=("--kube-scheduler-arg=leader-elect=false")
-  install_params+=("--kube-cloud-controller-arg=leader-elect=false")
+  # renewals time out, and a lost lease is fatal to the whole k3s process. A
+  # single server has only one candidate. NOTE: re-enable it for HA (>1 server).
+  #
+  # secrets-encryption: without it etcd, and every snapshot uploaded to Object
+  # Storage, holds Secrets in plaintext. The provider (secretbox by default) is
+  # read only when the cluster is created: a server restored from a snapshot keeps
+  # the snapshot's cipher (tested: an aescbc snapshot restores and stays aescbc).
+  {
+    # node-name: pin node identity to the OCI instance's own display name instead
+    # of letting k3s default to `hostname` at first start. Without this, any later
+    # OS hostname change (e.g. a config-management tool that renames hosts to
+    # match its own inventory) is invisible to the *running* k3s process: it
+    # keeps its cached identity until some unrelated future restart, then
+    # re-registers under the new hostname as a SEPARATE Node object, orphaning
+    # the old one (and, for a server, desyncing etcd's member-name bookkeeping
+    # from the Node object k3s uses to decide whether it's a voter: on a
+    # single-node control plane that is a full outage). Pinned, the OS hostname
+    # can change freely and k3s's identity only changes with the VM.
+    printf 'node-name: "%s"\n' "${SELF_INSTANCE_NAME}"
+    printf 'tls-san+:\n  - "%s"\n' "${K3S_TLS_SAN}"
+    if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
+      printf '  - "%s"\n' "${K3S_TLS_SAN_PUBLIC}"
+    fi
+    if [[ -n "${LOCAL_IP:-}" ]]; then
+      printf 'node-ip: "%s"\nadvertise-address: "%s"\nflannel-iface: "%s"\n' \
+        "${LOCAL_IP}" "${LOCAL_IP}" "${FLANNEL_IFACE}"
+    fi
+    # Cluster-wide: agents take the backend from the server.
+    if [[ "${FLANNEL_BACKEND:-vxlan}" != "vxlan" ]]; then
+      printf 'flannel-backend: "%s"\n' "${FLANNEL_BACKEND}"
+    fi
+    cat <<'K3SEOF'
+disable+:
+  - traefik
+  - local-storage
+  - servicelb
+kubelet-arg+:
+  - "image-gc-high-threshold=70"
+  - "image-gc-low-threshold=55"
+  - "system-reserved=cpu=150m,memory=3Gi"
+  - "eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%"
+  - "eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%"
+etcd-snapshot-schedule-cron: "15 */12 * * *"
+kube-controller-manager-arg+:
+  - "leader-elect=false"
+kube-scheduler-arg+:
+  - "leader-elect=false"
+kube-cloud-controller-manager-arg+:
+  - "leader-elect=false"
+K3SEOF
+    if [[ "${K3S_SECRETS_ENCRYPTION:-true}" == "true" ]]; then
+      printf 'secrets-encryption: true\nsecrets-encryption-provider: "%s"\n' \
+        "${K3S_SECRETS_ENCRYPTION_PROVIDER:-secretbox}"
+    fi
+  } | write_k3s_config
 
-  # Encrypt Secrets at rest: without it etcd, and every snapshot uploaded to
-  # Object Storage, holds them in plaintext.
-  if [[ "${K3S_SECRETS_ENCRYPTION:-true}" == "true" ]]; then
-    install_params+=("--secrets-encryption")
-  fi
-
-  if [[ "${EXPOSE_KUBEAPI}" == "true" ]]; then
-    install_params+=("--tls-san" "${K3S_TLS_SAN_PUBLIC}")
-  fi
-
-  # Append extra server args (e.g. etcd tuning for resource-constrained nodes).
+  # Extra server args (e.g. etcd tuning for resource-constrained nodes) stay on
+  # the command line.
+  local install_params=()
   if [[ -n "${K3S_EXTRA_SERVER_ARGS:-}" ]]; then
-    read -ra _extra_args <<< "${K3S_EXTRA_SERVER_ARGS}"
-    install_params+=("${_extra_args[@]}")
+    read -ra install_params <<< "${K3S_EXTRA_SERVER_ARGS}"
   fi
 
   local max_attempts=10 attempt=0
@@ -576,7 +598,10 @@ setup_k3s_memory_protection k3s
 resolve_k3s_token
 
 install_k3s_server
-setup_flannel_fdb_fix
+# The FDB self-heal only applies to VXLAN; WireGuard has no forwarding table.
+if [[ "${FLANNEL_BACKEND:-vxlan}" == "vxlan" ]]; then
+  setup_flannel_fdb_fix
+fi
 
 # Install etcd snapshot upload cron on ALL server nodes (not just the first).
 # The cron runs every 6h: 'k3s etcd-snapshot save' + upload to OCI Object Storage.

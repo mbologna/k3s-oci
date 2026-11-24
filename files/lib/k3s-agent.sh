@@ -16,22 +16,27 @@ install_k3s_agent() {
     echo "ERROR: IMDS fetch failed — cannot determine instance display name for --node-name."
     exit 1
   }
-  local install_params=("--node-name" "${self_instance_name}")
-
   resolve_flannel_params
-  if [[ -n "${LOCAL_IP:-}" ]]; then
-    install_params+=("--node-ip" "${LOCAL_IP}" "--flannel-iface" "${FLANNEL_IFACE}")
-  fi
 
-  # Kubelet image GC at 70% instead of 85% — same reasoning as the server.
-  install_params+=("--kubelet-arg=image-gc-high-threshold=70" "--kubelet-arg=image-gc-low-threshold=55")
-
-  # Reserve what the host uses outside pods, like the server (see k3s-server.sh):
-  # k3s-agent.service ~0.6 GiB (fewer shims than the server) plus ~0.45 GiB of
-  # other host services, measured on a 1 OCPU / 6 GB A1.Flex worker.
-  install_params+=("--kubelet-arg=system-reserved=cpu=100m,memory=1280Mi")
-  install_params+=("--kubelet-arg=eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%")
-  install_params+=("--kubelet-arg=eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%")
+  # Settings in the module's k3s config drop-in (write_k3s_config in common.sh).
+  # Kubelet image GC at 70% instead of 85%, and memory eviction, as on the server.
+  # system-reserved: what the host uses outside pods, measured on a 1 OCPU / 6 GB
+  # A1.Flex worker: k3s-agent.service ~0.6 GiB (fewer shims than the server) plus
+  # ~0.45 GiB of other host services.
+  {
+    printf 'node-name: "%s"\n' "${self_instance_name}"
+    if [[ -n "${LOCAL_IP:-}" ]]; then
+      printf 'node-ip: "%s"\nflannel-iface: "%s"\n' "${LOCAL_IP}" "${FLANNEL_IFACE}"
+    fi
+    cat <<'K3SEOF'
+kubelet-arg+:
+  - "image-gc-high-threshold=70"
+  - "image-gc-low-threshold=55"
+  - "system-reserved=cpu=100m,memory=1280Mi"
+  - "eviction-hard=memory.available<300Mi,imagefs.available<5%,nodefs.available<5%"
+  - "eviction-minimum-reclaim=memory.available=100Mi,imagefs.available=10%,nodefs.available=10%"
+K3SEOF
+  } | write_k3s_config
 
   local max_api_attempts=180 max_attempts=10 attempt=0
   local api_port="${KUBE_API_PORT:-6443}"
@@ -57,7 +62,7 @@ install_k3s_agent() {
   until curl -sfL https://get.k3s.io | \
       INSTALL_K3S_VERSION="${K3S_VERSION}" K3S_TOKEN="${K3S_TOKEN}" K3S_URL="" \
       INSTALL_K3S_SKIP_START=true \
-      sh -s - agent --server "https://${K3S_URL}:${api_port}" "${install_params[@]}"; do
+      sh -s - agent --server "https://${K3S_URL}:${api_port}"; do
     attempt=$(( attempt + 1 ))
     [[ ${attempt} -ge ${max_attempts} ]] && { echo "ERROR: k3s agent install failed after ${max_attempts} attempts."; exit 1; }
     echo "  retrying (${attempt}/${max_attempts}) ..."
@@ -91,6 +96,9 @@ setup_k3s_memory_protection k3s-agent
 resolve_k3s_token needs_oci_cli
 
 install_k3s_agent
-setup_flannel_fdb_fix
+# The FDB self-heal only applies to VXLAN; WireGuard has no forwarding table.
+if [[ "${FLANNEL_BACKEND:-vxlan}" == "vxlan" ]]; then
+  setup_flannel_fdb_fix
+fi
 
 echo "==> k3s agent cloud-init complete at $(date -u)"

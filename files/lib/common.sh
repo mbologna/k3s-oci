@@ -262,6 +262,23 @@ install_helm() {
   fi
 }
 
+# -- k3s config file ------------------------------------------------------------
+# The module's k3s settings go in a drop-in, not on the installer's command line.
+# k3s reads /etc/rancher/k3s/config.yaml, then config.yaml.d/*.yaml in name order:
+# a later file replaces a key, and `key+:` appends to a list instead. config.yaml
+# stays free for the consumer (config management adding a TLS SAN or resolv-conf),
+# and the module's lists use `+` so they add to the consumer's. To override a
+# module value, add a drop-in that sorts after 10-k3s-oci.yaml.
+K3S_OCI_CONFIG=/etc/rancher/k3s/config.yaml.d/10-k3s-oci.yaml
+
+# write_k3s_config — reads YAML on stdin, writes the module's drop-in.
+write_k3s_config() {
+  mkdir -p "$(dirname "${K3S_OCI_CONFIG}")"
+  cat > "${K3S_OCI_CONFIG}"
+  chmod 600 "${K3S_OCI_CONFIG}"
+  echo "==> Wrote ${K3S_OCI_CONFIG}"
+}
+
 # -- Network helpers -----------------------------------------------------------
 # Resolve node IP and flannel interface from K3S_SUBNET when a specific subnet
 # CIDR is provided. Sets LOCAL_IP and FLANNEL_IFACE in the caller's scope.

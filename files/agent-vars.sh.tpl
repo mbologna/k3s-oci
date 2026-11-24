@@ -14,6 +14,7 @@ export TRACE="${trace_enabled ? "true" : "false"}"
 
 export K3S_VERSION="${k3s_version}"
 export K3S_SUBNET="${k3s_subnet}"
+export FLANNEL_BACKEND="${flannel_backend}"
 export K3S_URL="${k3s_url}"
 export KUBE_API_PORT="${kube_api_port}"
 export K3S_TOKEN_PLAIN="${k3s_token}"

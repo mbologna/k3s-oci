@@ -427,7 +427,7 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 
 ### Traefik (ingress)
 
-- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`--disable traefik` in `k3s-server.sh`) so the version is pinned and Renovate-managed. ServiceLB is disabled too (`--disable servicelb`): a `type: LoadBalancer` Service without a `loadBalancerClass` (e.g. `tailscale`) stays Pending; reach in-cluster services through Traefik's NodePorts.
+- Upstream chart via ArgoCD (`gitops/apps/traefik.yaml`, sync wave 1, namespace `traefik`); k3s's bundled Traefik stays disabled (`disable: traefik` in the k3s config drop-in, `k3s-server.sh`) so the version is pinned and Renovate-managed. ServiceLB is disabled too (`servicelb`): a `type: LoadBalancer` Service without a `loadBalancerClass` (e.g. `tailscale`) stays Pending; reach in-cluster services through Traefik's NodePorts.
 - **DaemonSet** (one pod per node): every NLB backend serves ingress locally, no cross-node hop, no single-pod SPOF. Updates surge (maxUnavailable 0, maxSurge 1), so a node keeps serving while its new pod starts.
 - `priorityClassName: system-cluster-critical`, like kured and Longhorn's instance managers.
 - No PDB: Kubernetes PDBs don't apply to DaemonSet pods; kured drains with `--ignore-daemonsets`.
@@ -466,6 +466,13 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - Do NOT place the template in `gitops/apps/` as-is — it contains `changeme@example.com`.
 
 ### Cloud-init structure (`files/`)
+- **k3s settings live in a config drop-in**, `/etc/rancher/k3s/config.yaml.d/10-k3s-oci.yaml`,
+  written by `write_k3s_config()` (`common.sh`) from `install_k3s_server()` / `install_k3s_agent()`.
+  The installer's command line keeps only the join mode (`--cluster-init` / `--server`) and
+  `k3s_extra_server_args`. List keys use `key+:` so they add to a consumer's
+  `/etc/rancher/k3s/config.yaml` (config management: TLS SANs, `resolv-conf`) instead of replacing
+  it; a consumer overrides a module value with a drop-in that sorts after `10-k3s-oci.yaml`. Add new
+  k3s settings to the drop-in, not as installer flags.
 - **Separation of concerns**: `server-vars.sh.tpl` and `agent-vars.sh.tpl` are the ONLY files
   with Terraform `${var}` interpolation. All `files/lib/*.sh` are pure bash.
 - **Assembly**: `data.tf` uses `join("\n", [templatefile(vars.tpl), bootstrap-{ubuntu,opensuse}.sh, file(lib/common.sh), ...])` to
@@ -494,9 +501,13 @@ snapshots (~30 h at the defaults), because pruning spans the whole `etcd-snapsho
 - **Removed vars**: `kured_start_time`, `kured_end_time`, `kured_reboot_days`, `kured_chart_version`,
   `longhorn_chart_version`, `envoy_gateway_chart_version`, `external_dns_chart_version` were
   removed from `vars.tf`. Configure kured via `gitops/apps/kured.yaml` directly.
-- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the eight
-  vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `k3s_token`, `k3s_url`,
+- **Shared cloud-init vars**: `local.k3s_common_cloud_init_vars` in `locals.tf` holds the nine
+  vars shared by both server and agent (`k3s_version`, `k3s_subnet`, `flannel_backend`, `k3s_token`, `k3s_url`,
   `kube_api_port`, `vault_secret_id_k3s_token`, `ssh_host_key_private_b64`, `ssh_host_key_public`). The server templatefile call uses `merge(local.k3s_common_cloud_init_vars, {...server-only...})`; the agent call passes the local directly.
+- **Flannel backend**: `flannel_backend` (`vxlan` default, or `wireguard-native`) goes in the server's
+  drop-in (agents take it from the server). With WireGuard there is no VXLAN forwarding table, so
+  `setup_flannel_fdb_fix()` is skipped on both node types. Tested with k3s v1.36 in containers
+  (cross-node pod traffic and DNS over `flannel-wg`); not yet on OCI.
 - **Flannel interface resolution**: `resolve_flannel_params()` in `common.sh` sets `LOCAL_IP` and
   `FLANNEL_IFACE` (exported) when `K3S_SUBNET` is not `default_route_table`. Called by both
   `install_k3s_server()` and `install_k3s_agent()`; server adds `--advertise-address` too.
@@ -748,7 +759,7 @@ When adding a new variable that maps to an OCI resource name or OCID, add a `val
 - When a single server bootstraps a fresh cluster (`--cluster-init`) and snapshots already exist in the bucket, `_warn_if_previous_snapshots_exist()` logs a loud WARNING with the `k3s server --cluster-reset --cluster-reset-restore-path` restore steps — a replaced server otherwise silently starts an empty cluster.
 - IAM policy `manage objects in bucket ${cluster_name}-terraform-state` (added in `iam.tf`) enables this.
 - Retention is configurable via `etcd_snapshot_retention` (default: 5 snapshots).
-- Servers start with `--secrets-encryption` (`k3s_secrets_encryption`, default `true`), so the snapshots hold Secrets AES-CBC encrypted. The key lives in the k3s bootstrap data, which is encrypted with the cluster token, so a restore needs the same token and a server started with the flag. The flag applies at install time only; a running cluster is switched over with `k3s secrets-encrypt enable`, a restart with the flag, `rotate-keys` and a second restart.
+- Servers start with secrets encryption (`k3s_secrets_encryption`, default `true`), so the snapshots hold Secrets encrypted: secretbox on clusters created since `k3s_secrets_encryption_provider` (default `"secretbox"`), AES-CBC on older ones. The provider is read only at creation: a restore from an AES-CBC snapshot stays AES-CBC (tested with k3s v1.36), so do not expect a rebuild that restores etcd to switch ciphers. The key lives in the k3s bootstrap data, which is encrypted with the cluster token, so a restore needs the same token and a server started with the flag. The flag applies at install time only; a running cluster is switched over with `k3s secrets-encrypt enable`, a restart with the flag, `rotate-keys` and a second restart.
 - These snapshots are the primary recovery path for split-brain and etcd quorum loss. The server logs the restore steps when it finds old snapshots (see README "After a rebuild that kept the buckets").
 
 ### Atomic leader lock (`--cluster-init` safety)
