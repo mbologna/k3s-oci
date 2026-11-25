@@ -142,4 +142,4 @@ fi
 rm -f "$TSV"
 log "Teardown complete; vault and buckets kept and back in state."
 log "Rebuild with: $TOFU -chdir=$TF_DIR apply"
-log "Note: the new server will log a 'previous etcd snapshots exist' warning — expected, see README (After a rebuild that kept the buckets)."
+log "Note: the new server will log a 'previous etcd snapshots exist' warning — expected, see docs/data.md (After a rebuild that kept the buckets)."

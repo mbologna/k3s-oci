@@ -3,7 +3,7 @@ name: Plan
 # `tofu plan` of example/ against a live deployment, read-only, on every
 # same-repository pull request: a provider or chart bump whose plan is empty
 # changes nothing in the tenancy. It authenticates as an OCI user whose group
-# may only read (README, "CI plan against a live deployment"), reads the state
+# may only read (docs/updates.md, "CI plan against a live deployment"), reads the state
 # from the deployment's remote backend without locking it, and prints only the
 # addresses of changed resources: the full plan holds OCIDs, IPs and tfvars
 # values, and this repository's logs are public.
@@ -52,7 +52,7 @@ jobs:
             [[ -n ${!name} ]] || missing+=("$name")
           done
           if ((${#missing[@]})); then
-            echo "::notice title=tofu plan skipped::missing secrets: ${missing[*]} (README, CI plan against a live deployment)"
+            echo "::notice title=tofu plan skipped::missing secrets: ${missing[*]} (docs/updates.md, CI plan against a live deployment)"
             echo "run=false" >>"$GITHUB_OUTPUT"
           else
             echo "run=true" >>"$GITHUB_OUTPUT"

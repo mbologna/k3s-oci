@@ -2,7 +2,7 @@
 # Pod priority classes. Pods without a class run at priority 0.
 #
 # worker-pinned: workloads with a *required* affinity to the worker, the ones
-# README "Node roles and workload placement" says to keep off the control plane
+# docs/design.md "Node roles and workload placement" says to keep off the control plane
 # (CI runners, Renovate, image builds). Nothing rebalances pods right after a
 # drain: when kured or system-upgrade-controller drains the control plane, its
 # movable pods land on the worker and stay there until the nightly descheduler

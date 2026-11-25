@@ -1,7 +1,7 @@
 # ── OCI Vault (software-protected keys — Always Free) ─────────────────────────
 # Always Free: all software-protected master encryption key versions + 150 secrets.
-# Stores every cluster secret (2 always + up to 8 optional, see the README's
-# "OCI Vault secrets" table) as Vault secrets fetched by cloud-init via OCI CLI
+# Stores every cluster secret (2 always + up to 8 optional, see the
+# "OCI Vault secrets" table in docs/data.md) as Vault secrets fetched by cloud-init via OCI CLI
 # instance_principal auth at boot. This removes plaintext secrets from user-data.
 
 resource "oci_kms_vault" "k3s" {

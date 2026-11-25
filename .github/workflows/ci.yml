@@ -13,6 +13,7 @@ name: CI
       - ".tflint.hcl"
       - ".terraform-docs.yml"
       - "README.md"
+      - "docs/**"
       - "AGENTS.md"
       - "Justfile"
       - "renovate.json"
