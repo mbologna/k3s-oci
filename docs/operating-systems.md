@@ -140,6 +140,17 @@ How it differs from the cloud-init OSes:
   releases first. OS reboots never overlap a k3s upgrade: on a node the Plans are `exclusive`
   (system-upgrade-controller keeps their jobs apart), and across nodes their windows don't
   overlap (k3s upgrades start at 23:00-23:59 UTC). kured stays installed and stands down while the Plan's job runs.
+- **Several releases at once.** Each update step reboots the node and ends one attempt of the Plan's
+  job; a job has 6 attempts (`SYSTEM_UPGRADE_JOB_BACKOFF_LIMIT=5`), so it takes up to 6 steps. With
+  Renovate bumping every release a rollout needs 1 step, or 2 across a barrier release. Beyond 6, the
+  failed job is replaced after 15 minutes while the window is open; if the window closes first, the
+  node stays cordoned until the next one (Thursday's window is followed by Tuesday's). Enable
+  `gitops/node-cordon-alert/` to hear about a node left cordoned.
+- **Stalled updates.** If Renovate stops bumping the release, nothing else would update the nodes.
+  The `fcos-os-staleness` CronJob (daily, 06:30 UTC) compares the Plan's release with the stable
+  stream's and alerts when it is more than 30 days behind. Give it an HTTPS webhook:
+  `kubectl -n system-upgrade create secret generic fcos-os-alert-webhook --from-literal=url=...`;
+  without it a stale Plan only fails the job.
 - **SSH** as `core`, with the keys from the instance's `ssh_authorized_keys` (Afterburn).
 - **Longhorn**: the bootstrap adds a SELinux module that lets Fedora's iscsid log in to Longhorn's
   targets ([Longhorn KB](https://longhorn.io/kb/troubleshooting-volume-attachment-fails-due-to-selinux-denials/)).
