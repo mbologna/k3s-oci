@@ -15,6 +15,9 @@ Renovate bumps both releases ([Dependency updates](updates.md#dependency-updates
 
 No extra steps needed. The latest image of the `ubuntu_version` LTS release for `VM.Standard.A1.Flex` is resolved automatically at plan time from the tenancy.
 
+The bootstrap trims what a k3s node never uses from the server image: it purges ModemManager, udisks2, networkd-dispatcher, lxd-agent-loader and landscape-common, and masks multipathd and the motd-news, apport and xfs_scrub timers.
+
+
 ### openSUSE Leap
 
 OCI has no native openSUSE image. Use the included script to import one before running `tofu apply`:
