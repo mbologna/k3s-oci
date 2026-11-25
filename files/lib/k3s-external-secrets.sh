@@ -24,6 +24,7 @@ install_external_secrets() {
   helm upgrade --install external-secrets external-secrets/external-secrets \
     --namespace external-secrets --create-namespace \
     --version "${EXTERNAL_SECRETS_CHART_VERSION}" \
+    --set webhook.create=false --set certController.create=false \
     --atomic --wait --timeout 5m
 
   # Wait for the ClusterSecretStore CRD to be established before applying.
