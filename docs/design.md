@@ -97,7 +97,7 @@ The control plane runs out of memory long before CPU, so the module's small cont
 | Memory requests, controllers on the worker | 38% | 43% |
 | CPU use (`kubectl top`) | ~20% | ~12% |
 
-`system-reserved` covers the k3s process because every pod's containerd-shim is charged to its unit, which is why it is larger on the server. With the controllers on the control plane its node had ~2.1 GiB available; after the move, ~2.4 GiB. Keep pods' memory requests at what they really use (the scheduler sees only requests), and measure before adding anything big to the control plane: `systemctl show k3s -p MemoryCurrent -p MemoryPeak`, `kubectl top nodes`, and `kubectl describe node` for allocated requests.
+`system-reserved` covers the k3s process because every pod's containerd-shim is charged to its unit, which is why it is larger on the server. It was sized with the Oracle Cloud Agent, snapd and the image's idle daemons still running; Ubuntu nodes built since `remove_oci_agent` drop them, about 100 MiB less per node. With the controllers on the control plane its node had ~2.1 GiB available; after the move, ~2.4 GiB. Keep pods' memory requests at what they really use (the scheduler sees only requests), and measure before adding anything big to the control plane: `systemctl show k3s -p MemoryCurrent -p MemoryPeak`, `kubectl top nodes`, and `kubectl describe node` for allocated requests.
 
 ## Spend alert
 

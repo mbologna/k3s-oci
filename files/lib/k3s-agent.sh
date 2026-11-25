@@ -101,4 +101,9 @@ if [[ "${FLANNEL_BACKEND:-vxlan}" == "vxlan" ]]; then
   setup_flannel_fdb_fix
 fi
 
+# Only the Ubuntu bootstrap defines it; the other OSes have no agent.
+if declare -F schedule_oci_agent_removal >/dev/null; then
+  schedule_oci_agent_removal
+fi
+
 echo "==> k3s agent cloud-init complete at $(date -u)"

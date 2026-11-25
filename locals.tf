@@ -54,6 +54,9 @@ locals {
     { name = "Bastion", desired_state = var.enable_bastion ? "ENABLED" : "DISABLED" },
   ]
 
+  # The k3s runtime log needs the agent after bootstrap (logging.tf).
+  oci_runtime_logging = var.enable_oci_logging && !var.remove_oci_agent
+
   # Internal LB IP used as the k3s server URL for agent join.
   # try() guards against the race condition where the LB has no IP yet at plan time.
   k3s_internal_lb_ip = try(oci_load_balancer_load_balancer.k3s_internal_lb.ip_address_details[0].ip_address, "")
@@ -94,6 +97,8 @@ locals {
     k3s_version     = local.k3s_version
     k3s_subnet      = var.k3s_subnet
     flannel_backend = var.flannel_backend
+    # Ubuntu bootstrap only: the other OSes have no Oracle Cloud Agent.
+    remove_oci_agent = var.remove_oci_agent
     # Blanked when vault is enabled so the cluster join token is NOT embedded in
     # plaintext instance user-data (readable via IMDS and the GetInstance API by any
     # principal with read instance-family in the compartment). Cloud-init fetches it

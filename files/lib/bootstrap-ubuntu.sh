@@ -118,6 +118,35 @@ trim_ubuntu_services() {
   done
 }
 
+# Remove the Oracle Cloud Agent and snapd 15 minutes after a successful
+# bootstrap (remove_oci_agent). The agent is a snap, the image's only one, and
+# with snapd it holds ~50 MiB plus ~150 MiB of page cache per node. Until then
+# it ships /var/log/k3s-cloud-init.log to OCI Logging (enable_oci_logging); a
+# bootstrap that fails never gets here and keeps it. The delay lets the last
+# lines reach OCI Logging. A reboot inside those 15 minutes drops the transient
+# timer and leaves the agent; run the script by hand then.
+schedule_oci_agent_removal() {
+  [[ "${REMOVE_OCI_AGENT:-false}" == "true" ]] || return 0
+  cat > /usr/local/sbin/k3s-oci-remove-oci-agent << 'RMEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+if command -v snap >/dev/null 2>&1; then
+  snap remove --purge oracle-cloud-agent || true
+fi
+apt-get -o DPkg::Lock::Timeout=600 purge -y -q snapd
+printf 'Package: snapd\nPin: release *\nPin-Priority: -10\n' > /etc/apt/preferences.d/no-snapd
+rm -rf /root/snap
+rmdir /snap 2>/dev/null || true
+echo "oracle-cloud-agent and snapd removed"
+RMEOF
+  chmod 0755 /usr/local/sbin/k3s-oci-remove-oci-agent
+  systemd-run --unit=k3s-oci-remove-oci-agent --on-active=15min \
+    --description="Remove the Oracle Cloud Agent and snapd after bootstrap" \
+    /usr/local/sbin/k3s-oci-remove-oci-agent
+  echo "Oracle Cloud Agent and snapd removal scheduled in 15 minutes."
+}
+
 configure_unattended_upgrades() {
   export DEBIAN_FRONTEND=noninteractive
   wait_apt_lock

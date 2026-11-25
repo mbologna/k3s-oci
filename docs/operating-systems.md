@@ -17,6 +17,7 @@ No extra steps needed. The latest image of the `ubuntu_version` LTS release for 
 
 The bootstrap trims what a k3s node never uses from the server image: it purges ModemManager, udisks2, networkd-dispatcher, lxd-agent-loader and landscape-common, and masks multipathd and the motd-news, apport and xfs_scrub timers.
 
+With `remove_oci_agent = true` (the default), it also removes the Oracle Cloud Agent and snapd 15 minutes after a successful bootstrap, with a transient timer that runs `/usr/local/sbin/k3s-oci-remove-oci-agent`. That saves ~50 MiB of memory plus ~150 MiB of page cache per node. Until the removal the agent ships `/var/log/k3s-cloud-init.log` to OCI Logging (`enable_oci_logging`), and a node whose bootstrap fails keeps the agent. Without the agent, the OCI console shows no instance metrics and OCI Logging gets no k3s runtime log; set `remove_oci_agent = false` to keep both. Running nodes change only when rebuilt. If one reboots within those 15 minutes, the timer is lost; run the script by hand.
 
 ### openSUSE Leap
 

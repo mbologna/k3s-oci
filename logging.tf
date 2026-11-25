@@ -3,7 +3,8 @@
 # Logs survive instance replacement; viewable in OCI Console → Observability → Logging.
 #
 # Requires the OCI Unified Monitoring Agent (oracle-cloud-agent) to be enabled.
-# The agent is pre-installed on OCI Ubuntu platform images.
+# The agent is pre-installed on OCI Ubuntu platform images; remove_oci_agent
+# removes it after a successful bootstrap, so the runtime log needs it off.
 
 resource "oci_logging_log_group" "k3s" {
   count          = var.enable_oci_logging ? 1 : 0
@@ -36,7 +37,7 @@ resource "oci_logging_log" "cloud_init" {
 }
 
 resource "oci_logging_log" "k3s_runtime" {
-  count         = var.enable_oci_logging ? 1 : 0
+  count         = local.oci_runtime_logging ? 1 : 0
   display_name  = "${var.cluster_name}-k3s-runtime"
   log_group_id  = oci_logging_log_group.k3s[0].id
   log_type      = "CUSTOM"
@@ -79,8 +80,9 @@ resource "oci_logging_unified_agent_configuration" "k3s_cloud_init" {
 # Separate agent config for k3s runtime logs (journald / service log).
 # Runtime crashes, etcd panics, and OOM events are captured here and survive
 # even if the boot volume is lost (logs are already in OCI Logging at that point).
+# Only while the agent stays on the nodes (remove_oci_agent = false).
 resource "oci_logging_unified_agent_configuration" "k3s_runtime" {
-  count          = var.enable_oci_logging ? 1 : 0
+  count          = local.oci_runtime_logging ? 1 : 0
   compartment_id = var.compartment_ocid
   display_name   = "${var.cluster_name}-k3s-runtime-agent-config"
   description    = "Ship k3s service runtime logs to OCI Logging"
