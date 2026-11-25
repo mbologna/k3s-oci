@@ -855,7 +855,13 @@ variable "external_secrets_chart_version" {
 
 variable "enable_oci_logging" {
   type        = bool
-  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month)."
+  description = "Enable OCI Logging for cloud-init logs. Ships /var/log/k3s-cloud-init.log to OCI Logging Service via the Unified Monitoring Agent (Always Free: 10 GB/month), plus the k3s runtime log (/var/log/syslog) when remove_oci_agent = false."
+  default     = true
+}
+
+variable "remove_oci_agent" {
+  type        = bool
+  description = "Remove the Oracle Cloud Agent and snapd from Ubuntu nodes 15 minutes after a successful bootstrap (~50 MiB of memory plus ~150 MiB of page cache per node). Until then the agent ships /var/log/k3s-cloud-init.log to OCI Logging, and a node whose bootstrap fails keeps it. Turns off the instance metrics in the OCI console and the runtime log shipping of enable_oci_logging (the k3s-runtime log is not created). Read at bootstrap: existing nodes change when rebuilt. No effect on openSUSE and Fedora CoreOS, whose custom images have no agent."
   default     = true
 }
 

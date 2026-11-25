@@ -52,6 +52,7 @@ bootstrap() {
   apt-get install -y -q --no-install-recommends \
     software-properties-common jq curl python3 \
     open-iscsi nfs-common util-linux
+  trim_ubuntu_services
   # Hold the oracle kernel packages so that apt-get upgrade or unattended-upgrades
   # cannot install a newer kernel during cloud-init. A new kernel would become the
   # grub default and the machine would reboot into it on the next boot, potentially
@@ -87,6 +88,63 @@ AAEOF
   sysctl -p /etc/sysctl.d/91-k3s-apparmor.conf || true
 
   setup_shared_ssh_host_key
+}
+
+# Daemons and timers of Ubuntu's server image that a k3s node never uses, each
+# holding 10-30 MiB on nodes whose control plane is short of memory. The
+# packages have no installed reverse dependency, so purging them leaves the
+# ubuntu-server metapackage alone. ModemManager and udisks2 manage modems and
+# desktop disks; networkd-dispatcher only runs chrony's and postfix's hooks,
+# which neither needs; lxd-agent-loader is for LXD guests; landscape-common
+# prints the login sysinfo. multipathd is masked, not purged (ubuntu-server
+# depends on multipath-tools): the boot volume is paravirtualized, the module
+# attaches no block volumes, and Longhorn's iSCSI disks must stay out of it.
+# The timers fetch the motd news, send crash reports, and scrub XFS filesystems
+# the image doesn't have.
+trim_ubuntu_services() {
+  local pkg purge=()
+  for pkg in modemmanager udisks2 networkd-dispatcher lxd-agent-loader landscape-common; do
+    if dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q 'install ok installed'; then
+      purge+=("${pkg}")
+    fi
+  done
+  if (( ${#purge[@]} > 0 )); then
+    apt-get purge -y -q "${purge[@]}"
+  fi
+  local unit
+  for unit in multipathd.service multipathd.socket motd-news.timer \
+      apport-autoreport.timer apport-autoreport.path xfs_scrub_all.timer; do
+    systemctl mask --now "${unit}" 2>/dev/null || true
+  done
+}
+
+# Remove the Oracle Cloud Agent and snapd 15 minutes after a successful
+# bootstrap (remove_oci_agent). The agent is a snap, the image's only one, and
+# with snapd it holds ~50 MiB plus ~150 MiB of page cache per node. Until then
+# it ships /var/log/k3s-cloud-init.log to OCI Logging (enable_oci_logging); a
+# bootstrap that fails never gets here and keeps it. The delay lets the last
+# lines reach OCI Logging. A reboot inside those 15 minutes drops the transient
+# timer and leaves the agent; run the script by hand then.
+schedule_oci_agent_removal() {
+  [[ "${REMOVE_OCI_AGENT:-false}" == "true" ]] || return 0
+  cat > /usr/local/sbin/k3s-oci-remove-oci-agent << 'RMEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+if command -v snap >/dev/null 2>&1; then
+  snap remove --purge oracle-cloud-agent || true
+fi
+apt-get -o DPkg::Lock::Timeout=600 purge -y -q snapd
+printf 'Package: snapd\nPin: release *\nPin-Priority: -10\n' > /etc/apt/preferences.d/no-snapd
+rm -rf /root/snap
+rmdir /snap 2>/dev/null || true
+echo "oracle-cloud-agent and snapd removed"
+RMEOF
+  chmod 0755 /usr/local/sbin/k3s-oci-remove-oci-agent
+  systemd-run --unit=k3s-oci-remove-oci-agent --on-active=15min \
+    --description="Remove the Oracle Cloud Agent and snapd after bootstrap" \
+    /usr/local/sbin/k3s-oci-remove-oci-agent
+  echo "Oracle Cloud Agent and snapd removal scheduled in 15 minutes."
 }
 
 configure_unattended_upgrades() {
