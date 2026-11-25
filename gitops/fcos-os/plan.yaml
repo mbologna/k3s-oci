@@ -11,6 +11,13 @@
 # var.fcos_os_version during their first boot: keep it equal to 'version' (Renovate
 # bumps both in one PR).
 #
+# Each hop's reboot ends one attempt of the job, so a job takes as many hops as it
+# has attempts: 6 with SYSTEM_UPGRADE_JOB_BACKOFF_LIMIT=5 (gitops/system-upgrade/
+# kustomization.yaml). Bumping every release needs 1 hop, 2 across a barrier. With
+# more, the failed job is deleted after its TTL (15 min) and a new one continues
+# while the window is open; if the window closes first, the node stays cordoned
+# until the next window. gitops/node-cordon-alert/ reports that.
+#
 # OS updates and k3s upgrades never overlap, as OpenShift updates nodes only after
 # the control plane: on a node, exclusive (system-upgrade-controller keeps the jobs
 # of exclusive Plans apart with a per-node pod anti-affinity; the k3s Plans in
@@ -39,8 +46,9 @@ spec:
     startTime: "02:15"
     endTime: "04:15"
     timeZone: UTC
-  # A hop pulls an ~800 MiB image and reboots; a barrier release adds a second one.
-  jobActiveDeadlineSecs: 3600
+  # A hop pulls an ~800 MiB image and reboots (about 7 minutes in a test); the
+  # deadline covers the job's 6 attempts.
+  jobActiveDeadlineSecs: 5400
   serviceAccountName: system-upgrade
   cordon: true
   # As kured drains before a reboot.

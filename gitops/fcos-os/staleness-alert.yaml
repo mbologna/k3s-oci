@@ -1,0 +1,133 @@
+---
+# Alerts when the fcos-os Plan falls behind Fedora CoreOS's stable stream. Zincati is
+# masked, so the Plan's 'version' (bumped by Renovate) is the nodes' only source of
+# OS updates: if Renovate or its automerge stops, nothing else notices that the nodes
+# stopped getting security fixes. The check compares the release dates encoded in
+# FCOS versions (45.20261030.3.1 is from 2026-10-30) and alerts when the stream's
+# current release is more than STALE_DAYS newer than the Plan's.
+#
+# Alerts go to the URL in the Secret fcos-os-alert-webhook (key: url), an HTTPS
+# endpoint (this namespace's NetworkPolicies allow egress on 443 only):
+#   kubectl -n system-upgrade create secret generic fcos-os-alert-webhook \
+#     --from-literal=url='https://your-receiver.example/...'
+# Without the Secret a stale Plan only fails the job (kubectl -n system-upgrade get jobs).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fcos-os-staleness
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fcos-os-staleness
+rules:
+  - apiGroups: ["upgrade.cattle.io"]
+    resources: ["plans"]
+    resourceNames: ["fcos-os"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fcos-os-staleness
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fcos-os-staleness
+subjects:
+  - kind: ServiceAccount
+    name: fcos-os-staleness
+    namespace: system-upgrade
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fcos-os-staleness
+  labels:
+    app.kubernetes.io/name: fcos-os-staleness
+spec:
+  schedule: "30 6 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: fcos-os-staleness
+        spec:
+          restartPolicy: Never
+          serviceAccountName: fcos-os-staleness
+          priorityClassName: alerting
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: check
+              # renovate: datasource=docker depName=curlimages/curl
+              image: curlimages/curl:8.23.0
+              env:
+                - name: STALE_DAYS
+                  value: "30"
+                - name: STREAM_URL
+                  value: https://builds.coreos.fedoraproject.org/streams/stable.json
+                - name: WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: fcos-os-alert-webhook
+                      key: url
+                      optional: true
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  SA=/var/run/secrets/kubernetes.io/serviceaccount
+                  # No jq in this image: the first "version" field of the Plan is
+                  # spec.version (status uses latestVersion).
+                  plan=$(curl -sSf -m 30 -H "Authorization: Bearer $(cat "$SA/token")" --cacert "$SA/ca.crt" \
+                    'https://kubernetes.default.svc.cluster.local/apis/upgrade.cattle.io/v1/namespaces/system-upgrade/plans/fcos-os') \
+                    || { echo "cannot read the fcos-os Plan" >&2; exit 1; }
+                  pinned=$(printf '%s' "$plan" | grep -o '"version": *"[^"]*"' | head -1 | cut -d'"' -f4)
+                  # Every artifact of a stream build carries the same release.
+                  stream=$(curl -sSf -m 30 "$STREAM_URL") || { echo "cannot read $STREAM_URL" >&2; exit 1; }
+                  current=$(printf '%s' "$stream" | grep -o '"release": *"[^"]*"' | head -1 | cut -d'"' -f4)
+                  [ -n "$pinned" ] && [ -n "$current" ] || { echo "no version in the Plan or the stream" >&2; exit 1; }
+                  # The second field of an FCOS version is its build date (YYYYMMDD).
+                  day() { date -u -D %Y%m%d -d "$(echo "$1" | cut -d. -f2)" +%s; }
+                  behind=$(( ( $(day "$current") - $(day "$pinned") ) / 86400 ))
+                  echo "fcos-os Plan: ${pinned}; stable stream: ${current} (${behind} days newer)"
+                  [ "$behind" -gt "$STALE_DAYS" ] || exit 0
+                  title="Fedora CoreOS updates stalled"
+                  body="The fcos-os Plan pins ${pinned}, ${behind} days older than the stable stream's ${current}: check Renovate's fedora-coreos-release PR."
+                  if [ -z "${WEBHOOK_URL:-}" ]; then
+                    echo "$body (no fcos-os-alert-webhook Secret, not alerting)" >&2
+                    exit 1
+                  fi
+                  # The same message under the keys common receivers read: title/body
+                  # (Apprise API), text (Slack, Mattermost), content (Discord),
+                  # message (Gotify), as gitops/node-cordon-alert/ sends it.
+                  payload=$(printf '{"title":"%s","body":"%s","type":"warning","text":"%s: %s","content":"%s: %s","message":"%s"}' \
+                    "$title" "$body" "$title" "$body" "$title" "$body" "$body")
+                  curl -sSf -m 30 -X POST -H 'Content-Type: application/json' -d "$payload" "$WEBHOOK_URL"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
