@@ -173,9 +173,13 @@ resource "oci_network_load_balancer_backend_set" "k3s_ssh" {
   policy                   = "FIVE_TUPLE"
   is_preserve_source       = true
 
+  # Once a minute, not every 10 s: each probe is a "Connection closed" line in
+  # sshd's log (~50k a day per node at the default) that log parsers such as
+  # CrowdSec read too. A dead SSH backend takes up to a minute longer to leave.
   health_checker {
-    protocol = "TCP"
-    port     = 22
+    protocol           = "TCP"
+    port               = 22
+    interval_in_millis = 60000
   }
 }
 
