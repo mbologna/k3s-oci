@@ -133,7 +133,7 @@ How it differs from the cloud-init OSes:
   along FCOS's update graph, one release per reboot when barrier releases lie in between, with
   k3s-selinux, python3 (for the OCI CLI) and cronie layered on the first hop.
 - **OS updates are a cluster operation.** The release is pinned in `gitops/fcos-os/plan.yaml` (OpenShift's
-  `osImageURL`); Renovate bumps it together with `fcos_os_version` when the stable stream moves. The
+  `osImageURL`); Renovate bumps it together with `fcos_os_version` once a new stable release has fully rolled out: its datasource reads FCOS's update graph as the most cautious client (`rollout_wariness=1`), which reaches a release only when FCOS's phased rollout of it has finished. A version set by hand skips that wait. The
   `fcos-os` system-upgrade-controller Plan, added by the first server, rolls it out like OpenShift's
   Machine Config Daemon: in kured's window (Tue-Thu 02:15-04:15 UTC), one node at a time, cordoned and
   drained, then rebased onto the release's image (pinned by digest) and rebooted, through barrier

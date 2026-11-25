@@ -122,7 +122,7 @@
       ]
     },
     {
-      "description": "Fedora CoreOS release the cluster runs (custom.fedora-coreos-release): fcos_os_version in vars.tf and the fcos-os Plan's version move together. Merging rolls the release out to FCOS clusters (the Plan, in its Tue-Thu window, one drained node at a time, along the update graph), as an OpenShift upgrade carries the OS image; the stable stream, a release every two weeks after its time in testing, is the gate. The stream metadata has no release dates, hence timestamp-optional.",
+      "description": "Fedora CoreOS release the cluster runs (custom.fedora-coreos-release): fcos_os_version in vars.tf and the fcos-os Plan's version move together. Merging rolls the release out to FCOS clusters (the Plan, in its Tue-Thu window, one drained node at a time, along the update graph), as an OpenShift upgrade carries the OS image. The gate is FCOS's own phased rollout: the datasource only lists releases whose rollout has finished (update graph at rollout_wariness=1), so a release reaches the cluster a day or so after FCOS starts offering it, after its two weeks in testing. The graph has no release dates, hence timestamp-optional.",
       "matchDatasources": [
         "custom.fedora-coreos-release"
       ],
@@ -147,10 +147,10 @@
   ],
   "customDatasources": {
     "fedora-coreos-release": {
-      "description": "Fedora CoreOS release the cluster runs (vars.tf fcos_os_version, gitops/fcos-os/plan.yaml version): the stable stream's current release.",
-      "defaultRegistryUrlTemplate": "https://builds.coreos.fedoraproject.org/streams/stable.json",
+      "description": "Fedora CoreOS release the cluster runs (vars.tf fcos_os_version, gitops/fcos-os/plan.yaml version): the stable releases FCOS's update graph offers a client with rollout_wariness=1, i.e. only releases whose phased rollout has finished (the update server drops the edges into a release until its rollout reaches the client's wariness). A release with an incoming edge is one the graph lets nodes move to.",
+      "defaultRegistryUrlTemplate": "https://updates.coreos.fedoraproject.org/v1/graph?basearch=aarch64&stream=stable&rollout_wariness=1&oci=true",
       "transformTemplates": [
-        "{\"homepage\": \"https://fedoraproject.org/coreos/release-notes/\", \"releases\": [{\"version\": architectures.aarch64.artifacts.oraclecloud.release}]}"
+        "{\"homepage\": \"https://fedoraproject.org/coreos/release-notes/\", \"releases\": ($targets := $map(edges, function($e) { $e[1] }); $map($filter($map(nodes, function($n, $i) { {\"i\": $i, \"v\": $n.version} }), function($x) { $x.i in $targets }), function($x) { {\"version\": $x.v} }))}"
       ]
     },
     "fedora-coreos": {

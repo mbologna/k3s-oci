@@ -58,14 +58,14 @@ Renovate then updates both in one `k3s` PR:
 | Minor, new version `x.y.3` or later | Automerges after the 14-day gate; system-upgrade-controller applies it in the next upgrade window |
 | Major | Waits for a person (`manual-review`) |
 
-**OS releases** come from [endoflife.date](https://endoflife.date) (Ubuntu), [openSUSE's release API](https://get.opensuse.org/api/v0/distributions.json) (Leap) and [Fedora CoreOS's stable stream](https://builds.coreos.fedoraproject.org/streams/stable.json) and arrive as PRs that automerge after CI; the OS release bumps are `feat(os):`, so each one ships in a release:
+**OS releases** come from [endoflife.date](https://endoflife.date) (Ubuntu), [openSUSE's release API](https://get.opensuse.org/api/v0/distributions.json) (Leap) and Fedora CoreOS's [stable stream](https://builds.coreos.fedoraproject.org/streams/stable.json) and update graph, and arrive as PRs that automerge after CI; the OS release bumps are `feat(os):`, so each one ships in a release:
 
 | Release | Bump | After it merges |
 |---|---|---|
 | Ubuntu (`ubuntu_version`) | Next LTS (`xx.04` of an even year, never interim releases), once its `.1` point release is out, when Ubuntu itself opens LTS-to-LTS upgrades (and at least 90 days after release). The required Plan check fails the PR if OCI has no aarch64 image for it yet | The next full rebuild (`tofu destroy` + `apply`, or `just teardown-keep-data`) boots the new release. Until then nothing changes: the instance configurations ignore image changes, so running nodes and pool replacements keep the image the pool was created with |
 | openSUSE Leap (`opensuse_leap_version` and the import script's default, one PR) | Next Leap release, as soon as openSUSE marks it Stable (the legacy `42.x` numbering is ignored) | Run `scripts/import-opensuse-aarch64.sh` (with `--variant immutable` for Leap Immutable); the next full rebuild then boots the new release without `os_image_id`. Until it is imported, plans warn and a rebuild boots the newest imported image |
 | Fedora CoreOS major (`fcos_version`, the boot image) | The stable stream's new major | Run `scripts/import-fcos-aarch64.sh`. Until then plans warn and new nodes boot the newest imported image; either way they pivot to `fcos_os_version` before k3s starts |
-| Fedora CoreOS release (`fcos_os_version` and the `fcos-os` Plan's `version`, one PR) | Every new stable release (about every two weeks) | The `fcos-os` Plan updates the FCOS nodes in its next window (Tue-Thu 02:15-04:15 UTC), one drained node at a time along the update graph; new nodes pivot to it on first boot |
+| Fedora CoreOS release (`fcos_os_version` and the `fcos-os` Plan's `version`, one PR) | Every new stable release (about every two weeks), once FCOS's phased rollout of it has finished ([update graph](https://updates.coreos.fedoraproject.org/v1/graph?basearch=aarch64&stream=stable&rollout_wariness=1&oci=true) at `rollout_wariness=1`) | The `fcos-os` Plan updates the FCOS nodes in its next window (Tue-Thu 02:15-04:15 UTC), one drained node at a time along the update graph; new nodes pivot to it on first boot |
 
 ## Versioning
 

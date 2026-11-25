@@ -318,7 +318,12 @@ Plain SemVer: `vX.Y.Z` tags, each a GitHub release that consumers pin as
 - OS releases: `fcos_version` (`datasource=custom.fedora-coreos`, the major of the stable stream's aarch64
   oraclecloud build; `feat(os):`, automerge, `timestamp-optional`) only picks the image new nodes boot.
   `fcos_os_version` and the `fcos-os` Plan's `version` (`datasource=custom.fedora-coreos-release`, one
-  grouped PR, automerge) are the release FCOS nodes run: merging rolls it out. `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
+  grouped PR, automerge) are the release FCOS nodes run: merging rolls it out. That datasource reads FCOS's
+  update graph at `rollout_wariness=1` and lists only releases with an incoming edge: the update server
+  drops edges into a release until its phased rollout reaches the client's wariness, so a release is
+  proposed only once fully rolled out. The node tool (`k3s-oci-fcos-update`) keeps `rollout_wariness=0`:
+  it only walks the graph's shape toward the pinned target and must not wait inside a job (the node is
+  already drained); a hand-set version therefore skips the rollout wait. `ubuntu_version` and `opensuse_leap_version` (`vars.tf`) plus `LEAP_VERSION` in
   `scripts/import-opensuse-aarch64.sh` use `datasource=endoflife-date depName=ubuntu` and
   `datasource=custom.opensuse-leap depName=opensuse-leap` (openSUSE's distributions API, Stable/EOL
   releases only; endoflife.date lagged on Leap 16.1). The PRs are `feat(os):` and automerge. Ubuntu: endoflife.date reports a cycle's

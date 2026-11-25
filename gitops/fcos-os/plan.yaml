@@ -9,7 +9,8 @@
 # 'version', passing through barrier releases, and reboots; after each reboot the
 # job runs again, until the node is booted into 'version'. New nodes pivot to
 # var.fcos_os_version during their first boot: keep it equal to 'version' (Renovate
-# bumps both in one PR).
+# bumps both in one PR, and only to a release whose phased rollout has finished,
+# renovate.json custom.fedora-coreos-release).
 #
 # Each hop's reboot ends one attempt of the job, so a job takes as many hops as it
 # has attempts: 6 with SYSTEM_UPGRADE_JOB_BACKOFF_LIMIT=5 (gitops/system-upgrade/
