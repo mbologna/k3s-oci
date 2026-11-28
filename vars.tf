@@ -204,7 +204,7 @@ variable "argocd_chart_version" {
   type        = string
   description = "argo-cd Helm chart the servers install through k3s's HelmChart controller. Keep it equal to the version gitops/apps/argocd.yaml pins: that Application adopts the release."
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  default = "10.18.0"
+  default = "10.18.2"
 }
 
 variable "gitops_repo_url" {
