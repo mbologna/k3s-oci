@@ -16,7 +16,7 @@ spec:
     repoURL: https://traefik.github.io/charts
     chart: traefik
     # renovate: datasource=helm depName=traefik registryUrl=https://traefik.github.io/charts
-    targetRevision: "42.4.0"
+    targetRevision: "42.4.1"
     helm:
       valuesObject:
         # One Traefik pod per node, so every NLB backend serves ingress locally:
