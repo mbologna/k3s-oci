@@ -1,0 +1,102 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kured
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubereboot.github.io/charts
+    chart: kured
+    # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+    targetRevision: "6.1.0"
+    helm:
+      valuesObject:
+        configuration:
+          # Maintenance window: 02:15-04:15 UTC (03:15-05:15 CET, 04:15-06:15 CEST).
+          #
+          # UTC, like every other schedule this module creates: the openSUSE patch
+          # timers (files/lib/bootstrap-opensuse.sh), Longhorn's recurring jobs and
+          # k3s's etcd snapshots are UTC, and Longhorn and k3s offer no timezone
+          # setting at all. A window in local time moves an hour against them at
+          # every DST change, so "patch, then reboot" would hold in one season only.
+          #
+          # Opens after the latest patch run can finish: the full run fires at
+          # 01:00 UTC with up to 30 min jitter, so ~01:45.
+          startTime: "02:15"
+          endTime: "04:15"
+          timeZone: UTC
+          # system-upgrade-controller (gitops/system-upgrade/plans.yaml) also cordons
+          # and drains nodes, on no schedule at all: as soon as a new k3s release
+          # reaches the channel. kured's lock does not cover it, so without this
+          # kured could reboot a node in the middle of a k3s upgrade.
+          #
+          # upgrade.cattle.io/plan, NOT upgrade.cattle.io/controller: the SUC
+          # controller Deployment itself carries the controller label and runs
+          # permanently, so selecting on it would silently block every reboot.
+          # Only the per-node upgrade Job pods carry the plan label.
+          blockingPodSelector:
+            - upgrade.cattle.io/plan
+          # Every night, but the sentinel decides what may reboot when. A
+          # security fix (/run/security-reboot-required: an openSUSE security
+          # patch, any Flatcar update) reboots on any night; any other
+          # /var/run/reboot-required (other openSUSE patches, a k3s patch from
+          # Flatcar's sysupdate) only Tuesday to Thursday (UTC), so routine
+          # reboots stay off weekends and a CVE fixed on a Friday doesn't run
+          # unpatched until Tuesday. Fedora CoreOS nodes never set either: their
+          # OS updates are the fcos-os Plan. The command runs on the host
+          # (useRebootSentinelHostPath: false: kured nsenters into it).
+          rebootSentinelCommand: >-
+            sh -c 'test -f /run/security-reboot-required ||
+            { test -f /var/run/reboot-required &&
+            case "$(date -u +%u)" in 2|3|4) true ;; *) false ;; esac; }'
+          useRebootSentinelHostPath: false
+          # Check every minute, not the chart's 1 h: the second node then starts as
+          # soon as the first is back, instead of up to a period later. A check is
+          # one command per node, so the cost is nothing.
+          period: 1m
+          # A node that dies mid-drain or mid-reboot otherwise holds the lock
+          # forever and blocks every later reboot (no TTL by default).
+          lockTtl: 2h
+          # Give up on a drain stuck on a PodDisruptionBudget instead of hanging
+          # the whole window; the node is uncordoned and retried at the next check.
+          drainTimeout: 15m
+        # A preempted kured can't release its lock or finish a drain. Built in,
+        # so it needs no PriorityClass of its own.
+        priorityClassName: system-cluster-critical
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        # The chart's default probe timeouts flap on a 1-OCPU node at full CPU
+        # requests: scheduling latency alone can exceed them, and the restarts
+        # snowballed into days of CrashLoopBackOff on a cluster built from this
+        # module.
+        livenessProbe:
+          timeoutSeconds: 15
+          failureThreshold: 8
+        readinessProbe:
+          timeoutSeconds: 15
+          failureThreshold: 8
+        # Every taint: kured has to run on every node it may need to reboot.
+        tolerations:
+          - operator: Exists
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

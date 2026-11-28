@@ -1,0 +1,47 @@
+---
+# Longhorn backups to OCI Object Storage (S3-compatible) — template, all commented out.
+#
+# Longhorn >= 1.8 configures the backup destination via the BackupTarget CR named
+# "default" (created by longhorn-manager). The old `backup-target` /
+# `backup-target-credential-secret` Settings no longer exist — do not use them.
+#
+# The module creates the bucket (<cluster>-backups, `tofu output backup_bucket`) but
+# no credentials: the steps below are yours.
+#
+# 1. Create an OCI Customer Secret Key (S3 credentials, max 2 per user) for a service
+#    user limited to this bucket — the key carries all of its user's rights, so never
+#    use an admin user:
+#    Console → Identity → Users → <service-user> → Customer Secret Keys → Generate Secret Key.
+# 2. Create the credential secret. AWS_ENDPOINTS is REQUIRED for OCI:
+#    kubectl create secret generic longhorn-backup-secret \
+#      --from-literal=AWS_ACCESS_KEY_ID='<customer-secret-key-id>' \
+#      --from-literal=AWS_SECRET_ACCESS_KEY='<customer-secret-key>' \
+#      --from-literal=AWS_ENDPOINTS='https://<namespace>.compat.objectstorage.<region>.oraclecloud.com' \
+#      -n longhorn-system
+# 3. Point the BackupTarget at the bucket (format s3://<bucket>@<region>/):
+#    kubectl -n longhorn-system patch backuptargets.longhorn.io default --type merge \
+#      -p '{"spec":{"backupTargetURL":"s3://<cluster>-backups@<region>/longhorn/","credentialSecret":"longhorn-backup-secret","pollInterval":"24h"}}'
+#    Check: kubectl -n longhorn-system get backuptargets   (AVAILABLE should be true)
+#    pollInterval 24h: every poll lists the bucket, and the 5-minute default makes
+#    hundreds of thousands of requests a month, past the free 50,000.
+# 4. Optionally uncomment the RecurringJob below and copy it into a path ArgoCD
+#    syncs (or kubectl apply it) to back up every volume in the "default" group weekly.
+#
+# Budget: the bucket shares the Object Storage free tier (20 GB on Free Tier
+# accounts, 10 GB Standard on Pay As You Go) with everything else in the tenancy.
+# Longhorn backups are incremental, but keep `retain` low and watch the size.
+#
+# See: https://longhorn.io/docs/latest/snapshots-and-backups/backup-and-restore/set-backup-target/
+
+# apiVersion: longhorn.io/v1beta2
+# kind: RecurringJob
+# metadata:
+#   name: weekly-backup
+#   namespace: longhorn-system
+# spec:
+#   task: backup
+#   cron: "0 3 * * 0"
+#   groups:
+#     - default
+#   retain: 4
+#   concurrency: 1

@@ -1,0 +1,99 @@
+# ArgoCD Application for Tailscale Operator
+#
+# ⚠️  TEMPLATE — DO NOT copy to gitops/apps/ without editing first.
+#
+# REQUIRED before activating:
+#   1. Store the OAuth client (below) in your OCI Vault as two secrets,
+#        <cluster_name>-tailscale-oauth-client-id
+#        <cluster_name>-tailscale-client-secret
+#      and run the External Secrets Operator with an oci-vault ClusterSecretStore
+#      (gitops/optional/external-secrets.yaml, gitops/external-secrets/). Or create
+#      the operator-oauth Secret (keys client_id, client_secret) yourself and drop
+#      oauth-secret.yaml from kustomization.yaml.
+#
+#   2. Edit gitops/tailscale-operator/oauth-secret.yaml:
+#      Replace "my-k3s" with your cluster_name
+#
+#   3. In this file, replace "my-k3s-k8s-operator" with <cluster_name>-k8s-operator
+#
+#   4. Copy this file to gitops/apps/:
+#        cp gitops/tailscale-operator/application-template.yaml gitops/apps/tailscale-operator.yaml
+#
+# Pre-requisite: create an OAuth client in the Tailscale admin console:
+#   https://login.tailscale.com/admin/settings/oauth
+#   Required scope: Devices → Write (devices:core:write); add Services → Write
+#   for the HA ProxyGroups in proxygroup.yaml.
+#   Tag the client tag:k8s-operator and let it own tag:k8s:
+#     "tagOwners": {"tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"]}
+#   The operator registers itself with defaultTags (tag:k8s below): a client may
+#   mint keys only for tags it owns, never for its own tag, so defaultTags
+#   tag:k8s-operator crash-loops a fresh operator ("requested tags are invalid
+#   or not permitted").
+#   NOTE: OAuth client scopes cannot be changed after creation.
+#
+# See: https://tailscale.com/kb/1236/kubernetes-operator
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      # renovate: datasource=helm depName=tailscale-operator registryUrl=https://pkgs.tailscale.com/helmcharts
+      targetRevision: "1.104.7"
+      helm:
+        valuesObject:
+          operatorConfig:
+            # TODO: replace with <cluster_name>-k8s-operator
+            hostname: my-k3s-k8s-operator
+            defaultTags:
+              - "tag:k8s"
+            # The chart reads resources and affinity under operatorConfig (an
+            # operatorDeployment key is not a chart value: the operator ran
+            # with no requests or limits).
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+          # OAuth credentials come from the operator-oauth Secret (the
+          # ExternalSecret in oauth-secret.yaml). Leave empty here.
+          oauth:
+            clientId: ""
+            clientSecret: ""
+    # Rendered with kustomization.yaml, which lists the manifests (not this
+    # template). A directory source would also try to apply kustomization.yaml.
+    - repoURL: https://github.com/mbologna/k3s-oci.git
+      targetRevision: HEAD
+      path: gitops/tailscale-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    managedNamespaceMetadata:
+      labels:
+        # The proxy pods run privileged (tun device, sysctls); warn/audit still
+        # report what exceeds baseline.
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/warn: baseline
+        pod-security.kubernetes.io/audit: baseline
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

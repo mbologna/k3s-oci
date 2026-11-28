@@ -1,0 +1,64 @@
+---
+# k3s upgrade Plans managed by system-upgrade-controller.
+# Edit 'channel' below to switch between "stable", "latest", or "testing".
+# "stable" is the default; override in your fork if you need a different channel.
+#
+# ⚠️  CHANNEL DRIFT NOTE: channel: stable tracks the k3s stable release stream
+# independently of k3s_version. After a fresh deploy, SUC upgrades the cluster
+# past the version new nodes install on its next window. That is intentional:
+# k3s_version only decides the first install; upgrades are SUC's.
+#
+# To pin a version instead (and let Renovate bump it), replace 'channel' with a
+# 'version', the renovate comment directly above it:
+#   # renovate: datasource=github-releases depName=k3s-io/k3s
+#   version: v1.37.2+k3s1
+# and pin the same k3s_version for new nodes in your root module, with the same
+# comment above it. renovate.json bumps both in one PR: patches as usual, a new
+# minor only from its x.y.3 release (then it automerges after the 14-day gate),
+# majors only by hand.
+#
+# Upgrade window: 23:00-23:59 UTC, every night. Without a window SUC cordons a
+# node and restarts its k3s whenever a release reaches the channel, at any hour. The window
+# sits before the other nightly jobs: the openSUSE patch runs (00:30 and 01:00
+# plus jitter, files/lib/bootstrap-opensuse.sh) and kured's reboot window
+# (02:15-04:15, gitops/apps/kured.yaml). SUC only starts Jobs
+# inside the window; one that overruns is safe, since kured stands down while an
+# upgrade Job exists (its blockingPodSelector). UTC like the rest of the chain.
+# Narrow 'days' to match kured's rebootDays if you would rather not restart k3s
+# on other nights; k3s patch releases often carry security fixes.
+#
+# exclusive: system-upgrade-controller never runs jobs of two exclusive Plans on the
+# same node at once, so a k3s upgrade and an OS update of a Fedora CoreOS node
+# (gitops/fcos-os/plan.yaml, also exclusive) don't overlap there; across nodes the
+# windows keep them apart.
+#
+# cordon, no drain: restarting k3s leaves running containers up (k3s keeps the
+# containerd shims, and the installer's unit uses KillMode=process), so an
+# upgrade needs nothing moved. Draining for a k3s restart moved every pod twice
+# on a cluster built from this module, and the node that took them ran out of
+# memory. Reboots still drain, through kured.
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-server
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  exclusive: true
+  channel: https://update.k3s.io/v1-release/channels/stable
+  # Every node is a server. Flatcar nodes run k3s from a system extension in the
+  # read-only /usr, which systemd-sysupdate patches (nodes.tf): not this Plan.
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"
+    matchExpressions:
+      - {key: k3s-oci.io/os, operator: NotIn, values: [flatcar]}
+  window:
+    days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+    startTime: "23:00"
+    endTime: "23:59"
+    timeZone: UTC
+  serviceAccountName: system-upgrade
+  cordon: true
+  upgrade:
+    image: rancher/k3s-upgrade

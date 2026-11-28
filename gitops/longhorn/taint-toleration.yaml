@@ -1,0 +1,30 @@
+---
+# Longhorn taint-toleration Setting — configures Longhorn system components
+# (CSI plugin DaemonSet, instance managers, engine images) to tolerate custom
+# NoSchedule taints on specific nodes.
+#
+# NOTE: This module taints no node: every node is a k3s server, and k3s puts no
+# NoSchedule taint on servers.
+#
+# This file is an OPTIONAL template — only apply it if you manually taint a node
+# (e.g. kubectl taint nodes <node> key=value:NoSchedule) and need Longhorn
+# components to still schedule there.
+#
+# Format: key=value:Effect (or key:Effect for empty-value taints).
+# Separate multiple tolerations with semicolons.
+#
+# Note: longhornManager toleration is set via Helm values at deploy time
+# (the manager must start before it can read this Setting). This Setting
+# only affects components managed by the running longhorn-manager.
+#
+# To enable: uncomment below, replace the taint key/effect to match your taint
+# (check with: kubectl get nodes -o json | jq '.items[].spec.taints')
+#
+# See: https://longhorn.io/docs/latest/advanced-resources/deploy/taint-toleration/
+
+# apiVersion: longhorn.io/v1beta2
+# kind: Setting
+# metadata:
+#   name: taint-toleration
+#   namespace: longhorn-system
+# value: "node-role.kubernetes.io/agent:NoSchedule"

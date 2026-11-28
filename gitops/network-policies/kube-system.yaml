@@ -1,0 +1,122 @@
+---
+# Default-deny for kube-system. System components (coredns, kured, metrics-server)
+# are allowed by the targeted policies below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: kube-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# CoreDNS: accept DNS queries from all pods, respond to cluster IPs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-coredns
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+  egress:
+    # CoreDNS forwards to the node's upstream resolvers and watches the kube API.
+    # Everything except 169.254.0.0/16: the OCI instance metadata service lives
+    # there (169.254.169.254:80), and the node script in it holds the k3s token
+    # and the database password.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+    # ...except the OCI VCN resolver, which is the nodes' upstream DNS.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# metrics-server: k3s bundles metrics-server with label k8s-app:metrics-server
+# (not app.kubernetes.io/name). It serves on --secure-port=10250 (the k3s default).
+# Egress needs 6443 (apiserver endpoint post-DNAT) in addition to 10250 (kubelets)
+# and 443/53 for fallback resolution.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-server
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: metrics-server   # k3s-bundled label (was app.kubernetes.io/name: metrics-server)
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 10250             # serving port (was 4443 — incorrect)
+          protocol: TCP
+  egress:
+    - ports:
+        - port: 6443              # apiserver endpoint (post-DNAT) — was missing
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+        - port: 10250             # kubelet metrics scrape
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# kured: needs apiserver to acquire/release lock and to drain nodes.
+# kubereboot Helm chart 6.0.0 labels pods with app.kubernetes.io/name:kured
+# (was name:kured — the legacy weaveworks label, no longer set by the chart).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kured
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kured   # was name: kured (legacy label, chart 6.0.0 dropped it)
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 6443
+          protocol: TCP

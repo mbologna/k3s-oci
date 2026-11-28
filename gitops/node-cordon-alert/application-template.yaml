@@ -1,0 +1,52 @@
+# ArgoCD Application for node-cordon-alert (opt-in)
+#
+# Every 30 minutes, alerts a webhook when a node has been unschedulable for 25+
+# minutes: a k3s upgrade that failed mid-job, or a kured drain that never
+# finished, otherwise goes unnoticed while new pods stay Pending.
+#
+# REQUIRED before activating:
+#   1. Create the webhook Secret (the URL often embeds a token, so it is not
+#      in git; or sync it with an ExternalSecret from OCI Vault):
+#        kubectl create namespace node-cordon-alert
+#        kubectl -n node-cordon-alert create secret generic node-cordon-alert-webhook \
+#          --from-literal=url='https://your-receiver.example/...'
+#      The CronJob POSTs one JSON object carrying the message as title/body
+#      (Apprise API), text (Slack, Mattermost), content (Discord) and message
+#      (Gotify). Adapt the payload line in node-cordon-alert.yaml for others.
+#
+#   2. In gitops/node-cordon-alert/node-cordon-alert.yaml, set CLUSTER to your
+#      cluster_name.
+#
+#   3. Copy this file to gitops/apps/:
+#        cp gitops/node-cordon-alert/application-template.yaml gitops/apps/node-cordon-alert.yaml
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-cordon-alert
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mbologna/k3s-oci.git
+    targetRevision: HEAD
+    path: gitops/node-cordon-alert
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: node-cordon-alert
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The namespace is in the kustomization (with its Pod Security label), and
+      # step 1 may have created it already.
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

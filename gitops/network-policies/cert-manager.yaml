@@ -1,0 +1,127 @@
+---
+# Default-deny ingress for the cert-manager namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow all traffic within the cert-manager namespace (controller <-> webhook <-> cainjector)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Allow cert-manager to reach API server and ACME/external HTTPS endpoints
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 6443
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+        - port: 9443
+          protocol: TCP
+---
+# Allow Kubernetes API server to reach cert-manager webhook.
+# cert-manager webhook serves on port 10250 (chart default: webhook.securePort=10250).
+# There is no conflict with kubelet's 10250 because the webhook pod is NOT host-networked
+# (hostNetwork: false is the chart default). The apiserver connects to the pod IP post-DNAT.
+# The API server IP is not predictable so we allow ingress from any source on that port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webhook-from-apiserver
+  namespace: cert-manager
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: webhook
+      app.kubernetes.io/instance: cert-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 10250   # cert-manager webhook.securePort default (was 9443 — incorrect)
+          protocol: TCP
+---
+# Allow cert-manager controller to reach ACME HTTP-01 challenge endpoints (port 80 self-check)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-http-egress
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            # Not the OCI instance metadata service (169.254.169.254:80): a pod
+            # that reaches it gets the node's instance-principal identity.
+            except:
+              - 169.254.0.0/16
+      ports:
+        - port: 80
+          protocol: TCP
+---
+# Allow DNS egress from cert-manager pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: cert-manager
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

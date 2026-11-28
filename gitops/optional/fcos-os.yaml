@@ -1,0 +1,30 @@
+---
+# Fedora CoreOS OS updates (os_family = "fcos"): the fcos-os upgrade Plan. The
+# servers create the optional-fcos-os Application that syncs this file (nodes.tf,
+# bootstrap manifests); other OS families never get it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fcos-os
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mbologna/k3s-oci.git
+    targetRevision: HEAD
+    path: gitops/fcos-os
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: system-upgrade
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

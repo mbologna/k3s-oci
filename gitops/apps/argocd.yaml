@@ -1,0 +1,277 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+    targetRevision: "10.18.0"
+    helm:
+      valuesObject:
+        # server.insecure=true lets Traefik terminate TLS upstream without double-encryption
+        configs:
+          params:
+            server.insecure: true
+            # Every Application regenerates its manifests at once and each opens
+            # its own `git ls-remote`: bound both, so a refresh doesn't saturate
+            # the 1-OCPU node or trip a git host's per-IP throttle.
+            reposerver.git.lsremote.parallelism.limit: 1
+            reposerver.parallelism.limit: 4
+          cm:
+            # Lets kustomization.yaml files use helmCharts (consumer repos wrap
+            # charts to patch what their values don't expose). Set at bootstrap
+            # too: without it the first render fails and Argo CD caches the error.
+            kustomize.buildOptions: --enable-helm
+            # Spread each 2-minute poll (the default) over a minute instead of
+            # one burst. With a push webhook from your git host, raise
+            # timeout.reconciliation to 1800s: the webhook then detects changes
+            # and polling only covers a missed delivery.
+            timeout.reconciliation.jitter: 60s
+            # Traefik serves the module's Ingresses from NodePorts behind the OCI
+            # NLB and publishes no load-balancer address in their status
+            # (gitops/apps/traefik.yaml), so Argo CD's built-in check would leave
+            # every Ingress Progressing. An Ingress is Healthy once it exists.
+            resource.customizations.health.networking.k8s.io_Ingress: |
+              hs = {}
+              hs.status = "Healthy"
+              hs.message = "served by Traefik (NodePort, no load-balancer status)"
+              return hs
+        # Two argocd-server replicas, one per node (required anti-affinity), so a
+        # node reboot or drain leaves the UI, API and webhooks up. A drained
+        # replica waits Pending while the other serves, and the chart's PDB
+        # evicts one at a time. With one replica per node there is no node for a
+        # surge pod, so updates replace one replica at a time. The other Argo CD
+        # parts run one replica, where a maxUnavailable: 1 PDB never blocks
+        # anything, so they have none.
+        server:
+          replicas: 2
+          pdb:
+            enabled: true
+            maxUnavailable: 1
+            unhealthyPodEvictionPolicy: AlwaysAllow
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: argocd-server
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+        repoServer:
+          # A manifest render or git fetch on a busy 1-OCPU node can take longer
+          # than the chart's 1 s probe timeouts; the kubelet then restarted
+          # repo-server in a loop. Startup also takes a while there.
+          livenessProbe:
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            timeoutSeconds: 10
+            failureThreshold: 5
+          # 250m: under CPU contention repo-server's own gRPC health check
+          # missed even the 10 s probe timeout ("Error serving health check
+          # request", then SIGTERM), a restart loop; a bigger request raises its
+          # CPU share. 768Mi: renders of large charts peak well above idle.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              memory: 768Mi
+        # The chart's key is `controller`; until this change these values sat
+        # under `applicationController`, which the chart ignores, so the
+        # controller ran with no requests or limits at all. 50m: it idles at a
+        # few millicores; the CPU limit keeps a sync storm from starving
+        # whatever shares its node.
+        controller:
+          # 512Mi: it holds ~200-430 MiB on a 40-app cluster, and a request
+          # below that lets the scheduler count its memory as free.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1536Mi
+        redis:
+          # Redis never calls the Kubernetes API.
+          automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+        notifications:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          # Alerts, off until you add a notifier and a subscription: the templates
+          # and triggers below do nothing without one. To turn them on, add under
+          # `notifications:` and keep the webhook URL (it usually embeds a token)
+          # in a Secret you manage; the chart's own argocd-notifications-secret
+          # is empty, and Argo CD's self-heal would wipe a URL patched into it:
+          #
+          #   secret:
+          #     create: false
+          #   notifiers:
+          #     service.webhook.alerts: |
+          #       url: $alerts-url
+          #       headers:
+          #         - name: Content-Type
+          #           value: application/json
+          #   subscriptions:
+          #     - recipients:
+          #         - alerts
+          #       triggers:
+          #         - on-health-degraded
+          #         - on-health-recovered
+          #         - on-sync-failed
+          #
+          #   kubectl -n argocd create secret generic argocd-notifications-secret \
+          #     --from-literal=alerts-url='https://your-receiver.example/...'
+          #
+          # Each message carries the text as title/body (Apprise API), text
+          # (Slack, Mattermost), content (Discord) and message (Gotify).
+          templates:
+            # Names the unhealthy child resources, not just the app. A parent rolls
+            # up to Degraded even when the culprit child is Missing or
+            # Progressing, so anything not Healthy is listed; Argo CD omits
+            # .health from Healthy resources. Conditions and a failed operation
+            # carry the rest (ComparisonError, SyncError, a stuck sync).
+            template.app-degraded: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $degraded := list -}}
+                    {{- range .app.status.resources -}}
+                      {{- if and .health (ne .health.status "Healthy") -}}
+                        {{- $degraded = append $degraded (printf "• %s %s/%s [%s] %s" .kind (default "-" .namespace) .name .health.status (default "" .health.message)) -}}
+                      {{- end -}}
+                    {{- end -}}
+                    {{- $conds := list -}}
+                    {{- range .app.status.conditions -}}
+                      {{- $conds = append $conds (printf "• %s: %s" .type (default "" .message)) -}}
+                    {{- end -}}
+                    {{- $detail := "No child resource reported unhealthy; see the conditions." -}}
+                    {{- if $degraded -}}
+                      {{- $detail = printf "Unhealthy resources:\n%s" (join "\n" $degraded) -}}
+                    {{- end -}}
+                    {{- if $conds -}}
+                      {{- $detail = printf "%s\n\nConditions:\n%s" $detail (join "\n" $conds) -}}
+                    {{- end -}}
+                    {{- if and .app.status.operationState (ne (default "" .app.status.operationState.phase) "Succeeded") -}}
+                      {{- $detail = printf "%s\n\nOperation: %s %s" $detail .app.status.operationState.phase (default "" .app.status.operationState.message) -}}
+                    {{- end -}}
+                    {{- $title := printf "ArgoCD: %s is Degraded" .app.metadata.name -}}
+                    {{- $body := printf "%s (health=%s, sync=%s)\n\n%s" .app.metadata.name .app.status.health.status .app.status.sync.status $detail -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "failure",
+                     "text": {{ printf "%s\n%s" $title $body | toJson }},
+                     "content": {{ printf "%s\n%s" $title $body | toJson }},
+                     "message": {{ toJson $body }}}
+            template.app-recovered: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $title := printf "ArgoCD: %s recovered" .app.metadata.name -}}
+                    {{- $body := printf "%s is Healthy again after a Degraded alert (sync=%s)." .app.metadata.name .app.status.sync.status -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "success", "text": {{ toJson $body }}, "content": {{ toJson $body }}, "message": {{ toJson $body }}}
+            template.app-sync-failed: |
+              webhook:
+                alerts:
+                  method: POST
+                  body: |
+                    {{- $title := printf "ArgoCD: %s sync %s" .app.metadata.name .app.status.operationState.phase -}}
+                    {{- $body := printf "%s at %s\n\n%s" .app.metadata.name (default "?" .app.status.sync.revision) (default "(no message)" .app.status.operationState.message) -}}
+                    {"title": {{ toJson $title }}, "body": {{ toJson $body }}, "type": "failure",
+                     "text": {{ printf "%s\n%s" $title $body | toJson }},
+                     "content": {{ printf "%s\n%s" $title $body | toJson }},
+                     "message": {{ toJson $body }}}
+          triggers:
+            # The controller records each delivery in the app's
+            # notified.notifications.argoproj.io annotation, keyed
+            # "<trigger>:[0].<sha1 of when>:...", and drops a record once its
+            # `when` is false. on-health-degraded holds its record until
+            # on-health-recovered has been delivered: through Progressing (a fix
+            # that rolls out still reaches the recovery) and through Healthy (a
+            # recovery whose send fails is retried on the next pass). app-of-apps
+            # is excluded: it only rolls up a child that alerts on its own.
+            #
+            # Editing either `when` orphans the records under the old hash; a
+            # leftover "on-health-degraded:" key sends one false Degraded alert
+            # and then mutes that app's recoveries, so strip it:
+            #   kubectl -n argocd annotate app <app> notified.notifications.argoproj.io-
+            trigger.on-health-degraded: |
+              - description: Application health is Degraded, until it is Healthy again (leaf apps only)
+                send:
+                  - app-degraded
+                when: >-
+                  app.metadata.name not in ['app-of-apps'] and
+                  (app.status.health.status == 'Degraded' or
+                  (((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-degraded:' and
+                  not (((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-recovered:')))
+            # The all-clear for a Degraded alert, and only for one: a plain Healthy
+            # trigger would fire after every rollout and CronJob run.
+            trigger.on-health-recovered: |
+              - description: Application is Healthy again after a Degraded alert
+                send:
+                  - app-recovered
+                when: app.status.health.status == 'Healthy' and ((app.metadata.annotations ?? {})['notified.notifications.argoproj.io'] ?? '') contains 'on-health-degraded:'
+            # A failed sync can leave health Healthy (the old resources keep
+            # running), so on-health-degraded alone misses it. oncePer: the
+            # retry policy re-runs a failing sync; alert once per git revision.
+            trigger.on-sync-failed: |
+              - description: Application sync failed
+                oncePer: app.status.sync.revision
+                send:
+                  - app-sync-failed
+                when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
+        # No SSO is configured, so Dex had nothing to do (~20-75 MiB). To add
+        # SSO through Dex, set enabled: true here with dex.config in configs.cm,
+        # and give it requests (10m / 96Mi, limit 192Mi).
+        dex:
+          enabled: false
+        applicationSet:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true  # required for ArgoCD CRDs with large annotations
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

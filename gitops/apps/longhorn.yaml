@@ -1,0 +1,97 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    # Deploy before storage consumers (any wave-0 app that provisions PVCs).
+    # Wave -1 ensures Longhorn converges and StorageClass is ready before wave 0 apps.
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
+      targetRevision: "1.13.0"
+      helm:
+        valuesObject:
+          defaultSettings:
+            # 2 replicas = one per node on the 2-node Always Free topology; a volume
+            # survives the loss of either node. More replicas cannot be scheduled
+            # (replica soft anti-affinity is off), so do not raise this.
+            defaultReplicaCount: 2
+            # Ensure Longhorn instance-managers are not evicted under memory pressure
+            # ahead of lower-priority user workloads. An evicted instance-manager
+            # during a replica rebuild risks data loss.
+            priorityClass: system-cluster-critical
+            # Block node drain if the drain would leave any volume with no healthy replica.
+            # With defaultReplicaCount=2, a drain could momentarily leave a volume at 1
+            # replica; this policy ensures the drain waits until Longhorn confirms safety.
+            # Explicitly pinned to avoid relying on chart default changing between versions.
+            nodeDrainPolicy: block-if-contains-last-replica
+            # Wait 10 minutes before rebuilding a replica for a missing node. This prevents
+            # thrashing on short maintenance windows or rolling upgrades: if the drained
+            # node comes back within 10 min, no extra replica rebuild IO is triggered.
+            replicaReplenishmentWaitInterval: "600"
+            # Upgrade volume engines automatically, one volume per node at a time,
+            # after each chart bump. Otherwise volumes stay on the old engine image
+            # (live-upgradable with 2 healthy replicas) and old images pile up.
+            concurrentAutomaticEngineUpgradePerNodeLimit: 1
+            # One replica rebuild per node at a time (default 5). On a 1-OCPU A1.Flex
+            # node with network-attached block storage, parallel rebuilds after a
+            # node returns saturate the disk (80% iowait seen): etcd loses leader
+            # election and k3s crash-loops. Rebuilds still finish, one by one.
+            concurrentReplicaRebuildPerNodeLimit: 1
+            # Let recurring jobs attach a detached volume, back it up and detach it.
+            # The default skips detached volumes, so a PVC mounted only by a CronJob
+            # never gets a backup, and nothing reports it.
+            allowRecurringJobWhileVolumeDetached: true
+            # CPU each instance manager reserves, as a share of the node (default
+            # 12%, i.e. 120m on a 1-OCPU node): with a few small volumes 5% is
+            # plenty, and the reservation counts against what a drain can move.
+            guaranteedInstanceManagerCPU: '{"v1":"5","v2":"5"}'
+          # One replica of each controller instead of the chart's 3 (CSI
+          # sidecars, global manager) or 2 (UI): on a 2-node cluster with 1 OCPU
+          # each, the spare replicas are 9 pods mostly on the control plane, whose
+          # memory k3s server needs (see gitops/apps/argocd.yaml). A controller
+          # that dies is rescheduled within seconds; volume I/O does not depend
+          # on them (the instance managers serve it), only provisioning, attach,
+          # resize and snapshots wait meanwhile.
+          csi:
+            attacherReplicaCount: 1
+            provisionerReplicaCount: 1
+            resizerReplicaCount: 1
+            snapshotterReplicaCount: 1
+          longhornGlobalManager:
+            replicas: 1
+          longhornUI:
+            replicas: 1
+          persistence:
+            # Make longhorn the default StorageClass so PVCs without explicit
+            # storageClassName are satisfied automatically.
+            defaultClass: true
+            defaultClassReplicaCount: 2
+          # Disable pre-upgrade job: ArgoCD runs it on every sync (including
+          # fresh installs) where longhorn-manager isn't running yet, causing
+          # the job to fail and block the sync.
+          preUpgradeChecker:
+            jobEnabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

@@ -1,0 +1,64 @@
+---
+# Namespaces of the optional External Secrets Operator (gitops/optional/) and of
+# Traefik. ArgoCD's CreateNamespace=true only creates the Application's
+# destination namespace, so these must exist for the NetworkPolicies in
+# external-secrets.yaml / traefik.yaml to apply. Empty namespaces with
+# default-deny policies are harmless until pods appear. The others (argocd,
+# cert-manager, longhorn-system) are created by the bootstrap or by their
+# Application and listed here only for their Pod Security labels.
+#
+# Pod Security Admission: baseline wherever the pods allow it (no host
+# namespaces, hostPath or privileged containers); Longhorn needs privileged
+# (iSCSI, host mounts), and warn/audit still report what exceeds baseline.
+# kube-system stays k3s's; system-upgrade gets privileged from the SUC manifest.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: longhorn-system
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false

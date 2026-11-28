@@ -1,0 +1,128 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  annotations:
+    # Wave 1: after Longhorn (-1) and the wave-0 apps. An app in an earlier wave
+    # that uses Traefik's CRDs (argocd-config's Middleware) carries
+    # SkipDryRunOnMissingResource and converges on a retry once they exist.
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    # renovate: datasource=helm depName=traefik registryUrl=https://traefik.github.io/charts
+    targetRevision: "42.3.2"
+    helm:
+      valuesObject:
+        # One Traefik pod per node, so every NLB backend serves ingress locally:
+        # no cross-node hop, no single-pod point of failure.
+        deployment:
+          kind: DaemonSet
+        # A node keeps serving while its new pod starts (surge, not unavailable).
+        updateStrategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+        priorityClassName: system-cluster-critical
+        # ⚠️  SYNC REQUIRED: the nodePorts below must match
+        #     ingress_controller_http_nodeport  (default 30080) and
+        #     ingress_controller_https_nodeport (default 30443) in vars.tf,
+        # which the OCI NLB backends and NSG rules are built from.
+        service:
+          spec:
+            # The chart reads the type from service.spec. Chart 42.3.2's schema
+            # rejects service.type (Argo CD can't render the app), and older
+            # charts ignored it: the Service stayed LoadBalancer, with k3s
+            # ServiceLB pods holding 80/443 on every node.
+            type: NodePort
+            # Local keeps the client's source IP (the NLB preserves it,
+            # is_preserve_source), which the rate limits and any IP allowlist
+            # need; Cluster would SNAT every request. With a DaemonSet every
+            # node has a local endpoint, so every NLB health check passes.
+            externalTrafficPolicy: Local
+        ports:
+          web:
+            nodePort: 30080
+            # Everything on :80 goes to HTTPS, except cert-manager's HTTP-01
+            # solver: its Ingress is pinned to this entrypoint (the solver's
+            # ingressTemplate in the ClusterIssuers) and wins over the redirect,
+            # whose priority is the lowest. No other router listens here,
+            # because websecure is the default entrypoint below.
+            http:
+              redirections:
+                entryPoint:
+                  to: websecure
+                  scheme: https
+                  permanent: true
+                  priority: 1
+          websecure:
+            nodePort: 30443
+            # Ingresses and IngressRoutes without an explicit entrypoint attach
+            # here only, with TLS.
+            asDefault: true
+            http:
+              tls:
+                enabled: true
+        # TLS 1.2+ with AES-GCM ciphers, as the module has always offered (TLS 1.3
+        # suites are not configurable in Go).
+        tlsOptions:
+          default:
+            minVersion: VersionTLS12
+            cipherSuites:
+              - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+              - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        providers:
+          kubernetesIngress:
+            # The NodePort Service has no load-balancer address to publish, and
+            # gitops/ stays IP-independent, so Ingress status stays empty; Argo
+            # CD treats an Ingress as Healthy without it (gitops/apps/argocd.yaml);
+            # give an Ingress the external-dns target annotation (the NLB address)
+            # where a DNS controller needs one.
+            publishedService:
+              enabled: false
+          kubernetesCRD:
+            enabled: true
+        ingressClass:
+          enabled: true
+          isDefaultClass: true
+          name: traefik
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        # The chart's 2 s probe timeouts and readiness failureThreshold 1 flap
+        # under scheduling latency on a 1-OCPU node at full CPU requests.
+        readinessProbe:
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          timeoutSeconds: 5
+          failureThreshold: 5
+        log:
+          level: WARN
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

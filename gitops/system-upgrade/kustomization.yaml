@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Remote SUC manifests — the version appears in both URLs below. The shared
+# Renovate preset's release-URL manager updates both URLs in the same PR.
+resources:
+  - https://github.com/rancher/system-upgrade-controller/releases/download/v0.21.1/crd.yaml
+  - https://github.com/rancher/system-upgrade-controller/releases/download/v0.21.1/system-upgrade-controller.yaml
+  - plans.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: system-upgrade-controller
+        namespace: system-upgrade
+      spec:
+        template:
+          spec:
+            containers:
+              - name: system-upgrade-controller
+                env:
+                  - name: SYSTEM_UPGRADE_JOB_ACTIVE_DEADLINE_SECONDS
+                    value: "1800"
+                  # Attempts per job: 6 instead of 3. An OS update step of the
+                  # fcos-os Plan (gitops/fcos-os/) reboots the node, which ends the
+                  # job's attempt, so attempts bound the steps one job can take.
+                  # A failed k3s upgrade job also retries more, which is harmless.
+                  - name: SYSTEM_UPGRADE_JOB_BACKOFF_LIMIT
+                    value: "5"
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "64Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "256Mi"
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: system-upgrade-controller
+        namespace: system-upgrade
+        labels:
+          app.kubernetes.io/name: system-upgrade-controller
+      spec:
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: system-upgrade-controller

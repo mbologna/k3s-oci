@@ -1,0 +1,152 @@
+---
+# Default-deny ingress for the argocd namespace.
+# Allows: same-namespace pods, Traefik (for the Ingress), kube-system (health probes).
+#
+# Argo CD applies these to its own namespace, and the first egress policy it
+# creates isolates every argocd pod. The policies that keep DNS, the kube-API
+# and the other components reachable sync first (wave -1), so a policy added
+# later can never cut the controller off mid-sync. A consumer cluster lost DNS
+# this way on a rebuild: every app stayed Unknown until the policies were
+# applied by hand.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: argocd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow all traffic within the argocd namespace (argocd-server <-> repo-server <-> app-controller)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Allow Traefik to reach argocd-server (the Ingress, port 80)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-ingress
+  namespace: argocd
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+---
+# Allow DNS egress from argocd pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Allow argocd to reach GitHub, Helm registries, OCI registries, and Kubernetes API.
+# 443 goes to the public internet only (no instance metadata, no private
+# range); 6443 is the kube-apiserver after kube-proxy's DNAT, a node's private
+# address. A git or Helm server inside the cluster or VCN needs its own policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 6443
+          protocol: TCP
+---
+# Allow argocd-repo-server to clone git repos via SSH (GitHub, Codeberg, etc.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ssh-egress
+  namespace: argocd
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 22
+          protocol: TCP
+---
+# cert-manager's HTTP-01 solver pods for this namespace's Certificates (the
+# Ingress TLS secret lives next to its Ingress): Traefik forwards the ACME
+# challenge to them on 8089.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver-ingress
+  namespace: argocd
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8089

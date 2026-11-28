@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+      targetRevision: "v1.21.3"
+      helm:
+        valuesObject:
+          crds:
+            enabled: true
+          # platform-critical (gitops/priority-classes/): an ordinary workload must
+          # not preempt cert-manager, or certificates stop renewing.
+          global:
+            priorityClassName: platform-critical
+          # Measured on a 40-app cluster: controller ~35 MiB, cainjector 40-70 MiB
+          # (it caches every Secret and CRD it injects into), webhook ~10 MiB.
+          # The old 64Mi limits left cainjector no headroom.
+          # Controller — issues certificates, manages ACME challenges
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          # Webhook — validates and mutates cert-manager CRs; must be available for API calls
+          webhook:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            # The API server calls the webhook on every cert-manager write; the
+            # chart's 1 s probe timeouts restart it on a busy 1-OCPU node.
+            livenessProbe:
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 8
+            readinessProbe:
+              initialDelaySeconds: 5
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 6
+          # cainjector — injects CA bundles into webhook configurations
+          cainjector:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+          # startupapicheck — one-shot init job that verifies the API is ready
+          startupapicheck:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 32Mi
+          # Prometheus ServiceMonitor disabled — kube-prometheus-stack (which provides the
+          # ServiceMonitor CRD) is not deployed. Leaving it enabled makes ArgoCD fail to sync
+          # cert-manager ("no matches for kind ServiceMonitor").
+          prometheus:
+            servicemonitor:
+              enabled: false
+  # cainjector writes the caBundle; the chart renders it empty.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true  # required for CRD resources with large annotations
+      # Without it ignoreDifferences only hides the diff: every sync still writes
+      # the chart's empty caBundle back over the one cainjector set, and the
+      # webhook rejects calls until cainjector refills it.
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m

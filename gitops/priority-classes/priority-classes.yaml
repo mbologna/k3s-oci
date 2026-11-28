@@ -1,0 +1,28 @@
+---
+# Pod priority classes. Pods without a class run at priority 0.
+#
+# platform-critical: cluster plumbing that is not system-* but that a failure
+# elsewhere hangs on: cert-manager (without it no certificate renews). kured,
+# Longhorn and Traefik use the built-in system-cluster-critical.
+#
+# alerting: the opt-in alert CronJob (gitops/node-cordon-alert/). Above priority
+# 0, so a busy node can't keep it Pending and silence the alert about its own
+# trouble; preemptionPolicy Never, so it only queues ahead while Pending and
+# never evicts anything itself.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+value: 10000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Cluster plumbing that is not system-*: cert-manager"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: alerting
+value: 5000
+globalDefault: false
+preemptionPolicy: Never
+description: "Alert CronJobs: queue ahead while Pending, never preempt others"

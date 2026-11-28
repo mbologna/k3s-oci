@@ -1,0 +1,99 @@
+---
+# Default-deny ingress for the tailscale namespace (egress is limited by the
+# allow policies below, since they select every pod).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: tailscale
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: tailscale
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# The operator and its proxies: coordination and DERP (443), STUN (3478) and
+# WireGuard to peers on whatever UDP port they listen, and the kube-API (6443,
+# a node's private address after kube-proxy's DNAT). Opening only 41641 blocks
+# STUN. Expect DERP relays anyway: the OCI NAT gateway maps per destination, so
+# hole punching fails. No instance metadata: pods must not mint the node's
+# instance-principal tokens.
+# Ingress proxies forward to their in-cluster backends on any port; egress
+# rules see the backend pod after DNAT, so allow the pod CIDR (k3s default
+# 10.42.0.0/16), never a 10.43 Service IP.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tailscale-egress
+  namespace: tailscale
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+        - protocol: UDP
+    - to:
+        - ipBlock:
+            cidr: 10.42.0.0/16
+---
+# Direct WireGuard from peers. Tailnet traffic arrives inside WireGuard and is
+# decrypted in the pod, so no packet the policy sees carries a 100.64/10 source.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tailscale-mesh-ingress
+  namespace: tailscale
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: UDP
+          port: 41641
+---
+# In-cluster clients of the egress-ha ProxyGroup (proxygroup.yaml). The port is
+# the one the operator maps for each egress Service (rules see it after DNAT),
+# not the Service's own, so admit any port from the pod CIDR; a proxy forwards
+# only the ports its Services list. Each client's own egress policy must allow
+# that port too. A single-Service egress proxy needs its own policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-ha-ingress
+  namespace: tailscale
+spec:
+  podSelector:
+    matchLabels:
+      tailscale.com/parent-resource: egress-ha
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.42.0.0/16

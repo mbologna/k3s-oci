@@ -1,0 +1,23 @@
+---
+# ProxyClass — resource limits for Tailscale proxy StatefulSet pods.
+# Applied to Services via the tailscale.com/proxy-class annotation.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: cross-cluster
+spec:
+  statefulSet:
+    pod:
+      tailscaleContainer:
+        env:
+          # Ephemeral devices leave the tailnet when their pod is deleted, so a
+          # rebuild or a pod restart leaves no stale entries (and no -1 names).
+          - name: TS_EPHEMERAL
+            value: "true"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi

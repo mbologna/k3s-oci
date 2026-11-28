@@ -1,0 +1,66 @@
+---
+# Rolls the Fedora CoreOS release in 'version' out to the FCOS nodes, the way
+# OpenShift's Machine Config Daemon applies a new osImageURL: cordon, drain, rebase,
+# reboot, uncordon, one node at a time. Zincati is masked on these nodes; this Plan
+# is their only source of OS updates.
+#
+# The job runs k3s-oci-fcos-update on the host (installed by the node script,
+# files/lib/bootstrap-fcos.sh): it moves the node one hop along FCOS's update graph toward
+# 'version', passing through barrier releases, and reboots; after each reboot the
+# job runs again, until the node is booted into 'version'. New nodes pivot to
+# var.fcos_os_version during their first boot: keep it equal to 'version' (Renovate
+# bumps both in one PR, and only to a release whose phased rollout has finished,
+# renovate.json custom.fedora-coreos-release).
+#
+# Each hop's reboot ends one attempt of the job, so a job takes as many hops as it
+# has attempts: 6 with SYSTEM_UPGRADE_JOB_BACKOFF_LIMIT=5 (gitops/system-upgrade/
+# kustomization.yaml). Bumping every release needs 1 hop, 2 across a barrier. With
+# more, the failed job is deleted after its TTL (15 min) and a new one continues
+# while the window is open; if the window closes first, the node stays cordoned
+# until the next window. gitops/node-cordon-alert/ reports that.
+#
+# OS updates and k3s upgrades never overlap, as OpenShift updates nodes only after
+# the control plane: on a node, exclusive (system-upgrade-controller keeps the jobs
+# of exclusive Plans apart with a per-node pod anti-affinity; the k3s Plans in
+# gitops/system-upgrade/plans.yaml are exclusive too); across nodes, the windows
+# (this one is kured's routine reboot window, Tue-Thu 02:15-04:15 UTC; the k3s
+# Plans start jobs only at 23:00-23:59) and the job deadlines. kured stands down
+# while the job exists (its blockingPodSelector) and has nothing to reboot for on FCOS.
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: fcos-os
+  namespace: system-upgrade
+spec:
+  concurrency: 1
+  exclusive: true
+  # renovate: datasource=custom.fedora-coreos-release depName=fedora-coreos-release
+  version: "45.20261030.3.1"
+  nodeSelector:
+    matchLabels:
+      k3s-oci.io/os: fcos
+  # Every node, whatever taints it carries.
+  tolerations:
+    - operator: Exists
+  window:
+    days: [tuesday, wednesday, thursday]
+    startTime: "02:15"
+    endTime: "04:15"
+    timeZone: UTC
+  # A hop pulls an ~800 MiB image and reboots (about 7 minutes in a test); the
+  # deadline covers the job's 6 attempts.
+  jobActiveDeadlineSecs: 5400
+  serviceAccountName: system-upgrade
+  cordon: true
+  # As kured drains before a reboot.
+  drain:
+    force: true
+    ignoreDaemonSets: true
+    deleteEmptydirData: true
+    timeout: 15m
+  upgrade:
+    # Only for chroot: the work happens on the host. A tag, so system-upgrade-controller
+    # does not append 'version' to it.
+    # renovate: datasource=docker depName=busybox
+    image: busybox:1.38.0
+    command: ["chroot", "/host", "/usr/local/sbin/k3s-oci-fcos-update"]
