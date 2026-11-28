@@ -47,8 +47,8 @@ at it ([docs/operations.md](docs/operations.md#your-own-applications)).
   daily backup. A database outage stops the Kubernetes API; running pods keep running.
 - The node configuration holds the k3s token, the cluster CA keys and the database password; it
   is in instance metadata (or behind a pre-authenticated request). See [SECURITY.md](SECURITY.md).
-- Version 3 has been validated by rendering and CI only, not on a live tenancy yet (the author's
-  free allowance runs talos-oci). Reports welcome.
+- It has been validated by rendering and CI only, not on a live tenancy yet (the author's free
+  allowance runs talos-oci). Reports welcome.
 
 ## Documentation
 
@@ -56,5 +56,3 @@ at it ([docs/operations.md](docs/operations.md#your-own-applications)).
 - [docs/operations.md](docs/operations.md): deploying, access, upgrades, backups, replacing a
   node, your own applications.
 - [gitops/README.md](gitops/README.md): the default applications.
-
-Version 3 is a rewrite: there is no upgrade path from 2.x (`?ref=v2.5.0` keeps working).
