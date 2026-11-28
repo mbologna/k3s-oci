@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+region              = "us-phoenix-1"
+tenancy_ocid        = "ocid1.tenancy.oc1..aaaa"
+compartment_ocid    = "ocid1.tenancy.oc1..aaaa"
+availability_domain = "XXXX:PHX-AD-1"
+cluster_name        = "k3s-oci"
+os_family           = "opensuse" # or fcos, flatcar; scripts/deploy.sh: OS_FAMILY=<same>
+
+# Written by scripts/deploy.sh into k3s-image.auto.tfvars; set it here only to
+# plan without deploying.
+# image_id = "ocid1.image.oc1.phx.aaaa"
+
+# Break-glass SSH through Bastion (scripts/tunnel.sh ssh server-0).
+# ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
+
+# Let's Encrypt ClusterIssuers (HTTP-01 through Traefik).
+# certmanager_email = "you@example.com"
+
+# Your fork, after gitops/update-repo-url.sh.
+# gitops_repo_url = "https://github.com/you/k3s-oci.git"
+
+# OCI Monitoring alarms and one APM uptime check (free tier).
+# alert_email = "you@example.com"
+# uptime_urls = ["https://app.example.com/healthz"]

@@ -1,0 +1,30 @@
+# Remote state in an OCI Object Storage bucket, through the S3 API. Copy to
+# backend_override.tf (gitignored by *_override.tf) and fill in the <...>.
+#
+# The state holds every cluster secret (token, CAs, database password): use a
+# bucket of its own that nothing in the cluster can read, never the module's
+# <cluster_name>-backups bucket.
+#
+#   oci os bucket create -c <compartment_ocid> --name <cluster_name>-tofu-state \
+#     --versioning Enabled --public-access-type NoPublicAccess
+#
+# The [oci-tofu-state] profile in ~/.aws/credentials holds a Customer Secret Key
+# (access key ID + secret) of a user limited to that bucket. Migrate an existing
+# local state with `tofu init -migrate-state`.
+
+terraform {
+  backend "s3" {
+    bucket                      = "<cluster_name>-tofu-state"
+    key                         = "terraform.tfstate"
+    region                      = "<region>" # e.g. eu-frankfurt-1
+    profile                     = "oci-tofu-state"
+    endpoints                   = { s3 = "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com" }
+    use_path_style              = true
+    use_lockfile                = true # OpenTofu >= 1.10 / Terraform >= 1.11
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+  }
+}
