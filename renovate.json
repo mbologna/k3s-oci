@@ -1,0 +1,225 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>mbologna/.github//renovate-config.json"
+  ],
+  "packageRules": [
+    {
+      "description": "k3s tags are vX.Y.Z+k3sN, and the +k3sN build is a real release (v1.33.13+k3s2). Applies to every k3s-io/k3s pin (the SUC Plans and a committed k3s_version tfvars, see the customManagers). No matchUpdateTypes: versioning is decided before the update type is known. separateMinorPatch: k3s ships a patch for every supported minor on the same day, and with one branch a waiting minor PR would absorb the patch for the running minor. separateMultipleMinor: a new minor (v1.38.0, skipped below) must not hide an eligible older one (v1.37.3). The k3s group keeps the Plans and the tfvars in one PR, outside the preset's weekly maintenance group.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$",
+      "separateMinorPatch": true,
+      "separateMultipleMinor": true,
+      "groupName": "k3s"
+    },
+    {
+      "description": "k3s minors are taken only from their third patch (x.y.3), once the first rounds of regressions are fixed. A minor update whose new version is x.y.0-x.y.2 opens no PR; the next eligible patch does. Patches are untouched: they follow the preset (7-day gate, automerge).",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchNewValue": "/^v\\d+\\.\\d+\\.[0-2]\\+k3s\\d+$/",
+      "enabled": false
+    },
+    {
+      "description": "k3s minors from x.y.3 automerge after the preset's 14-day minor gate. system-upgrade-controller applies the new Plans in its next window (gitops/system-upgrade/plans.yaml), one node at a time.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "automerge"
+      ],
+      "prBodyNotes": [
+        "k3s minor from its x.y.3 release: it automerges once CI passes and system-upgrade-controller applies it in the next upgrade window. Check the release notes for removed APIs while it waits."
+      ]
+    },
+    {
+      "description": "k3s majors upgrade the cluster through system-upgrade-controller as soon as they merge: a person reviews them.",
+      "matchDepNames": [
+        "k3s-io/k3s"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "manual-review"
+      ],
+      "prBodyNotes": [
+        "**Why this waits for you:** a k3s major upgrades the cluster through system-upgrade-controller in its next window, one node at a time. Read the release notes for removed APIs first."
+      ]
+    },
+    {
+      "description": "The openSUSE Leap release scripts/import-image.sh imports (LEAP_VERSION), from openSUSE's own release API (custom.opensuse-leap). It reaches nodes only when they are created: the instances ignore image changes (compute.tf), so the PR's plan is empty. feat(os): so auto-release cuts a release that names the new OS instead of folding it into chore(deps).",
+      "matchDatasources": [
+        "custom.opensuse-leap"
+      ],
+      "matchDepNames": [
+        "opensuse-leap"
+      ],
+      "commitMessagePrefix": "feat(os):",
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "automerge"
+      ]
+    },
+    {
+      "description": "openSUSE Leap, from get.opensuse.org's distributions API (custom.opensuse-leap): endoflife.date added Leap releases weeks late (16.1 was missing while openSUSE already called it Stable). The datasource keeps releases in state Stable or EOL, so Beta and RC builds never match. The API has no release dates, so timestamp-optional: with the default timestamp-required the preset's 14-day minor gate would hold a dateless update forever; openSUSE's Stable state is the gate instead. The image is a custom import, so the bump cannot reach nodes by itself: after it merges, new nodes keep booting the newest imported image and plans warn (checks.tf) until the new release is imported, then pick it up without os_image_id. The group keeps vars.tf and the import script in one PR, outside the preset's weekly maintenance group. allowedVersions drops the legacy 42.x numbering (Leap 42.1-42.3, 2015-2017), which sorts above 16.0.",
+      "matchDatasources": [
+        "custom.opensuse-leap"
+      ],
+      "matchDepNames": [
+        "opensuse-leap"
+      ],
+      "allowedVersions": "!/^42\\./",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "prBodyNotes": [
+        "New openSUSE Leap release: run `scripts/import-opensuse-aarch64.sh` (now defaulting to the new release) after merging. Until then plans warn and a rebuild boots the newest image already imported; afterwards the next full rebuild boots the new release without `os_image_id` (unless you pin it). Running nodes and pool replacements keep their image."
+      ],
+      "groupName": "opensuse"
+    },
+    {
+      "description": "Fedora CoreOS release the cluster runs (custom.fedora-coreos-release): fcos_os_version in vars.tf and the fcos-os Plan's version move together. Merging rolls the release out to FCOS clusters (the Plan, in its Tue-Thu window, one drained node at a time, along the update graph), as an OpenShift upgrade carries the OS image. The gate is FCOS's own phased rollout: the datasource only lists releases whose rollout has finished (update graph at rollout_wariness=1), so a release reaches the cluster a day or so after FCOS starts offering it, after its two weeks in testing. The graph has no release dates, hence timestamp-optional.",
+      "matchDatasources": [
+        "custom.fedora-coreos-release"
+      ],
+      "matchDepNames": [
+        "fedora-coreos-release"
+      ],
+      "versioning": "loose",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "groupName": "fedora-coreos-release",
+      "automerge": true,
+      "prBodyNotes": [
+        "New Fedora CoreOS release: once merged, the fcos-os Plan updates the FCOS nodes in its next window (Tue-Thu 02:15-04:15 UTC), one drained node at a time; new nodes pivot to it during their first boot."
+      ]
+    },
+    {
+      "description": "The first node installs Argo CD with Helm 3 (files/lib/common.sh): Helm 4 renames flags the bootstrap passes, such as --atomic. Move to 4 by hand, together with the helm calls.",
+      "matchDepNames": [
+        "helm/helm"
+      ],
+      "allowedVersions": "<4"
+    }
+  ],
+  "customDatasources": {
+    "fedora-coreos-release": {
+      "description": "Fedora CoreOS release the cluster runs (vars.tf fcos_os_version, gitops/fcos-os/plan.yaml version): the stable releases FCOS's update graph offers a client with rollout_wariness=1, i.e. only releases whose phased rollout has finished (the update server drops the edges into a release until its rollout reaches the client's wariness). A release with an incoming edge is one the graph lets nodes move to.",
+      "defaultRegistryUrlTemplate": "https://updates.coreos.fedoraproject.org/v1/graph?basearch=aarch64&stream=stable&rollout_wariness=1&oci=true",
+      "transformTemplates": [
+        "{\"homepage\": \"https://fedoraproject.org/coreos/release-notes/\", \"releases\": ($targets := $map(edges, function($e) { $e[1] }); $map($filter($map(nodes, function($n, $i) { {\"i\": $i, \"v\": $n.version} }), function($x) { $x.i in $targets }), function($x) { {\"version\": $x.v} }))}"
+      ]
+    },
+    "opensuse-leap": {
+      "description": "openSUSE Leap releases from openSUSE's distributions API (also behind get.opensuse.org), released ones only: state Stable or EOL.",
+      "defaultRegistryUrlTemplate": "https://get.opensuse.org/api/v0/distributions.json",
+      "transformTemplates": [
+        "{\"homepage\": \"https://get.opensuse.org/leap/\", \"releases\": [Leap[state in [\"Stable\", \"EOL\"]].{\"version\": version}]}"
+      ]
+    }
+  },
+  "customManagers": [
+    {
+      "description": "Fedora CoreOS release of the fcos-os upgrade Plan (gitops/fcos-os/plan.yaml), renovate comment on the line above version:. Same depName as fcos_os_version in vars.tf, so one PR moves both.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/fcos-os/plan\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+version:\\s+\"(?<currentValue>[^\"]+)\""
+      ],
+      "versioningTemplate": "loose"
+    },
+    {
+      "description": "openSUSE Leap release imported by scripts/import-image.sh (LEAP_VERSION, renovate comment on the line above).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)scripts/import-image\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*LEAP_VERSION=\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "k3s pinned in the system-upgrade-controller Plans: the inline renovate comment sits directly above the version: line (gitops/system-upgrade/plans.yaml shows how). Commented-out lines don't match, so the default channel-based Plans have no pin.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/system-upgrade/plans\\.yaml$/"
+      ],
+      "matchStrings": [
+        "\\n\\s+# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+version:\\s+(?<currentValue>v\\S+)"
+      ]
+    },
+    {
+      "description": "k3s_version pinned in a committed *.auto.tfvars (e.g. example/k3s-version.auto.tfvars; terraform.tfvars itself holds secrets and is gitignored), with the renovate comment on the line above. Same depName as the Plans, so a bump updates both in one PR.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.auto\\.tfvars$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*k3s_version\\s*=\\s*\"(?<currentValue>v[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Tool versions in workflow env (e.g. KUBECONFORM_VERSION in ci.yml), with the renovate comment on the line above.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(\\s+extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*[A-Z0-9_]+_VERSION:\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Update versions declared with inline renovate comments in vars.tf",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)vars\\.tf$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*default\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Update Helm chart versions declared with inline renovate comments in gitops YAML files",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/.*\\.yaml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(\\s+registryUrl=(?<registryUrl>[^\\s]+))?\\s*\\n\\s*targetRevision:\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Update container image tags referenced with inline renovate comments in gitops YAML files (e.g. curlimages/curl in gitops/node-cordon-alert).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)gitops/.*\\.yaml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\s*\\n\\s+image:\\s*[^:]+:(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Tool versions pinned in files/lib/common.sh (Helm): an *_VERSION=\"...\" assignment with the renovate comment on the line above.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)files/lib/common\\.sh$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\s*\\n[A-Z_]+_VERSION=\"(?<currentValue>[^\"]+)\""
+      ]
+    }
+  ]
+}

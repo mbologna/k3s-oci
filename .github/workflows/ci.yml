@@ -1,0 +1,107 @@
+name: CI
+
+"on":
+  push:
+    branches: [main]
+  # No paths filter on pull_request: the ruleset requires these checks, and a
+  # filtered-out PR would never report them and stay blocked.
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  terraform:
+    uses: mbologna/.github/.github/workflows/terraform-ci.yml@935e4a724ac131476dd6c3e5d141cbb1bb651a6d # main
+    with:
+      opentofu_version: "1.13.9"
+      enable_shellcheck: true
+      shellcheck_files: >-
+        files/lib/bootstrap-opensuse.sh
+        files/lib/bootstrap-fcos.sh
+        files/lib/bootstrap-flatcar.sh
+        files/lib/two-phase.sh
+        files/lib/two-phase-done.sh
+        files/lib/common.sh
+        files/lib/k3s.sh
+        scripts/import-image.sh
+        scripts/deploy.sh
+        scripts/tunnel.sh
+        scripts/validate-gitops.sh
+        scripts/check-bootstrap-chart-versions.sh
+        gitops/update-repo-url.sh
+      example_dir: example
+    secrets: inherit
+
+  # Every os_family's node configuration rendered offline (the OCI provider is
+  # mocked): user_data within OCI's limit, Ignition structure, the datastore.
+  render:
+    name: Render tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version: "1.13.9"
+          tofu_wrapper: false
+
+      - name: tofu test
+        run: |
+          tofu init -backend=false -input=false
+          tofu test
+
+  # Schema checks for gitops/, which the shared Terraform workflow doesn't look at,
+  # and the bootstrap/adoption chart version parity (scripts/ say why).
+  gitops:
+    name: gitops manifests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # renovate: datasource=github-releases depName=yannh/kubeconform
+      KUBECONFORM_VERSION: "v0.8.0"
+      # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>.+)$
+      KUSTOMIZE_VERSION: "v5.8.3"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install kubeconform and kustomize
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
+          base=https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}
+          curl -fsSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -fsSL "$base/CHECKSUMS" | grep ' kubeconform-linux-amd64.tar.gz$' | sha256sum -c -
+          tar -xzf kubeconform-linux-amd64.tar.gz -C bin kubeconform
+          tarball=kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz
+          base=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}
+          curl -fsSLO "$base/$tarball"
+          curl -fsSL "$base/checksums.txt" | grep " ${tarball}$" | sha256sum -c -
+          tar -xzf "$tarball" -C bin kustomize
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap chart versions match gitops
+        run: scripts/check-bootstrap-chart-versions.sh
+
+      - name: kubeconform
+        run: scripts/validate-gitops.sh

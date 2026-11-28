@@ -1,0 +1,19 @@
+name: Commits
+
+# Pull requests merge with a merge commit, so every commit lands on the
+# default branch as it is, and auto-release reads the subjects: each must
+# follow the commit rules (mbologna/commitlint-config), and no fixup! commit
+# may remain.
+
+"on":
+  pull_request:
+
+# contents: the shared commits workflow asks for contents: read, and GitHub
+# starts no run whose called job asks for more than the caller grants.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commits:
+    uses: mbologna/.github/.github/workflows/commits.yml@935e4a724ac131476dd6c3e5d141cbb1bb651a6d # main

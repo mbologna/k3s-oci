@@ -1,0 +1,37 @@
+name: Release
+
+# Monday 06:00 UTC, like every other repository: tags the next version when a
+# feat, fix, perf, revert or breaking commit landed on main since the last tag,
+# and publishes the GitHub release with notes grouped by commit type
+# (https://github.com/mbologna/auto-release). A push releases at once only a
+# fix(security) update. Run it by hand on main to release at once, or with
+# dry_run to preview. Nothing builds on tags here, so no tag build is dispatched.
+
+"on":
+  # A push releases only a CVE fix (security strategy); the rest waits for Monday.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show the next version and its notes in the job summary
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  auto-release:
+    permissions:
+      contents: write
+    uses: mbologna/.github/.github/workflows/auto-release.yml@935e4a724ac131476dd6c3e5d141cbb1bb651a6d # main
+    with:
+      strategy: conventional
+      dispatch_tag_build: false
