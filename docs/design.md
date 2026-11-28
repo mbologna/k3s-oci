@@ -19,9 +19,9 @@ replicas on different nodes) up.
 
 | Layout | Why not the default |
 |---|---|
-| 3 servers with embedded etcd (`datastore = "etcd"`) | etcd's fsync load on the boot volumes it shares with images and Longhorn, the server's main failure mode in k3s-oci 2.x; a third node of overhead; smaller boot volumes (fewer IOPS) |
+| 3 servers with embedded etcd (`datastore = "etcd"`) | etcd's fsync load on the boot volumes it shares with images and Longhorn, the main failure mode of the earlier single-server design; a third node of overhead; smaller boot volumes (fewer IOPS) |
 | 1 server, 4 / 24 | The most room for apps and the simplest, but every reboot is an outage |
-| 1 server + 1 agent (k3s-oci 2.x) | The server is a single point of failure |
+| 1 server + 1 agent (the earlier design) | The server is a single point of failure |
 
 The database is the one shared dependency: MySQL.Free has no HA option. Its outage stops the API
 (pods keep running); Oracle backs it up daily (one day kept).
@@ -43,7 +43,7 @@ script; only the delivery and the update mechanism differ.
 
 openSUSE is the default for its lifecycle and backing, enforcing SELinux and the clean split of
 security from routine patches that zypper's categories give kured. Ubuntu and openSUSE Leap
-Minimal (k3s-oci 2.x) are gone: they are mutable and patched in place.
+Minimal, which the earlier design ran, are not offered: they are mutable and patched in place.
 
 ## Components
 
